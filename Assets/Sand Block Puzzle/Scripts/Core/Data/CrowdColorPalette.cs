@@ -27,13 +27,47 @@ namespace SandBlocks.Core.Data
 
         public Color GetColor(int id)
         {
-            for (int i = 0; i < entries.Length; i++)
+            if (entries != null)
             {
-                if (entries[i].id == id) return entries[i].color;
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    if (entries[i].id == id) return entries[i].color;
+                }
             }
             return Color.white;
         }
 
+        public string GetColorName(int id)
+        {
+            if (entries != null)
+            {
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    if (entries[i].id == id) return entries[i].name;
+                }
+            }
+            return $"Color {id}";
+        }
+
+        public int Count => entries != null ? entries.Length : 0;
         public ColorEntry[] Entries => entries;
+
+        public void AddColor(string name, Color color)
+        {
+            int nextId = 0;
+            if (entries != null && entries.Length > 0)
+            {
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    if (entries[i].id >= nextId) nextId = entries[i].id + 1;
+                }
+                Array.Resize(ref entries, entries.Length + 1);
+                entries[entries.Length - 1] = new ColorEntry { id = nextId, name = name, color = color };
+            }
+            else
+            {
+                entries = new ColorEntry[] { new ColorEntry { id = 0, name = name, color = color } };
+            }
+        }
     }
 }

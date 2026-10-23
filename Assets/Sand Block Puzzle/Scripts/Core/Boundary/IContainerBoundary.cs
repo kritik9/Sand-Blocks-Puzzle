@@ -9,5 +9,6 @@ namespace SandBlocks.Core.Boundary
         bool IsInNozzleZone(float2 point, float radius);
         float2 NozzlePosition { get; }
         float NozzleRadius { get; }
+        Rect Bounds { get; }
     }
 }

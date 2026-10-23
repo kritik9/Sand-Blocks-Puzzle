@@ -1,0 +1,1237 @@
+using System;
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using SandBlocks.Core.Boundary;
+using SandBlocks.Core.Data;
+using SandBlocks.Gameplay;
+using SandBlocks.Puzzle.Grid;
+using SandBlocks.Puzzle.Vehicles;
+
+namespace SandBlocks.Editor
+{
+    public class SandBlocksLevelEditorWindow : EditorWindow
+    {
+        private LevelData selectedLevel;
+        private CrowdColorPalette palette;
+        private Vector2 scrollPos;
+
+        // Toolbar Tabs
+        private int selectedTab = 0;
+        private readonly string[] tabLabels = new string[] { "Crowd & Container", "Buses & Parking Grid", "Balance & Scene" };
+
+        // Crowd Painting State
+        private int activeBrushColor = 0; // Default Blue
+        private int brushSize = 1;
+        private bool autoSyncCapacity = true;
+        private bool showAddColorSection = false;
+        private string newColorName = "Purple";
+        private Color newColorValue = new Color(0.65f, 0.25f, 0.95f, 1f);
+
+        // Bus Editor State
+        private int selectedBusIndex = -1;
+
+        // Default colors if palette asset not loaded
+        private readonly Color[] fallbackColors = new Color[]
+        {
+            new Color(0.18f, 0.55f, 1f, 1f),    // 0: Blue
+            new Color(0.2f, 0.85f, 0.35f, 1f),  // 1: Green
+            new Color(1f, 0.82f, 0.1f, 1f),     // 2: Yellow
+            new Color(1f, 0.35f, 0.65f, 1f),    // 3: Pink
+            new Color(0.18f, 0.18f, 0.22f, 1f), // 4: Black
+            new Color(0.92f, 0.92f, 0.95f, 1f), // 5: White
+            new Color(1f, 0.5f, 0.1f, 1f)       // 6: Orange
+        };
+
+        private readonly string[] colorNames = new string[]
+        {
+            "Blue", "Green", "Yellow", "Pink", "Black", "White", "Orange"
+        };
+
+        [MenuItem("SandBlocks/Level Editor Window")]
+        [MenuItem("Window/Sand Blocks Level Editor")]
+        public static void OpenWindow()
+        {
+            var win = GetWindow<SandBlocksLevelEditorWindow>("Level Editor");
+            win.minSize = new Vector2(620, 680);
+            win.Show();
+        }
+
+        private void OnEnable()
+        {
+            LoadPalette();
+            LoadDefaultLevel();
+        }
+
+        private void LoadPalette()
+        {
+            if (palette == null)
+            {
+                palette = AssetDatabase.LoadAssetAtPath<CrowdColorPalette>("Assets/Sand Block Puzzle/Settings/CrowdColorPalette.asset");
+            }
+        }
+
+        private void LoadDefaultLevel()
+        {
+            if (selectedLevel == null)
+            {
+                selectedLevel = AssetDatabase.LoadAssetAtPath<LevelData>("Assets/Sand Block Puzzle/ScriptableObjects/Levels/Level_01.asset");
+            }
+            if (selectedLevel != null)
+            {
+                selectedLevel.EnsureCustomGridInitialized();
+            }
+        }
+
+        private Color GetColor(int colorId)
+        {
+            if (palette != null)
+            {
+                return palette.GetColor(colorId);
+            }
+            if (colorId >= 0 && colorId < fallbackColors.Length)
+            {
+                return fallbackColors[colorId];
+            }
+            return Color.white;
+        }
+
+        private string GetColorName(int colorId)
+        {
+            if (palette != null)
+            {
+                return palette.GetColorName(colorId);
+            }
+            if (colorId >= 0 && colorId < colorNames.Length)
+            {
+                return colorNames[colorId];
+            }
+            return $"Color {colorId}";
+        }
+
+        private void OnGUI()
+        {
+            DrawHeader();
+
+            if (selectedLevel == null)
+            {
+                EditorGUILayout.HelpBox("Select or create a LevelData asset above to start editing.", MessageType.Info);
+                return;
+            }
+
+            selectedLevel.EnsureCustomGridInitialized();
+
+            EditorGUILayout.Space(4);
+            selectedTab = GUILayout.Toolbar(selectedTab, tabLabels, GUILayout.Height(28));
+            EditorGUILayout.Space(6);
+
+            scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+
+            switch (selectedTab)
+            {
+                case 0:
+                    DrawContainerAndCrowdTab();
+                    break;
+                case 1:
+                    DrawBusesAndParkingTab();
+                    break;
+                case 2:
+                    DrawBalanceAndSceneTab();
+                    break;
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        // =========================================================================
+        // HEADER & ASSET CONTROLS
+        // =========================================================================
+
+        private void DrawHeader()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Sand Blocks Level Editor", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("New Level", GUILayout.Width(80), GUILayout.Height(22)))
+            {
+                CreateNewLevel();
+            }
+
+            if (GUILayout.Button("Save Asset", GUILayout.Width(80), GUILayout.Height(22)))
+            {
+                SaveCurrentLevel();
+            }
+
+            if (GUILayout.Button("Apply to Scene", GUILayout.Width(95), GUILayout.Height(22)))
+            {
+                ApplyLevelToScene();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(2);
+
+            EditorGUILayout.BeginHorizontal();
+            selectedLevel = (LevelData)EditorGUILayout.ObjectField("Active Level:", selectedLevel, typeof(LevelData), false);
+            palette = (CrowdColorPalette)EditorGUILayout.ObjectField("Color Palette:", palette, typeof(CrowdColorPalette), false);
+            EditorGUILayout.EndHorizontal();
+
+            if (selectedLevel != null)
+            {
+                string path = AssetDatabase.GetAssetPath(selectedLevel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Asset Path:", path, EditorStyles.miniBoldLabel);
+                if (GUILayout.Button("Select Asset in Project", GUILayout.Width(160), GUILayout.Height(18)))
+                {
+                    Selection.activeObject = selectedLevel;
+                    EditorGUIUtility.PingObject(selectedLevel);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void CreateNewLevel()
+        {
+            string dir = "Assets/Sand Block Puzzle/ScriptableObjects/Levels";
+            if (!AssetDatabase.IsValidFolder(dir))
+            {
+                AssetDatabase.CreateFolder("Assets/Sand Block Puzzle/ScriptableObjects", "Levels");
+            }
+
+            // Find next available level number
+            int index = 1;
+            string path;
+            do
+            {
+                path = $"{dir}/Level_{index:D2}.asset";
+                index++;
+            } while (AssetDatabase.LoadAssetAtPath<LevelData>(path) != null);
+
+            var newLevel = CreateInstance<LevelData>();
+            newLevel.levelName = $"Level {index - 1}";
+            newLevel.patternType = LevelPatternType.CustomGrid;
+            newLevel.EnsureCustomGridInitialized();
+            newLevel.BakeLipsShape();
+
+            AssetDatabase.CreateAsset(newLevel, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            selectedLevel = newLevel;
+            Selection.activeObject = newLevel;
+            Debug.Log($"<color=green>[SandBlocks]</color> Created new level at: {path}");
+        }
+
+        private void SaveCurrentLevel()
+        {
+            if (selectedLevel != null)
+            {
+                EditorUtility.SetDirty(selectedLevel);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+                Debug.Log($"<color=green>[SandBlocks]</color> Saved level '{selectedLevel.name}' successfully!");
+            }
+        }
+
+        private void ApplyLevelToScene()
+        {
+            if (selectedLevel == null) return;
+
+            SaveCurrentLevel();
+
+            // 1. Assign to GameManager
+            var gm = FindAnyObjectByType<GameManager>();
+            if (gm != null)
+            {
+                var soGM = new SerializedObject(gm);
+                soGM.FindProperty("currentLevel").objectReferenceValue = selectedLevel;
+                soGM.ApplyModifiedProperties();
+                Debug.Log($"<color=green>[SandBlocks]</color> Assigned '{selectedLevel.name}' to GameManager in active scene.");
+            }
+
+            // 2. Update visual boundary in scene
+            var cb = FindAnyObjectByType<ContainerBoundary>();
+            if (cb != null)
+            {
+                cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                    selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                cb.BuildVisualContainer();
+                EditorUtility.SetDirty(cb);
+                Debug.Log($"<color=green>[SandBlocks]</color> Updated scene ContainerBoundary to {selectedLevel.containerShape} ({selectedLevel.containerWidth}x{selectedLevel.containerHeight}).");
+            }
+
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        }
+
+        // =========================================================================
+        // TAB 1: CONTAINER & CROWD CANVAS
+        // =========================================================================
+
+        private void DrawContainerAndCrowdTab()
+        {
+            // Container Shape & Dimensions Section
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("1. Container Geometry & Crowd Capacity", EditorStyles.boldLabel);
+
+            EditorGUI.BeginChangeCheck();
+
+            selectedLevel.containerShape = (ContainerShapeType)EditorGUILayout.EnumPopup("Shape Type:", selectedLevel.containerShape);
+            selectedLevel.containerWidth = EditorGUILayout.Slider("Width:", selectedLevel.containerWidth, 2.5f, 10f);
+            selectedLevel.containerHeight = EditorGUILayout.Slider("Height:", selectedLevel.containerHeight, 2.5f, 12f);
+            selectedLevel.containerCenter = EditorGUILayout.Vector2Field("Center Offset:", selectedLevel.containerCenter);
+            selectedLevel.particleRadius = EditorGUILayout.Slider("Particle Radius:", selectedLevel.particleRadius, 0.15f, 0.45f);
+
+            int calculatedCap = selectedLevel.CalculateFixedCrowdCapacity();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.HelpBox($"Container size ({selectedLevel.containerWidth:F1} x {selectedLevel.containerHeight:F1}) has fixed capacity of ~{calculatedCap} people.", MessageType.Info);
+            
+            EditorGUILayout.BeginVertical(GUILayout.Width(140));
+            autoSyncCapacity = EditorGUILayout.ToggleLeft("Auto-Sync Cap", autoSyncCapacity);
+            if (GUILayout.Button("Set Max Cap"))
+            {
+                selectedLevel.maxParticles = calculatedCap;
+            }
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndHorizontal();
+
+            if (autoSyncCapacity)
+            {
+                selectedLevel.maxParticles = calculatedCap;
+            }
+
+            selectedLevel.maxParticles = EditorGUILayout.IntField("Max Particles (Spawned):", selectedLevel.maxParticles);
+
+            EditorGUILayout.Space(2);
+            GUILayout.Label("Independent Border Offsets:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.BeginHorizontal();
+            selectedLevel.leftBorderOffset = EditorGUILayout.FloatField("Left Offset:", selectedLevel.leftBorderOffset);
+            selectedLevel.rightBorderOffset = EditorGUILayout.FloatField("Right Offset:", selectedLevel.rightBorderOffset);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            selectedLevel.topBorderOffset = EditorGUILayout.FloatField("Top Offset:", selectedLevel.topBorderOffset);
+            selectedLevel.bottomBorderOffset = EditorGUILayout.FloatField("Bottom Offset:", selectedLevel.bottomBorderOffset);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(2);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Pull Shape From Scene Container"))
+            {
+                var cb = FindAnyObjectByType<ContainerBoundary>();
+                if (cb != null)
+                {
+                    Undo.RecordObject(selectedLevel, "Pull Container From Scene");
+                    selectedLevel.containerShape = cb.ShapeType;
+                    selectedLevel.containerWidth = cb.Width;
+                    selectedLevel.containerHeight = cb.Height;
+                    selectedLevel.containerCenter = cb.ContainerCenter;
+                    selectedLevel.leftBorderOffset = cb.LeftBorderOffset;
+                    selectedLevel.rightBorderOffset = cb.RightBorderOffset;
+                    selectedLevel.topBorderOffset = cb.TopBorderOffset;
+                    selectedLevel.bottomBorderOffset = cb.BottomBorderOffset;
+                    EditorUtility.SetDirty(selectedLevel);
+                    Debug.Log($"<color=green>[SandBlocks]</color> Pulled shape from Scene: {cb.Width}x{cb.Height}, Center {cb.ContainerCenter}");
+                }
+            }
+            if (GUILayout.Button("Push Shape To Scene Container"))
+            {
+                var cb = FindAnyObjectByType<ContainerBoundary>();
+                if (cb != null)
+                {
+                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    cb.BuildVisualContainer();
+                    EditorUtility.SetDirty(cb);
+                    Debug.Log($"<color=green>[SandBlocks]</color> Pushed shape to Scene: {selectedLevel.containerWidth}x{selectedLevel.containerHeight}");
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorUtility.SetDirty(selectedLevel);
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+
+            // Crowd Painting Matrix Section
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("2. Visual Crowd Color Painting", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            selectedLevel.patternType = (LevelPatternType)EditorGUILayout.EnumPopup("Mode:", selectedLevel.patternType, GUILayout.Width(150));
+            EditorGUILayout.EndHorizontal();
+
+            if (selectedLevel.patternType != LevelPatternType.CustomGrid)
+            {
+                EditorGUILayout.HelpBox($"Currently using '{selectedLevel.patternType}' procedural generator. Switch to 'CustomGrid' mode to visually paint custom shapes or pixel art.", MessageType.Warning);
+                if (GUILayout.Button("Switch to CustomGrid (Visual Painting)"))
+                {
+                    selectedLevel.patternType = LevelPatternType.CustomGrid;
+                    selectedLevel.EnsureCustomGridInitialized();
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+            }
+
+            // Grid Resolution Controls
+            EditorGUILayout.BeginHorizontal();
+            int newCols = EditorGUILayout.IntSlider("Columns (Width):", selectedLevel.gridColumns, 8, 32);
+            int newRows = EditorGUILayout.IntSlider("Rows (Height):", selectedLevel.gridRows, 8, 32);
+            if (newCols != selectedLevel.gridColumns || newRows != selectedLevel.gridRows)
+            {
+                selectedLevel.ResizeGrid(newCols, newRows);
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            // Color Palette Brush Swatches
+            DrawPaletteBrushBar();
+
+            EditorGUILayout.Space(4);
+
+            // Quick Canvas Actions
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Fill Active Color"))
+            {
+                Undo.RecordObject(selectedLevel, "Fill Crowd Color");
+                selectedLevel.FillAll(activeBrushColor);
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            if (GUILayout.Button("Clear (White)"))
+            {
+                Undo.RecordObject(selectedLevel, "Clear Crowd");
+                selectedLevel.FillAll(5); // 5 = White
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            if (GUILayout.Button("Preset: Lips Shape"))
+            {
+                Undo.RecordObject(selectedLevel, "Bake Lips");
+                selectedLevel.BakeLipsShape();
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(6);
+
+            // Interactive Painting Canvas
+            DrawInteractiveCrowdCanvas();
+
+            EditorGUILayout.Space(4);
+
+            // Color Distribution Statistics
+            DrawColorDistributionStats();
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawPaletteBrushBar()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Header row: Label, Brush Size, New Color toggle, Edit Palette asset button
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Crowd Palette Brushes:", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+
+            // Brush Size
+            GUILayout.Label("Size:", GUILayout.Width(35));
+            if (GUILayout.Toggle(brushSize == 1, "1x1", EditorStyles.miniButtonLeft, GUILayout.Width(35))) brushSize = 1;
+            if (GUILayout.Toggle(brushSize == 2, "2x2", EditorStyles.miniButtonRight, GUILayout.Width(35))) brushSize = 2;
+
+            EditorGUILayout.Space(6);
+
+            if (GUILayout.Button(showAddColorSection ? "▲ Close" : "+ New Color", EditorStyles.miniButton, GUILayout.Width(82)))
+            {
+                showAddColorSection = !showAddColorSection;
+            }
+
+            if (GUILayout.Button("Edit Palette ↗", EditorStyles.miniButton, GUILayout.Width(92)))
+            {
+                if (palette == null) LoadPalette();
+                if (palette != null)
+                {
+                    Selection.activeObject = palette;
+                    EditorGUIUtility.PingObject(palette);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Inline Add Color Drawer
+            if (showAddColorSection)
+            {
+                EditorGUILayout.Space(4);
+                EditorGUILayout.BeginVertical("box");
+                GUILayout.Label("Add New Color to Crowd Palette", EditorStyles.miniBoldLabel);
+                EditorGUILayout.BeginHorizontal();
+                newColorName = EditorGUILayout.TextField("Name:", newColorName, GUILayout.Width(180));
+                newColorValue = EditorGUILayout.ColorField(GUIContent.none, newColorValue, true, false, false, GUILayout.Width(50));
+                if (GUILayout.Button("Add to Palette", GUILayout.Width(110)))
+                {
+                    if (palette == null) LoadPalette();
+                    if (palette != null && !string.IsNullOrWhiteSpace(newColorName))
+                    {
+                        Undo.RecordObject(palette, "Add Color to Palette");
+                        palette.AddColor(newColorName.Trim(), newColorValue);
+                        EditorUtility.SetDirty(palette);
+                        AssetDatabase.SaveAssets();
+                        if (palette.Entries != null && palette.Entries.Length > 0)
+                        {
+                            activeBrushColor = palette.Entries[palette.Entries.Length - 1].id;
+                        }
+                        showAddColorSection = false;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.Space(4);
+
+            // Swatches
+            int totalEntries = (palette != null && palette.Entries != null) ? palette.Entries.Length : fallbackColors.Length;
+            int buttonsPerRow = 6;
+
+            for (int i = 0; i < totalEntries; i++)
+            {
+                if (i % buttonsPerRow == 0)
+                {
+                    if (i > 0) EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.BeginHorizontal();
+                }
+
+                int cId = (palette != null && palette.Entries != null) ? palette.Entries[i].id : i;
+                string cName = (palette != null && palette.Entries != null) ? palette.Entries[i].name : GetColorName(i);
+                Color col = (palette != null && palette.Entries != null) ? palette.Entries[i].color : GetColor(i);
+
+                bool isActive = (activeBrushColor == cId);
+
+                Color prevColor = GUI.backgroundColor;
+                GUI.backgroundColor = col;
+
+                string label = isActive ? $"✓ {cName}" : cName;
+                if (GUILayout.Button(label, GUILayout.Height(26), GUILayout.MinWidth(60)))
+                {
+                    activeBrushColor = cId;
+                }
+
+                GUI.backgroundColor = prevColor;
+            }
+
+            if (totalEntries > 0)
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawInteractiveCrowdCanvas()
+        {
+            int cols = selectedLevel.gridColumns;
+            int rows = selectedLevel.gridRows;
+
+            // Calculate canvas aspect ratio matching container
+            float aspect = selectedLevel.containerWidth / Mathf.Max(1f, selectedLevel.containerHeight);
+            float canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 60f, 240f, 440f);
+            float canvasHeight = canvasWidth / aspect;
+            canvasHeight = Mathf.Clamp(canvasHeight, 220f, 460f);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            Rect canvasRect = GUILayoutUtility.GetRect(canvasWidth, canvasHeight);
+            // Dark background for canvas
+            EditorGUI.DrawRect(canvasRect, new Color(0.12f, 0.13f, 0.16f, 1f));
+
+            float cellW = canvasRect.width / cols;
+            float cellH = canvasRect.height / rows;
+
+            // Draw cells (Inverted Y: row 0 is at bottom, row rows-1 is at top)
+            for (int r = 0; r < rows; r++)
+            {
+                // Visual row (0 at top, rows - 1 at bottom)
+                int visualRow = (rows - 1) - r;
+                float cellY = canvasRect.y + visualRow * cellH;
+
+                for (int c = 0; c < cols; c++)
+                {
+                    float cellX = canvasRect.x + c * cellW;
+                    Rect cellRect = new Rect(cellX + 1f, cellY + 1f, cellW - 2f, cellH - 2f);
+
+                    int colorId = selectedLevel.GetPixel(c, r);
+                    Color cellColor = GetColor(colorId);
+
+                    // If Funnel shape, dim cells outside funnel walls
+                    if (selectedLevel.containerShape == ContainerShapeType.Funnel)
+                    {
+                        float v = (r + 0.5f) / rows;
+                        float u = (c + 0.5f) / cols;
+                        float uDist = Mathf.Abs(u - 0.5f);
+                        float allowedU = Mathf.Lerp(0.18f, 0.5f, v);
+                        if (uDist > allowedU)
+                        {
+                            cellColor = Color.Lerp(cellColor, new Color(0.1f, 0.1f, 0.1f, 1f), 0.75f);
+                        }
+                    }
+
+                    EditorGUI.DrawRect(cellRect, cellColor);
+                }
+            }
+
+            // Outline around the container
+            Handles.color = new Color(0.96f, 0.25f, 0.55f, 0.9f);
+            Handles.DrawPolyLine(
+                new Vector3(canvasRect.xMin, canvasRect.yMin),
+                new Vector3(canvasRect.xMax, canvasRect.yMin),
+                new Vector3(canvasRect.xMax, canvasRect.yMax),
+                new Vector3(canvasRect.xMin, canvasRect.yMax),
+                new Vector3(canvasRect.xMin, canvasRect.yMin)
+            );
+
+            // Container Exit indicator at bottom
+            float exitW = canvasRect.width * 0.3f;
+            float exitX = canvasRect.x + (canvasRect.width - exitW) * 0.5f;
+            Handles.color = Color.yellow;
+            Handles.DrawLine(new Vector3(exitX, canvasRect.yMax, 0), new Vector3(exitX + exitW, canvasRect.yMax, 0));
+
+            // Handle Mouse Painting
+            Event evt = Event.current;
+            if ((evt.type == EventType.MouseDown || evt.type == EventType.MouseDrag) && canvasRect.Contains(evt.mousePosition))
+            {
+                int paintCol = Mathf.FloorToInt((evt.mousePosition.x - canvasRect.x) / cellW);
+                int visualR = Mathf.FloorToInt((evt.mousePosition.y - canvasRect.y) / cellH);
+                int paintRow = (rows - 1) - visualR;
+
+                int colorToApply = (evt.button == 1) ? 5 : activeBrushColor; // Right click erases to white
+
+                Undo.RecordObject(selectedLevel, "Paint Pixel");
+                PaintBrushAt(paintCol, paintRow, colorToApply);
+                EditorUtility.SetDirty(selectedLevel);
+                evt.Use();
+                Repaint();
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField("Exit (Top of Puzzle Grid) ↓", EditorStyles.centeredGreyMiniLabel);
+        }
+
+        private void PaintBrushAt(int centerCol, int centerRow, int colorId)
+        {
+            int cols = selectedLevel.gridColumns;
+            int rows = selectedLevel.gridRows;
+
+            for (int dy = 0; dy < brushSize; dy++)
+            {
+                for (int dx = 0; dx < brushSize; dx++)
+                {
+                    int c = centerCol + dx;
+                    int r = centerRow + dy;
+                    if (c >= 0 && c < cols && r >= 0 && r < rows)
+                    {
+                        selectedLevel.SetPixel(c, r, colorId);
+                    }
+                }
+            }
+        }
+
+        private void DrawColorDistributionStats()
+        {
+            if (selectedLevel.customCrowdColors == null || selectedLevel.customCrowdColors.Length == 0) return;
+
+            int total = selectedLevel.customCrowdColors.Length;
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Painted Crowd Distribution:", EditorStyles.miniBoldLabel, GUILayout.Width(160));
+
+            int totalColors = (palette != null && palette.Entries != null) ? palette.Entries.Length : fallbackColors.Length;
+            int countDisplayed = 0;
+            for (int i = 0; i < totalColors; i++)
+            {
+                int cId = (palette != null && palette.Entries != null) ? palette.Entries[i].id : i;
+                int count = selectedLevel.CountColorPixels(cId);
+                if (count == 0) continue;
+
+                float pct = (float)count / total * 100f;
+                Color col = GetColor(cId);
+                string cName = GetColorName(cId);
+
+                Color prevCol = GUI.backgroundColor;
+                GUI.backgroundColor = Color.Lerp(col, Color.white, 0.4f);
+                GUILayout.Label($"{cName}: {count} ({pct:F0}%)", EditorStyles.helpBox, GUILayout.Height(18));
+                GUI.backgroundColor = prevCol;
+
+                countDisplayed++;
+                if (countDisplayed % 5 == 0)
+                {
+                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Space(165);
+                }
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+        }
+
+        // =========================================================================
+        // TAB 2: BUSES & PARKING GRID
+        // =========================================================================
+
+        private void DrawBusesAndParkingTab()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("1. Puzzle Grid Visualization (6 Columns x 5 Rows)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Click any bus in the grid or list below to edit its properties, rotation, length, or capacity. Overlaps are highlighted in red.", MessageType.None);
+
+            DrawVisualPuzzleBoard();
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+
+            // Bus Inspector & Modification Panel
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("2. Bus Inspector & Placement", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("+ Add New Bus", GUILayout.Width(110)))
+            {
+                AddNewBus();
+            }
+            if (GUILayout.Button("Duplicate", GUILayout.Width(80)) && selectedBusIndex >= 0 && selectedBusIndex < selectedLevel.buses.Count)
+            {
+                DuplicateBus(selectedBusIndex);
+            }
+            if (GUILayout.Button("- Delete Bus", GUILayout.Width(90)) && selectedBusIndex >= 0 && selectedBusIndex < selectedLevel.buses.Count)
+            {
+                DeleteBus(selectedBusIndex);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            if (selectedLevel.buses == null || selectedLevel.buses.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No buses defined. Click '+ Add New Bus' to place a bus on the puzzle board.", MessageType.Info);
+            }
+            else
+            {
+                DrawBusPropertiesEditor();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawVisualPuzzleBoard()
+        {
+            const int gridCols = 6;
+            const int gridRows = 5;
+
+            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 300f, 450f);
+            float boardHeight = boardWidth * (5f / 6f);
+            float cellW = boardWidth / gridCols;
+            float cellH = boardHeight / gridRows;
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            Rect boardRect = GUILayoutUtility.GetRect(boardWidth, boardHeight);
+            EditorGUI.DrawRect(boardRect, new Color(0.96f, 0.58f, 0.72f, 0.35f)); // Tray background
+
+            // Map occupied cells to detect overlaps
+            var occupancy = new Dictionary<Vector2Int, List<int>>();
+            if (selectedLevel.buses != null)
+            {
+                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                {
+                    var bus = selectedLevel.buses[i];
+                    var cells = LevelData.GetOccupiedCells(bus);
+                    for (int c = 0; c < cells.Count; c++)
+                    {
+                        var cell = cells[c];
+                        if (!occupancy.ContainsKey(cell)) occupancy[cell] = new List<int>();
+                        occupancy[cell].Add(i);
+                    }
+                }
+            }
+
+            // Draw 6x5 grid tiles
+            for (int r = 0; r < gridRows; r++)
+            {
+                // Inverted Y: Row 4 is top line (near container nozzle), Row 0 is bottom line
+                int visualRow = (gridRows - 1) - r;
+                float y = boardRect.y + visualRow * cellH;
+
+                for (int c = 0; c < gridCols; c++)
+                {
+                    float x = boardRect.x + c * cellW;
+                    Rect tileRect = new Rect(x + 2f, y + 2f, cellW - 4f, cellH - 4f);
+
+                    Vector2Int pos = new Vector2Int(c, r);
+                    bool hasOverlap = occupancy.ContainsKey(pos) && occupancy[pos].Count > 1;
+
+                    Color tileColor = hasOverlap ? new Color(1f, 0.3f, 0.3f, 0.8f) : new Color(0.98f, 0.94f, 0.94f, 0.85f);
+                    EditorGUI.DrawRect(tileRect, tileColor);
+
+                    if (hasOverlap)
+                    {
+                        var style = new GUIStyle(EditorStyles.boldLabel) { fontSize = 9, normal = { textColor = Color.red } };
+                        GUI.Label(tileRect, "OVERLAP", style);
+                    }
+                }
+            }
+
+            // Top exit boundary indicator
+            Handles.color = new Color(0.2f, 0.8f, 0.2f, 0.8f);
+            Handles.DrawLine(new Vector3(boardRect.xMin, boardRect.yMin), new Vector3(boardRect.xMax, boardRect.yMin));
+
+            // Draw each bus on top
+            if (selectedLevel.buses != null)
+            {
+                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                {
+                    var bus = selectedLevel.buses[i];
+                    DrawBusOnGrid(i, bus, boardRect, cellW, cellH, gridRows);
+                }
+            }
+
+            // Handle Click Selection on Puzzle Grid
+            Event evt = Event.current;
+            if (evt.type == EventType.MouseDown && boardRect.Contains(evt.mousePosition) && evt.button == 0)
+            {
+                int clickCol = Mathf.FloorToInt((evt.mousePosition.x - boardRect.x) / cellW);
+                int visualR = Mathf.FloorToInt((evt.mousePosition.y - boardRect.y) / cellH);
+                int clickRow = (gridRows - 1) - visualR;
+                Vector2Int clickPos = new Vector2Int(clickCol, clickRow);
+
+                if (occupancy.ContainsKey(clickPos) && occupancy[clickPos].Count > 0)
+                {
+                    selectedBusIndex = occupancy[clickPos][0];
+                }
+                else
+                {
+                    // Clicked empty cell: move selected bus root there if valid
+                    if (selectedBusIndex >= 0 && selectedBusIndex < selectedLevel.buses.Count)
+                    {
+                        var b = selectedLevel.buses[selectedBusIndex];
+                        b.gridPosition = clickPos;
+                        selectedLevel.buses[selectedBusIndex] = b;
+                        EditorUtility.SetDirty(selectedLevel);
+                    }
+                }
+                evt.Use();
+                Repaint();
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField("↑ Row 4 (Container Exit / Top Line) | Row 0 (Back of Puzzle) ↓", EditorStyles.centeredGreyMiniLabel);
+        }
+
+        private void DrawBusOnGrid(int index, BusSpawnData bus, Rect boardRect, float cellW, float cellH, int gridRows)
+        {
+            var cells = LevelData.GetOccupiedCells(bus);
+            if (cells.Count == 0) return;
+
+            int minX = int.MaxValue, maxX = int.MinValue;
+            int minY = int.MaxValue, maxY = int.MinValue;
+
+            for (int i = 0; i < cells.Count; i++)
+            {
+                if (cells[i].x < minX) minX = cells[i].x;
+                if (cells[i].x > maxX) maxX = cells[i].x;
+                if (cells[i].y < minY) minY = cells[i].y;
+                if (cells[i].y > maxY) maxY = cells[i].y;
+            }
+
+            // Invert Y for visual rendering
+            int visualTopRow = (gridRows - 1) - maxY;
+            int rowSpan = (maxY - minY) + 1;
+            int colSpan = (maxX - minX) + 1;
+
+            float busX = boardRect.x + minX * cellW + 3f;
+            float busY = boardRect.y + visualTopRow * cellH + 3f;
+            float busW = colSpan * cellW - 6f;
+            float busH = rowSpan * cellH - 6f;
+
+            Rect busRect = new Rect(busX, busY, busW, busH);
+
+            Color busColor = GetColor(bus.colorId);
+            bool isSelected = (selectedBusIndex == index);
+
+            // Draw bus body
+            EditorGUI.DrawRect(busRect, busColor);
+
+            // Draw border (Gold if selected, Dark Gray otherwise)
+            Color borderColor = isSelected ? new Color(1f, 0.85f, 0.1f, 1f) : new Color(0.15f, 0.15f, 0.15f, 0.7f);
+            float borderThick = isSelected ? 2.5f : 1.2f;
+
+            Handles.color = borderColor;
+            Handles.DrawPolyLine(
+                new Vector3(busRect.xMin, busRect.yMin),
+                new Vector3(busRect.xMax, busRect.yMin),
+                new Vector3(busRect.xMax, busRect.yMax),
+                new Vector3(busRect.xMin, busRect.yMax),
+                new Vector3(busRect.xMin, busRect.yMin)
+            );
+
+            // Direction arrow text
+            string dirSymbol = GetRotationArrow(bus.rotationDegrees);
+            string busLabel = $"{dirSymbol} Cap:{bus.capacity}";
+
+            var labelStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 10,
+                normal = { textColor = (bus.colorId == 4 || bus.colorId == 0) ? Color.white : Color.black }
+            };
+
+            GUI.Label(busRect, busLabel, labelStyle);
+        }
+
+        private string GetRotationArrow(int rot)
+        {
+            switch (rot)
+            {
+                case 0: return "→";
+                case 90: return "↑";
+                case 180: return "←";
+                case 270: return "↓";
+                default: return "→";
+            }
+        }
+
+        private void DrawBusPropertiesEditor()
+        {
+            if (selectedBusIndex < 0 || selectedBusIndex >= selectedLevel.buses.Count)
+            {
+                selectedBusIndex = 0;
+            }
+
+            // Dropdown to pick bus
+            string[] busLabels = new string[selectedLevel.buses.Count];
+            for (int i = 0; i < selectedLevel.buses.Count; i++)
+            {
+                var b = selectedLevel.buses[i];
+                string cName = GetColorName(b.colorId);
+                busLabels[i] = $"{i + 1}: {b.name} [{cName}] (Cap: {b.capacity}, Len: {b.length})";
+            }
+
+            selectedBusIndex = EditorGUILayout.Popup("Selected Bus:", selectedBusIndex, busLabels);
+
+            var bus = selectedLevel.buses[selectedBusIndex];
+
+            EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.BeginHorizontal();
+            bus.name = EditorGUILayout.TextField("Bus Name:", bus.name);
+            EditorGUILayout.EndHorizontal();
+
+            // Color Selection
+            EditorGUILayout.BeginVertical();
+            EditorGUILayout.LabelField("Bus Color (Matches Crowd):");
+            int busTotalEntries = (palette != null && palette.Entries != null) ? palette.Entries.Length : fallbackColors.Length;
+            int busPerRow = 6;
+            for (int i = 0; i < busTotalEntries; i++)
+            {
+                if (i % busPerRow == 0)
+                {
+                    if (i > 0) EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.BeginHorizontal();
+                }
+
+                int cId = (palette != null && palette.Entries != null) ? palette.Entries[i].id : i;
+                string cName = (palette != null && palette.Entries != null) ? palette.Entries[i].name : GetColorName(i);
+                Color c = (palette != null && palette.Entries != null) ? palette.Entries[i].color : GetColor(i);
+
+                Color prevC = GUI.backgroundColor;
+                GUI.backgroundColor = c;
+                bool isBusColor = (bus.colorId == cId);
+                if (GUILayout.Button(isBusColor ? $"✓ {cName}" : cName, GUILayout.Height(22), GUILayout.MinWidth(55)))
+                {
+                    bus.colorId = cId;
+                }
+                GUI.backgroundColor = prevC;
+            }
+            if (busTotalEntries > 0)
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndVertical();
+
+            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 20);
+            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, 6);
+
+            // Rotation Buttons
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("Rotation Direction:");
+            if (GUILayout.Toggle(bus.rotationDegrees == 0, "Right (0° →)", EditorStyles.miniButtonLeft)) bus.rotationDegrees = 0;
+            if (GUILayout.Toggle(bus.rotationDegrees == 90, "Up (90° ↑)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 90;
+            if (GUILayout.Toggle(bus.rotationDegrees == 180, "Left (180° ←)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 180;
+            if (GUILayout.Toggle(bus.rotationDegrees == 270, "Down (270° ↓)", EditorStyles.miniButtonRight)) bus.rotationDegrees = 270;
+            EditorGUILayout.EndHorizontal();
+
+            // Grid Coordinates & Quick Nudge
+            EditorGUILayout.BeginHorizontal();
+            bus.gridPosition.x = EditorGUILayout.IntSlider("Grid X (0..5):", bus.gridPosition.x, 0, 5);
+            bus.gridPosition.y = EditorGUILayout.IntSlider("Grid Y (0..4):", bus.gridPosition.y, 0, 4);
+            EditorGUILayout.EndHorizontal();
+
+            // Nudge D-Pad
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("Nudge Bus Position:", EditorStyles.miniLabel);
+            if (GUILayout.Button("◄", GUILayout.Width(28)) && bus.gridPosition.x > 0) bus.gridPosition.x--;
+            if (GUILayout.Button("►", GUILayout.Width(28)) && bus.gridPosition.x < 5) bus.gridPosition.x++;
+            if (GUILayout.Button("▲", GUILayout.Width(28)) && bus.gridPosition.y < 4) bus.gridPosition.y++;
+            if (GUILayout.Button("▼", GUILayout.Width(28)) && bus.gridPosition.y > 0) bus.gridPosition.y--;
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(selectedLevel, "Edit Bus");
+                selectedLevel.buses[selectedBusIndex] = bus;
+                EditorUtility.SetDirty(selectedLevel);
+            }
+        }
+
+        private void AddNewBus()
+        {
+            Undo.RecordObject(selectedLevel, "Add Bus");
+            if (selectedLevel.buses == null) selectedLevel.buses = new List<BusSpawnData>();
+
+            var newBus = new BusSpawnData
+            {
+                name = $"Bus {selectedLevel.buses.Count + 1}",
+                colorId = activeBrushColor,
+                capacity = 4,
+                length = 2,
+                rotationDegrees = 0,
+                gridPosition = new Vector2Int(0, 0)
+            };
+
+            selectedLevel.buses.Add(newBus);
+            selectedBusIndex = selectedLevel.buses.Count - 1;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        private void DuplicateBus(int index)
+        {
+            Undo.RecordObject(selectedLevel, "Duplicate Bus");
+            var src = selectedLevel.buses[index];
+            var clone = src;
+            clone.name = $"{src.name} (Copy)";
+            selectedLevel.buses.Add(clone);
+            selectedBusIndex = selectedLevel.buses.Count - 1;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        private void DeleteBus(int index)
+        {
+            Undo.RecordObject(selectedLevel, "Delete Bus");
+            selectedLevel.buses.RemoveAt(index);
+            if (selectedBusIndex >= selectedLevel.buses.Count)
+            {
+                selectedBusIndex = selectedLevel.buses.Count - 1;
+            }
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        // =========================================================================
+        // TAB 3: BALANCE & SCENE PREVIEW
+        // =========================================================================
+
+        private void DrawBalanceAndSceneTab()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("1. Level Balance Analysis (Crowd vs Bus Seats)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Verify that bus capacities match the painted crowd colors so all passengers can be collected.", MessageType.None);
+
+            DrawBalanceTable();
+
+            EditorGUILayout.Space(6);
+
+            if (GUILayout.Button("Auto-Balance Bus Capacities (Match Crowd)"))
+            {
+                AutoBalanceBusCapacities();
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+
+            // Scene Quick Controls
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("2. Scene Synchronization & Playtest", EditorStyles.boldLabel);
+
+            if (GUILayout.Button("Apply Active Level to Scene GameManager", GUILayout.Height(30)))
+            {
+                ApplyLevelToScene();
+            }
+
+            if (GUILayout.Button("Update Scene Container Visuals Live", GUILayout.Height(26)))
+            {
+                var cb = FindAnyObjectByType<ContainerBoundary>();
+                if (cb != null)
+                {
+                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    cb.BuildVisualContainer();
+                    EditorUtility.SetDirty(cb);
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawBalanceTable()
+        {
+            List<int> colorIds = new List<int>();
+            if (palette != null && palette.Entries != null)
+            {
+                for (int i = 0; i < palette.Entries.Length; i++)
+                {
+                    colorIds.Add(palette.Entries[i].id);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < fallbackColors.Length; i++)
+                {
+                    colorIds.Add(i);
+                }
+            }
+
+            // Also check any extra colorId in buses
+            if (selectedLevel.buses != null)
+            {
+                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                {
+                    int cid = selectedLevel.buses[i].colorId;
+                    if (!colorIds.Contains(cid)) colorIds.Add(cid);
+                }
+            }
+
+            // Tally bus seats per color
+            Dictionary<int, int> busSeats = new Dictionary<int, int>();
+            for (int i = 0; i < colorIds.Count; i++) busSeats[colorIds[i]] = 0;
+
+            if (selectedLevel.buses != null)
+            {
+                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                {
+                    int cId = selectedLevel.buses[i].colorId;
+                    if (!busSeats.ContainsKey(cId)) busSeats[cId] = 0;
+                    busSeats[cId] += selectedLevel.buses[i].capacity;
+                }
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Color", EditorStyles.boldLabel, GUILayout.Width(70));
+            GUILayout.Label("Crowd Count", EditorStyles.boldLabel, GUILayout.Width(100));
+            GUILayout.Label("Bus Seats", EditorStyles.boldLabel, GUILayout.Width(80));
+            GUILayout.Label("Status", EditorStyles.boldLabel, GUILayout.Width(100));
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = 0; i < colorIds.Count; i++)
+            {
+                int cId = colorIds[i];
+                int crowdCount = selectedLevel.CountColorPixels(cId);
+                int seats = busSeats.ContainsKey(cId) ? busSeats[cId] : 0;
+
+                if (crowdCount == 0 && seats == 0) continue;
+
+                EditorGUILayout.BeginHorizontal();
+                Color c = GetColor(cId);
+                Color prevC = GUI.backgroundColor;
+                GUI.backgroundColor = Color.Lerp(c, Color.white, 0.3f);
+                GUILayout.Label(GetColorName(cId), EditorStyles.helpBox, GUILayout.Width(70));
+                GUI.backgroundColor = prevC;
+
+                GUILayout.Label($"{crowdCount} pixels", GUILayout.Width(100));
+                GUILayout.Label($"{seats} seats", GUILayout.Width(80));
+
+                if (seats == crowdCount)
+                {
+                    GUILayout.Label("✓ Balanced", EditorStyles.boldLabel, GUILayout.Width(100));
+                }
+                else if (seats < crowdCount)
+                {
+                    GUILayout.Label($"⚠ Need +{crowdCount - seats}", EditorStyles.boldLabel, GUILayout.Width(100));
+                }
+                else
+                {
+                    GUILayout.Label($"+{seats - crowdCount} Extra", EditorStyles.miniLabel, GUILayout.Width(100));
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private void AutoBalanceBusCapacities()
+        {
+            if (selectedLevel.buses == null || selectedLevel.buses.Count == 0) return;
+
+            Undo.RecordObject(selectedLevel, "Auto-Balance Bus Seats");
+
+            List<int> colorIds = new List<int>();
+            if (palette != null && palette.Entries != null)
+            {
+                for (int i = 0; i < palette.Entries.Length; i++) colorIds.Add(palette.Entries[i].id);
+            }
+            else
+            {
+                for (int i = 0; i < fallbackColors.Length; i++) colorIds.Add(i);
+            }
+
+            for (int i = 0; i < colorIds.Count; i++)
+            {
+                int cId = colorIds[i];
+                int crowdCount = selectedLevel.CountColorPixels(cId);
+                if (crowdCount == 0) continue;
+
+                // Find all buses of this color
+                var matchingBuses = new List<int>();
+                for (int b = 0; b < selectedLevel.buses.Count; b++)
+                {
+                    if (selectedLevel.buses[b].colorId == cId)
+                    {
+                        matchingBuses.Add(b);
+                    }
+                }
+
+                if (matchingBuses.Count > 0)
+                {
+                    int capPerBus = Mathf.Max(1, crowdCount / matchingBuses.Count);
+                    int remainder = crowdCount % matchingBuses.Count;
+
+                    for (int m = 0; m < matchingBuses.Count; m++)
+                    {
+                        var bus = selectedLevel.buses[matchingBuses[m]];
+                        bus.capacity = capPerBus + (m == 0 ? remainder : 0);
+                        selectedLevel.buses[matchingBuses[m]] = bus;
+                    }
+                }
+            }
+
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced bus capacities to match crowd counts!");
+        }
+    }
+}
