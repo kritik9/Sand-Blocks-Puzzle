@@ -18,7 +18,7 @@ MonoBehaviour:
   containerShape: 0
   containerWidth: 8.58
   containerHeight: 7.13
-  containerCenter: {x: 0, y: 0.63}
+  containerCenter: {x: 0, y: 0.75}
   leftBorderOffset: 0
   rightBorderOffset: 0
   topBorderOffset: 0
@@ -33,26 +33,26 @@ MonoBehaviour:
   puzzleRows: 5
   buses:
   - name: Yellow Bus
-    colorId: 2
-    capacity: 30
+    colorId: 0
+    capacity: 28
     length: 3
     rotationDegrees: 180
     gridPosition: {x: 1, y: 3}
   - name: Blue Bus Mid
-    colorId: 0
-    capacity: 28
+    colorId: 2
+    capacity: 30
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 2, y: 2}
   - name: Black Bus R
-    colorId: 4
-    capacity: 24
+    colorId: 5
+    capacity: 92
     length: 3
     rotationDegrees: 270
     gridPosition: {x: 5, y: 1}
   - name: Orange Bus
-    colorId: 5
-    capacity: 92
+    colorId: 4
+    capacity: 24
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 1, y: 1}

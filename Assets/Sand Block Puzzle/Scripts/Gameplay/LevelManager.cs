@@ -87,7 +87,17 @@ namespace SandBlocks.Gameplay
             if (levels.Count > 0)
             {
                 currentLevelIndex = Mathf.Clamp(currentLevelIndex, 0, levels.Count - 1);
-                SetupScreenForLevel(levels[currentLevelIndex]);
+
+                // If waiting on Home Screen, prepare geometry and hide HUD until Play is clicked
+                if (gameManager != null && !gameManager.IsGameStarted)
+                {
+                    SetNavigationUIActive(false);
+                    PrepareScreenGeometry(levels[currentLevelIndex]);
+                }
+                else
+                {
+                    SetupScreenForLevel(levels[currentLevelIndex]);
+                }
             }
 
             UpdateUI();
@@ -332,6 +342,53 @@ namespace SandBlocks.Gameplay
         /// <summary>
         /// Refreshes UI button interactable states and level label text.
         /// </summary>
+        /// <summary>
+        /// Prepares container boundary, puzzle grid dimensions, and camera framing without spawning vehicles or crowd particles.
+        /// Useful when the Home Screen is active so the 3D scene geometry is ready behind the UI.
+        /// </summary>
+        public void PrepareScreenGeometry(LevelData level)
+        {
+            if (level == null) return;
+            FindDependencies();
+
+            if (updateBoundaryOnLevelLoad && boundary != null)
+            {
+                if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                {
+                    boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                }
+                else
+                {
+                    boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
+                        level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                }
+                boundary.BuildVisualContainer();
+            }
+
+            if (puzzleGrid != null)
+            {
+                int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
+                int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
+                puzzleGrid.SetGridDimensions(cols, rows);
+            }
+
+            if (cameraFramer != null)
+            {
+                cameraFramer.FrameView();
+            }
+        }
+
+        /// <summary>
+        /// Shows or hides the in-game navigation controls (Next, Previous, Restart, Level title).
+        /// </summary>
+        public void SetNavigationUIActive(bool active)
+        {
+            if (nextLevelButton != null) nextLevelButton.gameObject.SetActive(active);
+            if (previousLevelButton != null) previousLevelButton.gameObject.SetActive(active);
+            if (restartLevelButton != null) restartLevelButton.gameObject.SetActive(active);
+            if (levelTitleText != null) levelTitleText.gameObject.SetActive(active);
+        }
+
         public void UpdateUI()
         {
             if (previousLevelButton != null)

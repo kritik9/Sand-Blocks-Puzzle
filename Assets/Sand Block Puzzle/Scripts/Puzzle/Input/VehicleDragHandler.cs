@@ -45,7 +45,7 @@ namespace SandBlocks.Puzzle.Input
         private void Update()
         {
             if (gameManager == null) gameManager = FindAnyObjectByType<SandBlocks.Gameplay.GameManager>();
-            if (gameManager != null && gameManager.IsLevelStartAnimating)
+            if (gameManager != null && (!gameManager.IsGameStarted || gameManager.IsLevelStartAnimating))
             {
                 return;
             }

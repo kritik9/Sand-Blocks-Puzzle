@@ -63,6 +63,22 @@ namespace SandBlocks.Gameplay
         [Tooltip("If false, preserves whatever camera position and rotation you set in the scene")]
         [SerializeField] private bool autoPositionCamera = false;
 
+        [Header("Home Screen UI")]
+        [Tooltip("The Home Screen canvas panel/root object")]
+        [SerializeField] private GameObject homeScreen;
+
+        [Tooltip("The Play/Start button on the Home Screen")]
+        [SerializeField] private Button playButton;
+
+        [Tooltip("Optional in-game HUD root GameObject to toggle")]
+        [SerializeField] private GameObject inGameUI;
+
+        private bool isGameStarted = true;
+
+        public bool IsGameStarted => isGameStarted;
+        public GameObject HomeScreen => homeScreen;
+        public Button PlayButton => playButton;
+
         [Header("Hierarchy Containers")]
         [Tooltip("Parent transform for all spawned buses to maintain hierarchy in scene")]
         [SerializeField] private Transform busContainer;
@@ -145,6 +161,43 @@ namespace SandBlocks.Gameplay
             {
                 SetupCamera();
             }
+
+            // Auto-detect Home Screen UI if not assigned
+            if (homeScreen == null)
+            {
+                var foundHome = GameObject.Find("HomeScreen");
+                if (foundHome != null) homeScreen = foundHome;
+            }
+
+            if (playButton == null)
+            {
+                if (homeScreen != null)
+                {
+                    playButton = homeScreen.GetComponentInChildren<Button>(true);
+                }
+                if (playButton == null)
+                {
+                    var foundBtn = GameObject.Find("PlayButton");
+                    if (foundBtn != null) playButton = foundBtn.GetComponent<Button>();
+                }
+            }
+
+            if (playButton != null)
+            {
+                playButton.onClick.RemoveListener(StartGame);
+                playButton.onClick.AddListener(StartGame);
+            }
+
+            if (homeScreen != null)
+            {
+                isGameStarted = false;
+                homeScreen.SetActive(true);
+                SetInGameHUDActive(false);
+            }
+            else
+            {
+                isGameStarted = true;
+            }
         }
 
         private void SetupCamera()
@@ -170,7 +223,10 @@ namespace SandBlocks.Gameplay
             }
 
             // Standalone fallback (if LevelManager is not in the scene)
-            RestartLevelInPlace();
+            if (isGameStarted)
+            {
+                RestartLevelInPlace();
+            }
 
             if (restartButton != null)
             {
@@ -517,8 +573,8 @@ namespace SandBlocks.Gameplay
         {
             if (simulation != null && simulation.IsInitialized)
             {
-                // Freeze physics simulation while level intro animation is playing so particles stay 100% stable
-                if (!isLevelStartAnimating)
+                // Freeze physics simulation while waiting on HomeScreen or level intro animation
+                if (isGameStarted && !isLevelStartAnimating)
                 {
                     simulation.StepSimulation(Time.deltaTime);
                 }
@@ -534,6 +590,56 @@ namespace SandBlocks.Gameplay
             {
                 busPrefab.SetPassengerScale(crowdRenderer.CharacterScale);
             }
+        }
+
+        /// <summary>
+        /// Starts the game when PlayButton on HomeScreen is clicked.
+        /// Hides HomeScreen, reveals in-game HUD, and launches the active level.
+        /// </summary>
+        public void StartGame()
+        {
+            if (homeScreen != null)
+            {
+                homeScreen.SetActive(false);
+            }
+
+            isGameStarted = true;
+            SetInGameHUDActive(true);
+
+            if (levelManager != null)
+            {
+                levelManager.SetupScreenForLevel(levelManager.CurrentLevel);
+            }
+            else
+            {
+                RestartLevelInPlace();
+            }
+        }
+
+        public void SetInGameHUDActive(bool active)
+        {
+            if (inGameUI != null)
+            {
+                inGameUI.SetActive(active);
+            }
+            if (levelManager != null)
+            {
+                levelManager.SetNavigationUIActive(active);
+            }
+        }
+
+        public void ShowHomeScreen()
+        {
+            isGameStarted = false;
+            StopAllCoroutines();
+            isLevelStartAnimating = false;
+
+            if (homeScreen != null)
+            {
+                homeScreen.SetActive(true);
+            }
+
+            SetInGameHUDActive(false);
         }
 
         /// <summary>

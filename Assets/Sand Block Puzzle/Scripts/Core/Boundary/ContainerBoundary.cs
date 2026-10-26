@@ -32,6 +32,10 @@ namespace SandBlocks.Core.Boundary
         [Tooltip("Independent Y offset for Bottom border (negative moves down, positive moves up)")]
         [SerializeField] protected float bottomBorderOffset = 0f;
 
+        [Header("Floor Exception Margin")]
+        [Tooltip("Depth of the safety exception margin below the floor. Any particle pushed deeper than the floor line within this margin is captured, protected from falling, and restored to the floor.")]
+        [SerializeField] protected float floorExceptionMargin = 0.8f;
+
         [Header("Custom Polygon Points (Local Coordinates)")]
         [Tooltip("Custom polygon vertices. You can move, add, and shape them directly in the Scene view with handles.")]
         [SerializeField] protected List<Vector2> customPolygonPoints = new List<Vector2>();
@@ -68,6 +72,7 @@ namespace SandBlocks.Core.Boundary
         public float RightBorderOffset => rightBorderOffset;
         public float TopBorderOffset => topBorderOffset;
         public float BottomBorderOffset => bottomBorderOffset;
+        public float FloorExceptionMargin => floorExceptionMargin;
         public float BorderBeamThickness => borderBeamThickness;
         public float BorderBeamDepth => borderBeamDepth;
 
@@ -209,15 +214,15 @@ namespace SandBlocks.Core.Boundary
             float2 bottomRight = new float2(rightX, bottomY);
             float2 bottomLeft = new float2(leftX, bottomY);
 
-            // Inward normals for rectangle:
-            // Top wall (Left -> Right): normal points DOWN (0, -1)
-            AddSegment(topLeft, topRight);
-            // Right wall (Top -> Bottom): normal points LEFT (-1, 0)
-            AddSegment(topRight, bottomRight);
-            // Bottom wall (Right -> Left): normal points UP (0, 1)
-            AddSegment(bottomRight, bottomLeft);
-            // Left wall (Bottom -> Top): normal points RIGHT (1, 0)
-            AddSegment(bottomLeft, topLeft);
+            // Inward normals for rectangle (CCW traversal):
+            // Bottom wall (Left -> Right): normal points UP (0, 1)
+            AddSegment(bottomLeft, bottomRight);
+            // Right wall (Bottom -> Top): normal points LEFT (-1, 0)
+            AddSegment(bottomRight, topRight);
+            // Top wall (Right -> Left): normal points DOWN (0, -1)
+            AddSegment(topRight, topLeft);
+            // Left wall (Top -> Bottom): normal points RIGHT (1, 0)
+            AddSegment(topLeft, bottomLeft);
         }
 
         private void BuildCustomPolygonSegments()
@@ -313,6 +318,28 @@ namespace SandBlocks.Core.Boundary
 
         public float2 ProjectInside(float2 point, float radius)
         {
+            if (shapeType == ContainerShapeType.Rectangle)
+            {
+                float left = LeftX + radius;
+                float right = RightX - radius;
+                float bottom = BottomYCoord + radius;
+                float top = TopYCoord - radius;
+
+                point.x = math.clamp(point.x, left, right);
+
+                // Floor Exception Margin:
+                // Catch any particle that penetrates below the bottom floor and firmly restore it
+                if (point.y < bottom)
+                {
+                    point.y = bottom;
+                }
+                else if (point.y > top)
+                {
+                    point.y = top;
+                }
+                return point;
+            }
+
             for (int i = 0; i < segments.Count; i++)
             {
                 var seg = segments[i];
@@ -322,14 +349,23 @@ namespace SandBlocks.Core.Boundary
                 float2 closest = seg.a + ab * t;
 
                 float2 diff = point - closest;
-                float dist = math.length(diff);
+                // Signed distance along inward normal: positive is inside, negative is outside
+                float signedDist = math.dot(diff, seg.normal);
 
-                if (dist < radius)
+                if (signedDist < radius)
                 {
-                    float2 pushDir = dist > 0.0001f ? (diff / dist) : seg.normal;
-                    point = closest + pushDir * radius;
+                    // Push firmly inward along seg.normal to restore radius clearance
+                    point += seg.normal * (radius - signedDist);
                 }
             }
+
+            // Global safety floor exception clamp
+            float globalFloor = Bounds.yMin + radius;
+            if (point.y < globalFloor)
+            {
+                point.y = globalFloor;
+            }
+
             return point;
         }
 

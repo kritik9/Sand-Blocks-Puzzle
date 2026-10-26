@@ -15,6 +15,15 @@ namespace SandBlocks.Core.Simulation
         [SerializeField] private float friction = 0.65f;
         [SerializeField] private float sleepVelocityThreshold = 0.22f;
 
+        [Header("Boundary Exception Margin")]
+        [Tooltip("Depth of the safety exception margin below the floor. Any particle pushed deeper than the floor line within this margin is caught, protected from falling, and restored to the floor level.")]
+        [SerializeField] private float floorExceptionMargin = 0.8f;
+        [Tooltip("Cushion margin above the floor where downward velocity is decelerated to cushion impact and prevent penetration.")]
+        [SerializeField] private float floorCushionMargin = 0.35f;
+
+        public float FloorExceptionMargin { get => floorExceptionMargin; set => floorExceptionMargin = value; }
+        public float FloorCushionMargin { get => floorCushionMargin; set => floorCushionMargin = value; }
+
         private NativeArray<CrowdParticle> particles;
         private int activeCount;
         private int capacity;
@@ -63,6 +72,10 @@ namespace SandBlocks.Core.Simulation
             float dt = Mathf.Min(deltaTime, 0.025f);
             float2 grav = new float2(0f, gravity * dt);
 
+            float safetyFloorY = (boundary != null ? boundary.BottomY : -2.5f);
+            float effectiveExceptionMargin = (boundary != null ? boundary.FloorExceptionMargin : floorExceptionMargin);
+            float floorLevel = safetyFloorY;
+
             // 1. Predict positions ONLY for awake particles
             bool anyAwake = false;
             for (int i = 0; i < activeCount; i++)
@@ -75,6 +88,20 @@ namespace SandBlocks.Core.Simulation
                     anyAwake = true;
                     p.velocity += grav;
                     p.velocity *= damping;
+
+                    // Cushion Margin Above Floor: Smoothly damp downward velocity when approaching floor
+                    float floorWithRadius = floorLevel + p.radius;
+                    if (p.position.y <= floorWithRadius + floorCushionMargin && p.velocity.y < 0f)
+                    {
+                        p.velocity.y *= 0.5f;
+                    }
+
+                    // Exception Margin: If at or below floor, arrest downward velocity completely
+                    if (p.position.y <= floorWithRadius)
+                    {
+                        p.velocity.y = math.max(0f, p.velocity.y);
+                    }
+
                     p.prevPosition = p.position;
                     p.position += p.velocity * dt;
                 }
@@ -174,12 +201,47 @@ namespace SandBlocks.Core.Simulation
                 }
             }
 
-            // 3. Finalize velocities and sleep check
+            // 2.5 Post-collision boundary safety enforcement: ensure particles are strictly inside
+            if (boundary != null)
+            {
+                for (int i = 0; i < activeCount; i++)
+                {
+                    var p = particles[i];
+                    if (!p.isActive) continue;
+
+                    float2 projected = boundary.ProjectInside(p.position, p.radius);
+                    if (projected.y > p.position.y)
+                    {
+                        p.velocity.y = math.max(0f, p.velocity.y);
+                    }
+                    p.position = projected;
+                    particles[i] = p;
+                }
+            }
+
+            // 3. Finalize velocities, safety clamp, and sleep check
             float sqrSleep = sleepVelocityThreshold * sleepVelocityThreshold;
+
             for (int i = 0; i < activeCount; i++)
             {
                 var p = particles[i];
-                if (!p.isActive || p.isSettled) continue;
+                if (!p.isActive) continue;
+
+                // Floor Exception Margin Catch: If any particle is pushed below the floor by crowd weight,
+                // restore it solidly to the floor, arrest velocity, and settle it!
+                float restingFloorY = floorLevel + p.radius;
+                if (p.position.y < restingFloorY)
+                {
+                    p.position.y = restingFloorY;
+                    p.velocity = float2.zero;
+                    p.isSettled = true;
+                }
+
+                if (p.isSettled)
+                {
+                    particles[i] = p;
+                    continue;
+                }
 
                 p.velocity = (p.position - p.prevPosition) / dt;
 
@@ -252,26 +314,36 @@ namespace SandBlocks.Core.Simulation
             return false;
         }
 
-        public bool HasColorOnBottomBoundary(int colorId, float bottomY, float tolerance = 0.65f)
+        public bool HasColorOnBottomBoundary(int colorId, float bottomY, float minX, float maxX, float tolerance = 0.65f)
         {
             if (!isInitialized || activeCount == 0) return false;
 
             float thresholdY = bottomY + tolerance;
+            float lowerCatchY = bottomY - 0.2f;
             for (int i = 0; i < activeCount; i++)
             {
                 var p = particles[i];
                 if (!p.isActive || p.colorId != colorId) continue;
-                if (p.position.y <= thresholdY) return true;
+                if (p.position.y >= lowerCatchY && p.position.y <= thresholdY && p.position.x >= minX && p.position.x <= maxX)
+                {
+                    return true;
+                }
             }
             return false;
         }
 
-        public bool TryExtractBottomParticle(int colorId, float bottomY, float targetX, out Vector3 worldPos, float tolerance = 0.65f)
+        public bool HasColorOnBottomBoundary(int colorId, float bottomY, float tolerance = 0.65f)
+        {
+            return HasColorOnBottomBoundary(colorId, bottomY, float.MinValue, float.MaxValue, tolerance);
+        }
+
+        public bool TryExtractBottomParticle(int colorId, float bottomY, float minX, float maxX, float targetX, out Vector3 worldPos, float tolerance = 0.65f)
         {
             worldPos = Vector3.zero;
             if (!isInitialized || activeCount == 0) return false;
 
             float thresholdY = bottomY + tolerance;
+            float lowerCatchY = bottomY - 0.2f;
             float bestDistSq = float.MaxValue;
             int targetIdx = -1;
 
@@ -280,7 +352,7 @@ namespace SandBlocks.Core.Simulation
                 var p = particles[i];
                 if (!p.isActive || p.colorId != colorId) continue;
 
-                if (p.position.y <= thresholdY)
+                if (p.position.y >= lowerCatchY && p.position.y <= thresholdY && p.position.x >= minX && p.position.x <= maxX)
                 {
                     float dx = p.position.x - targetX;
                     float distSq = dx * dx + (p.position.y - bottomY) * (p.position.y - bottomY);
@@ -296,7 +368,8 @@ namespace SandBlocks.Core.Simulation
             if (targetIdx >= 0)
             {
                 var target = particles[targetIdx];
-                worldPos = new Vector3(target.position.x, target.position.y, 0f);
+                float safeY = math.max(target.position.y, bottomY + target.radius);
+                worldPos = new Vector3(target.position.x, safeY, 0f);
                 target.isActive = false;
                 particles[targetIdx] = target;
 
@@ -305,6 +378,11 @@ namespace SandBlocks.Core.Simulation
             }
 
             return false;
+        }
+
+        public bool TryExtractBottomParticle(int colorId, float bottomY, float targetX, out Vector3 worldPos, float tolerance = 0.65f)
+        {
+            return TryExtractBottomParticle(colorId, bottomY, float.MinValue, float.MaxValue, targetX, out worldPos, tolerance);
         }
 
         public void WakeNeighbors(float2 center, float radius)
