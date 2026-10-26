@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
@@ -13,8 +14,35 @@ using SandBlocks.Puzzle.Vehicles;
 
 namespace SandBlocks.Gameplay
 {
+    public enum CrowdFillDirection
+    {
+        BottomToTop,
+        TopToBottom
+    }
+
     public class GameManager : MonoBehaviour
     {
+        [Header("Level Start Animations")]
+        [Tooltip("If true, crowd and buses animate into the scene on level start and restart")]
+        [SerializeField] private bool animateLevelStart = true;
+
+        [Tooltip("Delay in seconds before buses start spawning onto the grid")]
+        [SerializeField] private float busStartDelay = 0.1f;
+
+        [Tooltip("Time in seconds between each bus spawning onto the grid")]
+        [Range(0.01f, 0.25f)]
+        [SerializeField] private float busSpawnInterval = 0.06f;
+
+        [Tooltip("Delay in seconds before the crowd container starts filling")]
+        [SerializeField] private float crowdStartDelay = 0.25f;
+
+        [Tooltip("Direction to fill the crowd container")]
+        [SerializeField] private CrowdFillDirection crowdFillDirection = CrowdFillDirection.BottomToTop;
+
+        [Tooltip("Time in seconds between each row of crowd particles spawning")]
+        [Range(0.005f, 0.15f)]
+        [SerializeField] private float crowdRowInterval = 0.035f;
+
         [Header("Data & Configuration")]
         [SerializeField] private CrowdColorPalette palette;
         [SerializeField] private LevelData currentLevel;
@@ -49,6 +77,12 @@ namespace SandBlocks.Gameplay
         [SerializeField] private PuzzleGrid puzzleGrid;
         [SerializeField] private BusVehicle busPrefab;
 
+        public CrowdColorPalette Palette
+        {
+            get => palette;
+            set => palette = value;
+        }
+
         public LevelData CurrentLevel
         {
             get => currentLevel;
@@ -60,6 +94,21 @@ namespace SandBlocks.Gameplay
             get => busContainer;
             set => busContainer = value;
         }
+
+        private struct ParticleSpawnInfo
+        {
+            public float2 position;
+            public int colorId;
+            public float radius;
+            public int rowIndex;
+            public float y;
+        }
+
+        private Coroutine activeStartSequence;
+        private List<BusVehicle> spawnedBuses = new List<BusVehicle>();
+        private bool isLevelStartAnimating = false;
+
+        public bool IsLevelStartAnimating => isLevelStartAnimating;
 
         private void Awake()
         {
@@ -85,6 +134,13 @@ namespace SandBlocks.Gameplay
                 currentLevel = levelManager.CurrentLevel;
             }
 
+            // Auto-ensure AdaptiveCameraFramer is on Camera.main
+            Camera cam = Camera.main;
+            if (cam != null && cam.GetComponent<AdaptiveCameraFramer>() == null)
+            {
+                cam.gameObject.AddComponent<AdaptiveCameraFramer>();
+            }
+
             if (autoPositionCamera)
             {
                 SetupCamera();
@@ -106,9 +162,15 @@ namespace SandBlocks.Gameplay
         private void Start()
         {
             SetupPaletteIfNull();
-            InitializeSimulation();
-            SpawnLayeredCrowd();
-            SpawnPrototypeVehicles();
+
+            // If LevelManager is present in the scene, it manages level setup in its Start()
+            if (levelManager != null)
+            {
+                return;
+            }
+
+            // Standalone fallback (if LevelManager is not in the scene)
+            RestartLevelInPlace();
 
             if (restartButton != null)
             {
@@ -136,15 +198,55 @@ namespace SandBlocks.Gameplay
         {
             if (overrideBoundaryFromLevel && currentLevel != null && boundary is ContainerBoundary cb)
             {
-                cb.SetContainerShape(currentLevel.containerShape, currentLevel.containerWidth, currentLevel.containerHeight, currentLevel.containerCenter,
-                    currentLevel.leftBorderOffset, currentLevel.rightBorderOffset, currentLevel.topBorderOffset, currentLevel.bottomBorderOffset);
+                if (currentLevel.containerShape == ContainerShapeType.CustomPolygon && currentLevel.customPolygonPoints != null && currentLevel.customPolygonPoints.Count >= 3)
+                {
+                    cb.SetCustomPolygonPoints(currentLevel.customPolygonPoints);
+                }
+                else
+                {
+                    cb.SetContainerShape(currentLevel.containerShape, currentLevel.containerWidth, currentLevel.containerHeight, currentLevel.containerCenter,
+                        currentLevel.leftBorderOffset, currentLevel.rightBorderOffset, currentLevel.topBorderOffset, currentLevel.bottomBorderOffset);
+                }
             }
             int capacity = currentLevel != null ? currentLevel.maxParticles : maxParticles;
             simulation.Initialize(capacity, boundary);
             crowdRenderer.Initialize(palette);
         }
 
-        private void SpawnLayeredCrowd()
+        private IEnumerator PlayLevelStartSequence(List<ParticleSpawnInfo> preCollectedParticles = null)
+        {
+            isLevelStartAnimating = true;
+
+            // 1. Spawn prototype vehicles with staggered elastic pop-in animations
+            SpawnPrototypeVehicles(animate: true);
+
+            // 2. Use pre-collected crowd particles or collect now
+            var particles = preCollectedParticles ?? CollectAllCrowdParticles();
+
+            // 3. Animate crowd filling row-by-row with spring bounce after crowdStartDelay
+            yield return StartCoroutine(SpawnCrowdAnimatedRoutine(particles, crowdStartDelay));
+
+            // Wait a brief moment for the last row's spring pop to settle
+            yield return new WaitForSeconds(0.2f);
+
+            // Ensure all particles are solidly locked in their pristine positions
+            if (simulation != null && simulation.Particles.IsCreated)
+            {
+                var parts = simulation.Particles;
+                for (int i = 0; i < simulation.ActiveCount; i++)
+                {
+                    var p = parts[i];
+                    p.isSettled = true;
+                    p.velocity = float2.zero;
+                    parts[i] = p;
+                }
+            }
+
+            isLevelStartAnimating = false;
+            activeStartSequence = null;
+        }
+
+        private List<ParticleSpawnInfo> CollectAllCrowdParticles()
         {
             float radius = currentLevel != null ? currentLevel.particleRadius : particleRadius;
             Rect rect = boundary != null ? boundary.Bounds : new Rect(-2.7f, -2.5f, 5.4f, 5.8f);
@@ -152,16 +254,17 @@ namespace SandBlocks.Gameplay
             if (currentLevel != null && currentLevel.patternType == LevelPatternType.CustomGrid && 
                 currentLevel.customCrowdColors != null && currentLevel.customCrowdColors.Length > 0)
             {
-                SpawnCustomGridCrowd(rect, radius);
+                return CollectCustomGridParticles(rect, radius);
             }
             else
             {
-                SpawnProceduralCrowd(rect, radius);
+                return CollectProceduralParticles(rect, radius);
             }
         }
 
-        private void SpawnCustomGridCrowd(Rect rect, float radius)
+        private List<ParticleSpawnInfo> CollectCustomGridParticles(Rect rect, float radius)
         {
+            var list = new List<ParticleSpawnInfo>();
             int cols = currentLevel.gridColumns;
             int rows = currentLevel.gridRows;
 
@@ -181,17 +284,31 @@ namespace SandBlocks.Gameplay
 
                     if (boundary != null)
                     {
-                        pos = boundary.ProjectInside(pos, pRadius);
+                        float2 projected = boundary.ProjectInside(pos, pRadius);
+                        if (boundary.ShapeType == ContainerShapeType.CustomPolygon && math.distancesq(pos, projected) > 0.001f)
+                        {
+                            continue; // Skip grid cells outside the custom polygon
+                        }
+                        pos = projected;
                     }
 
                     int colorId = currentLevel.GetPixel(c, r);
-                    simulation.SpawnParticle(pos, colorId, pRadius, startSettled: true);
+                    list.Add(new ParticleSpawnInfo
+                    {
+                        position = pos,
+                        colorId = colorId,
+                        radius = pRadius,
+                        rowIndex = r,
+                        y = y
+                    });
                 }
             }
+            return list;
         }
 
-        private void SpawnProceduralCrowd(Rect rect, float radius)
+        private List<ParticleSpawnInfo> CollectProceduralParticles(Rect rect, float radius)
         {
+            var list = new List<ParticleSpawnInfo>();
             float spacing = radius * 2.05f;
             float startY = rect.yMin + radius * 1.4f;
             float endY = rect.yMax - radius * 1.0f;
@@ -202,7 +319,6 @@ namespace SandBlocks.Gameplay
             {
                 int rowIdx = Mathf.RoundToInt((y - startY) / (spacing * 0.866f));
                 float xOffset = (rowIdx % 2 == 1) ? radius : 0f;
-
                 float v = Mathf.Clamp01((y - rect.yMin) / rect.height);
 
                 for (float x = minX + xOffset; x <= maxX; x += spacing)
@@ -213,14 +329,73 @@ namespace SandBlocks.Gameplay
                     if (math.distancesq(pos, projected) < 0.001f)
                     {
                         float u = Mathf.Clamp01((x - rect.xMin) / rect.width);
-
                         int colorId = currentLevel != null 
                             ? currentLevel.GetColorForPosition(y, x, u, v) 
                             : GetDefaultColor(y, x, u, v);
 
-                        simulation.SpawnParticle(pos, colorId, radius, startSettled: true);
+                        list.Add(new ParticleSpawnInfo
+                        {
+                            position = pos,
+                            colorId = colorId,
+                            radius = radius,
+                            rowIndex = rowIdx,
+                            y = y
+                        });
                     }
                 }
+            }
+            return list;
+        }
+
+        private IEnumerator SpawnCrowdAnimatedRoutine(List<ParticleSpawnInfo> allParticles, float initialDelay)
+        {
+            if (initialDelay > 0f)
+            {
+                yield return new WaitForSeconds(initialDelay);
+            }
+
+            var rowsDict = new SortedDictionary<int, List<ParticleSpawnInfo>>();
+            for (int i = 0; i < allParticles.Count; i++)
+            {
+                var p = allParticles[i];
+                if (!rowsDict.TryGetValue(p.rowIndex, out var rowList))
+                {
+                    rowList = new List<ParticleSpawnInfo>();
+                    rowsDict[p.rowIndex] = rowList;
+                }
+                rowList.Add(p);
+            }
+
+            var rowKeys = new List<int>(rowsDict.Keys);
+            if (crowdFillDirection == CrowdFillDirection.TopToBottom)
+            {
+                rowKeys.Reverse();
+            }
+
+            for (int k = 0; k < rowKeys.Count; k++)
+            {
+                int r = rowKeys[k];
+                var rowParticles = rowsDict[r];
+                for (int i = 0; i < rowParticles.Count; i++)
+                {
+                    var p = rowParticles[i];
+                    simulation.SpawnParticle(p.position, p.colorId, p.radius, startSettled: true);
+                }
+
+                if (crowdRowInterval > 0f)
+                {
+                    yield return new WaitForSeconds(crowdRowInterval);
+                }
+            }
+        }
+
+        private void SpawnLayeredCrowdInstant(List<ParticleSpawnInfo> preCollectedParticles = null)
+        {
+            var allParticles = preCollectedParticles ?? CollectAllCrowdParticles();
+            for (int i = 0; i < allParticles.Count; i++)
+            {
+                var p = allParticles[i];
+                simulation.SpawnParticle(p.position, p.colorId, p.radius, startSettled: true);
             }
         }
 
@@ -245,8 +420,17 @@ namespace SandBlocks.Gameplay
             return 0; // Blue (nozzle exit layer)
         }
 
-        private void SpawnPrototypeVehicles()
+        private void SpawnPrototypeVehicles(bool animate = false)
         {
+            spawnedBuses.Clear();
+
+            if (puzzleGrid != null && currentLevel != null && currentLevel.puzzleColumns > 0)
+            {
+                int cols = currentLevel.puzzleColumns > 0 ? currentLevel.puzzleColumns : 6;
+                int rows = currentLevel.puzzleRows > 0 ? currentLevel.puzzleRows : 5;
+                puzzleGrid.SetGridDimensions(cols, rows);
+            }
+
             if (busPrefab == null)
             {
                 busPrefab = CreateProceduralBusPrefab();
@@ -257,26 +441,39 @@ namespace SandBlocks.Gameplay
                 for (int i = 0; i < currentLevel.buses.Count; i++)
                 {
                     var b = currentLevel.buses[i];
-                    CreateBus(b.colorId, b.capacity, b.length, b.rotationDegrees, b.gridPosition, b.name);
+                    var bus = CreateBus(b.colorId, b.capacity, b.length, b.rotationDegrees, b.gridPosition, b.name);
+                    spawnedBuses.Add(bus);
                 }
             }
             else
             {
                 // Default 10-bus layout matching image 2
-                CreateBus(colorId: 0, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(0, 4), busName: "Blue Bus");
-                CreateBus(colorId: 2, capacity: 4, length: 2, rotDegrees: 180, gridPos: new Vector2Int(3, 4), busName: "Yellow Bus");
-                CreateBus(colorId: 4, capacity: 4, length: 2, rotDegrees: 90,  gridPos: new Vector2Int(0, 2), busName: "Black Bus L");
-                CreateBus(colorId: 0, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(3, 3), busName: "Blue Bus Mid");
-                CreateBus(colorId: 4, capacity: 4, length: 2, rotDegrees: 270, gridPos: new Vector2Int(5, 2), busName: "Black Bus R");
-                CreateBus(colorId: 5, capacity: 4, length: 3, rotDegrees: 0,   gridPos: new Vector2Int(2, 2), busName: "White Bus");
-                CreateBus(colorId: 6, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(0, 1), busName: "Orange Bus");
-                CreateBus(colorId: 3, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(2, 1), busName: "Pink Bus");
-                CreateBus(colorId: 1, capacity: 4, length: 2, rotDegrees: 180, gridPos: new Vector2Int(4, 1), busName: "Green Bus");
-                CreateBus(colorId: 5, capacity: 10, length: 6, rotDegrees: 0,  gridPos: new Vector2Int(0, 0), busName: "Long White");
+                spawnedBuses.Add(CreateBus(colorId: 0, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(0, 4), busName: "Blue Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 2, capacity: 4, length: 2, rotDegrees: 180, gridPos: new Vector2Int(3, 4), busName: "Yellow Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 4, capacity: 4, length: 2, rotDegrees: 90,  gridPos: new Vector2Int(0, 2), busName: "Black Bus L"));
+                spawnedBuses.Add(CreateBus(colorId: 0, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(3, 3), busName: "Blue Bus Mid"));
+                spawnedBuses.Add(CreateBus(colorId: 4, capacity: 4, length: 2, rotDegrees: 270, gridPos: new Vector2Int(5, 2), busName: "Black Bus R"));
+                spawnedBuses.Add(CreateBus(colorId: 5, capacity: 4, length: 3, rotDegrees: 0,   gridPos: new Vector2Int(2, 2), busName: "White Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 6, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(0, 1), busName: "Orange Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 3, capacity: 4, length: 2, rotDegrees: 0,   gridPos: new Vector2Int(2, 1), busName: "Pink Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 1, capacity: 4, length: 2, rotDegrees: 180, gridPos: new Vector2Int(4, 1), busName: "Green Bus"));
+                spawnedBuses.Add(CreateBus(colorId: 5, capacity: 10, length: 6, rotDegrees: 0,  gridPos: new Vector2Int(0, 0), busName: "Long White"));
+            }
+
+            if (animate)
+            {
+                for (int i = 0; i < spawnedBuses.Count; i++)
+                {
+                    if (spawnedBuses[i] != null)
+                    {
+                        float delay = busStartDelay + i * busSpawnInterval;
+                        spawnedBuses[i].PlaySpawnAnimation(delay);
+                    }
+                }
             }
         }
 
-        private void CreateBus(int colorId, int capacity, int length, int rotDegrees, Vector2Int gridPos, string busName = null)
+        private BusVehicle CreateBus(int colorId, int capacity, int length, int rotDegrees, Vector2Int gridPos, string busName = null)
         {
             var bus = busContainer != null 
                 ? Instantiate(busPrefab, busContainer) 
@@ -295,6 +492,7 @@ namespace SandBlocks.Gameplay
             bus.SetPassengerScale(crowdRenderer != null ? crowdRenderer.CharacterScale : 0.1f);
             bus.ApplyColor(palette);
             puzzleGrid.PlaceVehicle(bus, gridPos);
+            return bus;
         }
 
         private BusVehicle CreateProceduralBusPrefab()
@@ -319,7 +517,12 @@ namespace SandBlocks.Gameplay
         {
             if (simulation != null && simulation.IsInitialized)
             {
-                simulation.StepSimulation(Time.deltaTime);
+                // Freeze physics simulation while level intro animation is playing so particles stay 100% stable
+                if (!isLevelStartAnimating)
+                {
+                    simulation.StepSimulation(Time.deltaTime);
+                }
+
                 if (crowdRenderer != null)
                 {
                     crowdRenderer.Render(simulation.Particles, simulation.ActiveCount);
@@ -335,10 +538,18 @@ namespace SandBlocks.Gameplay
 
         /// <summary>
         /// Public restart function that can be assigned directly to a UI Button's OnClick event in the Inspector.
+        /// If LevelManager is present, delegates directly to LevelManager to ensure a unified restart path.
         /// </summary>
         public void RestartGame()
         {
-            RestartLevel();
+            if (levelManager != null)
+            {
+                levelManager.RestartCurrentLevel();
+            }
+            else
+            {
+                RestartLevel();
+            }
         }
 
         /// <summary>
@@ -375,8 +586,15 @@ namespace SandBlocks.Gameplay
 
             if (syncBoundary && boundary is ContainerBoundary cb)
             {
-                cb.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
-                    level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                {
+                    cb.SetCustomPolygonPoints(level.customPolygonPoints);
+                }
+                else
+                {
+                    cb.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
+                        level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                }
                 cb.BuildVisualContainer();
             }
 
@@ -389,13 +607,25 @@ namespace SandBlocks.Gameplay
         /// </summary>
         public void RestartLevelInPlace()
         {
+            // 0. Stop all running coroutines on GameManager to terminate any ongoing spawn sequences
+            StopAllCoroutines();
+            activeStartSequence = null;
+            isLevelStartAnimating = false;
+
+            // Stop any active passenger flight routines
+            var transfer = FindAnyObjectByType<CrowdTransferController>();
+            if (transfer != null)
+            {
+                transfer.ClearActiveTransfers();
+            }
+
             // 1. Remove all existing buses from grid and scene
             if (puzzleGrid != null)
             {
                 puzzleGrid.Clear();
             }
 
-            // Also clean up any lingering children in busContainer
+            // Clean up any lingering children in busContainer
             if (busContainer != null)
             {
                 for (int i = busContainer.childCount - 1; i >= 0; i--)
@@ -403,20 +633,39 @@ namespace SandBlocks.Gameplay
                     Transform child = busContainer.GetChild(i);
                     if (child != null)
                     {
+                        child.gameObject.SetActive(false);
                         if (Application.isPlaying) Destroy(child.gameObject);
                         else DestroyImmediate(child.gameObject);
                     }
                 }
             }
 
-            // 2. Re-initialize simulation
-            InitializeSimulation();
+            // 2. Pre-collect all crowd particles to determine exact capacity required
+            var particles = CollectAllCrowdParticles();
+            int baseCapacity = currentLevel != null ? currentLevel.maxParticles : maxParticles;
+            int requiredCapacity = Mathf.Max(baseCapacity, particles.Count + 50);
 
-            // 3. Respawn crowd particles
-            SpawnLayeredCrowd();
+            // Re-initialize simulation with guaranteed capacity so no particles are ever dropped
+            simulation.Initialize(requiredCapacity, boundary);
+            crowdRenderer.Initialize(palette);
 
-            // 4. Respawn buses in their starting positions
-            SpawnPrototypeVehicles();
+            // 3. Respawn crowd particles and buses (animated or instant)
+            if (animateLevelStart)
+            {
+                activeStartSequence = StartCoroutine(PlayLevelStartSequence(particles));
+            }
+            else
+            {
+                SpawnLayeredCrowdInstant(particles);
+                SpawnPrototypeVehicles(animate: false);
+            }
+
+            // 4. Ensure camera view is framed
+            var framer = FindAnyObjectByType<AdaptiveCameraFramer>();
+            if (framer != null)
+            {
+                framer.FrameView();
+            }
         }
     }
 }

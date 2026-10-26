@@ -47,6 +47,8 @@ namespace SandBlocks.Gameplay
         [Header("Dependencies")]
         [SerializeField] private GameManager gameManager;
         [SerializeField] private ContainerBoundary boundary;
+        [SerializeField] private SandBlocks.Puzzle.Grid.PuzzleGrid puzzleGrid;
+        [SerializeField] private AdaptiveCameraFramer cameraFramer;
 
         /// <summary>
         /// Event invoked whenever a new level is loaded: (levelIndex, levelData)
@@ -81,29 +83,11 @@ namespace SandBlocks.Gameplay
         {
             SetupButtonListeners();
 
-            // Auto-load first level if GameManager has not initialized one or if synced
+            // Auto-load active level on start
             if (levels.Count > 0)
             {
                 currentLevelIndex = Mathf.Clamp(currentLevelIndex, 0, levels.Count - 1);
-                
-                // If gameManager already has a level, align currentLevelIndex
-                if (gameManager != null && gameManager.CurrentLevel != null)
-                {
-                    int matchIdx = levels.IndexOf(gameManager.CurrentLevel);
-                    if (matchIdx >= 0)
-                    {
-                        currentLevelIndex = matchIdx;
-                    }
-                    else
-                    {
-                        // Set gameManager's level to our currentLevel
-                        SetupScreenForLevel(levels[currentLevelIndex]);
-                    }
-                }
-                else if (gameManager != null && CurrentLevel != null)
-                {
-                    SetupScreenForLevel(CurrentLevel);
-                }
+                SetupScreenForLevel(levels[currentLevelIndex]);
             }
 
             UpdateUI();
@@ -118,6 +102,8 @@ namespace SandBlocks.Gameplay
         {
             if (gameManager == null) gameManager = FindAnyObjectByType<GameManager>();
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
+            if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
+            if (cameraFramer == null) cameraFramer = FindAnyObjectByType<AdaptiveCameraFramer>();
         }
 
         private void AutoDetectUIElements()
@@ -309,15 +295,37 @@ namespace SandBlocks.Gameplay
             // 1. Update the Container Boundary shape and visual dimensions if enabled
             if (updateBoundaryOnLevelLoad && boundary != null)
             {
-                boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
-                    level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                {
+                    boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                }
+                else
+                {
+                    boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
+                        level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                }
                 boundary.BuildVisualContainer();
             }
 
-            // 2. Instruct GameManager to reload simulation and spawn buses
+            // 2. Update Puzzle Grid dimensions from LevelData
+            if (puzzleGrid != null)
+            {
+                int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
+                int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
+                puzzleGrid.SetGridDimensions(cols, rows);
+            }
+
+            // 3. Instruct GameManager to reload simulation and spawn buses
             if (gameManager != null)
             {
-                gameManager.LoadLevel(level, updateBoundaryOnLevelLoad);
+                // Boundary was already updated in step 1, avoid duplicate rebuild
+                gameManager.LoadLevel(level, syncBoundary: false);
+            }
+
+            // 4. Adaptively frame the camera view to fit the updated dimensions
+            if (cameraFramer != null)
+            {
+                cameraFramer.FrameView();
             }
         }
 

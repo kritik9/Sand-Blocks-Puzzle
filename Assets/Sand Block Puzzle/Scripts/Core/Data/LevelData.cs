@@ -51,6 +51,10 @@ namespace SandBlocks.Core.Data
         [Tooltip("Independent Y offset for Bottom border")]
         public float bottomBorderOffset = 0f;
 
+        [Header("Custom Polygon Points (When Shape = CustomPolygon)")]
+        [Tooltip("Local vertices defining the boundary polygon")]
+        public List<Vector2> customPolygonPoints = new List<Vector2>();
+
         [Header("Pattern Type")]
         [Tooltip("How crowd colors are distributed in the container")]
         public LevelPatternType patternType = LevelPatternType.LipsShape;
@@ -63,6 +67,12 @@ namespace SandBlocks.Core.Data
         [Header("Optional Image Color Map (Pixel Art)")]
         [Tooltip("If assigned, spawns crowd colors sampled directly from this texture")]
         public Texture2D colorMapTexture;
+
+        [Header("Puzzle Grid Setup")]
+        [Tooltip("Number of columns for this level's puzzle grid (default: 6)")]
+        public int puzzleColumns = 6;
+        [Tooltip("Number of rows for this level's puzzle grid (default: 5)")]
+        public int puzzleRows = 5;
 
         [Header("Puzzle Grid Buses")]
         public List<BusSpawnData> buses = new List<BusSpawnData>
@@ -119,6 +129,22 @@ namespace SandBlocks.Core.Data
             int rows = Mathf.FloorToInt(effH / rowStep);
             int cols = Mathf.FloorToInt(effW / spacing);
             return Mathf.Max(10, rows * cols);
+        }
+
+        public void EnsureDefaultPolygonPoints()
+        {
+            if (customPolygonPoints == null) customPolygonPoints = new List<Vector2>();
+            if (customPolygonPoints.Count >= 3) return;
+
+            customPolygonPoints.Clear();
+            float halfW = containerWidth * 0.5f;
+            float halfH = containerHeight * 0.5f;
+            Vector2 c = containerCenter;
+
+            customPolygonPoints.Add(new Vector2(c.x - halfW, c.y - halfH));
+            customPolygonPoints.Add(new Vector2(c.x + halfW, c.y - halfH));
+            customPolygonPoints.Add(new Vector2(c.x + halfW, c.y + halfH));
+            customPolygonPoints.Add(new Vector2(c.x - halfW, c.y + halfH));
         }
 
         public void EnsureCustomGridInitialized()

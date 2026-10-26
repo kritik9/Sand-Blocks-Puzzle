@@ -24,9 +24,15 @@ namespace SandBlocks.Core.Rendering
         [SerializeField] private Material characterMaterial;
         [SerializeField] private Vector3 characterScale = new Vector3(0.55f, 0.55f, 0.55f);
 
+        [Header("Spawn Pop Animation")]
+        [SerializeField] private bool enableSpawnPop = true;
+        [Range(0.1f, 0.6f)]
+        [SerializeField] private float spawnPopDuration = 0.25f;
+
         private CrowdColorPalette palette;
         private List<GameObject> pooledCharacters = new List<GameObject>();
         private List<Renderer[]> pooledRenderers = new List<Renderer[]>();
+        private List<float> pooledSpawnTimes = new List<float>();
         private MaterialPropertyBlock propertyBlock;
         private readonly Matrix4x4[] batchMatrices = new Matrix4x4[1023];
         private readonly Vector4[] batchColors = new Vector4[1023];
@@ -45,6 +51,7 @@ namespace SandBlocks.Core.Rendering
             }
             pooledCharacters.Clear();
             pooledRenderers.Clear();
+            pooledSpawnTimes.Clear();
 
             // Setup fallback mesh if no prefab
             if (characterPrefab == null)
@@ -99,6 +106,7 @@ namespace SandBlocks.Core.Rendering
 
                 pooledCharacters.Add(instance);
                 pooledRenderers.Add(instance.GetComponentsInChildren<Renderer>());
+                pooledSpawnTimes.Add(Time.time);
             }
 
             for (int i = 0; i < count; i++)
@@ -112,11 +120,32 @@ namespace SandBlocks.Core.Rendering
                     continue;
                 }
 
-                if (!instance.activeSelf) instance.SetActive(true);
+                if (!instance.activeSelf)
+                {
+                    instance.SetActive(true);
+                    if (i < pooledSpawnTimes.Count)
+                    {
+                        pooledSpawnTimes[i] = Time.time;
+                    }
+                }
+
+                float scaleMult = 1f;
+                if (enableSpawnPop && i < pooledSpawnTimes.Count)
+                {
+                    float elapsed = Time.time - pooledSpawnTimes[i];
+                    if (elapsed < spawnPopDuration)
+                    {
+                        float t = elapsed / spawnPopDuration;
+                        float c1 = 1.70158f;
+                        float c3 = c1 + 1f;
+                        scaleMult = 1f + c3 * Mathf.Pow(t - 1f, 3f) + c1 * Mathf.Pow(t - 1f, 2f);
+                        scaleMult = Mathf.Max(0f, scaleMult);
+                    }
+                }
 
                 instance.transform.position = new Vector3(p.position.x, p.position.y, 0f);
                 instance.transform.rotation = Quaternion.Euler(characterRotationEuler);
-                instance.transform.localScale = Vector3.one * prefabScale;
+                instance.transform.localScale = Vector3.one * (prefabScale * scaleMult);
 
                 // Apply color
                 if (palette != null && i < pooledRenderers.Count)

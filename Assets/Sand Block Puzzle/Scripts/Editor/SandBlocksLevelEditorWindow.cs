@@ -259,8 +259,15 @@ namespace SandBlocks.Editor
             var cb = FindAnyObjectByType<ContainerBoundary>();
             if (cb != null)
             {
-                cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
-                    selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                {
+                    cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                }
+                else
+                {
+                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                }
                 cb.BuildVisualContainer();
                 EditorUtility.SetDirty(cb);
                 Debug.Log($"<color=green>[SandBlocks]</color> Updated scene ContainerBoundary to {selectedLevel.containerShape} ({selectedLevel.containerWidth}x{selectedLevel.containerHeight}).");
@@ -319,6 +326,42 @@ namespace SandBlocks.Editor
             selectedLevel.bottomBorderOffset = EditorGUILayout.FloatField("Bottom Offset:", selectedLevel.bottomBorderOffset);
             EditorGUILayout.EndHorizontal();
 
+            if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon)
+            {
+                selectedLevel.EnsureDefaultPolygonPoints();
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                GUILayout.Label($"Custom Polygon Vertices: {selectedLevel.customPolygonPoints.Count} points", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox("Select 'ContainerBoundary' in the Hierarchy to drag, add (+ button on edges), and delete (Shift+Click) points in the Scene view.", MessageType.Info);
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("Select Container In Scene"))
+                {
+                    var cb = FindAnyObjectByType<ContainerBoundary>();
+                    if (cb != null) Selection.activeGameObject = cb.gameObject;
+                }
+                if (GUILayout.Button("Reset Box"))
+                {
+                    Undo.RecordObject(selectedLevel, "Reset Polygon Box");
+                    selectedLevel.customPolygonPoints.Clear();
+                    selectedLevel.EnsureDefaultPolygonPoints();
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                if (GUILayout.Button("Reset Hexagon"))
+                {
+                    Undo.RecordObject(selectedLevel, "Reset Polygon Hexagon");
+                    selectedLevel.customPolygonPoints.Clear();
+                    float rad = Mathf.Min(selectedLevel.containerWidth, selectedLevel.containerHeight) * 0.5f;
+                    Vector2 c = selectedLevel.containerCenter;
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float ang = i * 60f * Mathf.Deg2Rad;
+                        selectedLevel.customPolygonPoints.Add(new Vector2(c.x + rad * Mathf.Cos(ang), c.y + rad * Mathf.Sin(ang)));
+                    }
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+            }
+
             EditorGUILayout.Space(2);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Pull Shape From Scene Container"))
@@ -335,6 +378,10 @@ namespace SandBlocks.Editor
                     selectedLevel.rightBorderOffset = cb.RightBorderOffset;
                     selectedLevel.topBorderOffset = cb.TopBorderOffset;
                     selectedLevel.bottomBorderOffset = cb.BottomBorderOffset;
+                    if (cb.ShapeType == ContainerShapeType.CustomPolygon && cb.CustomPolygonPoints != null && cb.CustomPolygonPoints.Count >= 3)
+                    {
+                        selectedLevel.customPolygonPoints = new List<Vector2>(cb.CustomPolygonPoints);
+                    }
                     EditorUtility.SetDirty(selectedLevel);
                     Debug.Log($"<color=green>[SandBlocks]</color> Pulled shape from Scene: {cb.Width}x{cb.Height}, Center {cb.ContainerCenter}");
                 }
@@ -344,8 +391,15 @@ namespace SandBlocks.Editor
                 var cb = FindAnyObjectByType<ContainerBoundary>();
                 if (cb != null)
                 {
-                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
-                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                    {
+                        cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                    }
+                    else
+                    {
+                        cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                            selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    }
                     cb.BuildVisualContainer();
                     EditorUtility.SetDirty(cb);
                     Debug.Log($"<color=green>[SandBlocks]</color> Pushed shape to Scene: {selectedLevel.containerWidth}x{selectedLevel.containerHeight}");
@@ -571,14 +625,16 @@ namespace SandBlocks.Editor
                     int colorId = selectedLevel.GetPixel(c, r);
                     Color cellColor = GetColor(colorId);
 
-                    // If Funnel shape, dim cells outside funnel walls
-                    if (selectedLevel.containerShape == ContainerShapeType.Funnel)
+                    // If CustomPolygon shape, dim cells outside polygon
+                    if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
                     {
-                        float v = (r + 0.5f) / rows;
-                        float u = (c + 0.5f) / cols;
-                        float uDist = Mathf.Abs(u - 0.5f);
-                        float allowedU = Mathf.Lerp(0.18f, 0.5f, v);
-                        if (uDist > allowedU)
+                        float localX = Mathf.Lerp(selectedLevel.containerCenter.x - selectedLevel.containerWidth * 0.5f,
+                                                  selectedLevel.containerCenter.x + selectedLevel.containerWidth * 0.5f,
+                                                  (c + 0.5f) / cols);
+                        float localY = Mathf.Lerp(selectedLevel.containerCenter.y - selectedLevel.containerHeight * 0.5f,
+                                                  selectedLevel.containerCenter.y + selectedLevel.containerHeight * 0.5f,
+                                                  (r + 0.5f) / rows);
+                        if (!IsPointInPolygon(new Vector2(localX, localY), selectedLevel.customPolygonPoints))
                         {
                             cellColor = Color.Lerp(cellColor, new Color(0.1f, 0.1f, 0.1f, 1f), 0.75f);
                         }
@@ -693,8 +749,23 @@ namespace SandBlocks.Editor
         private void DrawBusesAndParkingTab()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label("1. Puzzle Grid Visualization (6 Columns x 5 Rows)", EditorStyles.boldLabel);
+            int currentCols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
+            int currentRows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
+
+            GUILayout.Label($"1. Puzzle Grid Visualization ({currentCols} Columns x {currentRows} Rows)", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Click any bus in the grid or list below to edit its properties, rotation, length, or capacity. Overlaps are highlighted in red.", MessageType.None);
+
+            EditorGUILayout.BeginHorizontal();
+            int newPCols = EditorGUILayout.IntSlider("Grid Columns:", currentCols, 4, 16);
+            int newPRows = EditorGUILayout.IntSlider("Grid Rows:", currentRows, 4, 16);
+            if (newPCols != currentCols || newPRows != currentRows)
+            {
+                selectedLevel.puzzleColumns = newPCols;
+                selectedLevel.puzzleRows = newPRows;
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
 
             DrawVisualPuzzleBoard();
 
@@ -738,11 +809,11 @@ namespace SandBlocks.Editor
 
         private void DrawVisualPuzzleBoard()
         {
-            const int gridCols = 6;
-            const int gridRows = 5;
+            int gridCols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
+            int gridRows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
 
-            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 300f, 450f);
-            float boardHeight = boardWidth * (5f / 6f);
+            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 300f, 480f);
+            float boardHeight = boardWidth * ((float)gridRows / gridCols);
             float cellW = boardWidth / gridCols;
             float cellH = boardHeight / gridRows;
 
@@ -840,7 +911,7 @@ namespace SandBlocks.Editor
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.LabelField("↑ Row 4 (Container Exit / Top Line) | Row 0 (Back of Puzzle) ↓", EditorStyles.centeredGreyMiniLabel);
+            EditorGUILayout.LabelField($"↑ Row {gridRows - 1} (Container Exit / Top Line) | Row 0 (Back of Puzzle) ↓", EditorStyles.centeredGreyMiniLabel);
         }
 
         private void DrawBusOnGrid(int index, BusSpawnData bus, Rect boardRect, float cellW, float cellH, int gridRows)
@@ -1090,8 +1161,15 @@ namespace SandBlocks.Editor
                 var cb = FindAnyObjectByType<ContainerBoundary>();
                 if (cb != null)
                 {
-                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
-                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                    {
+                        cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                    }
+                    else
+                    {
+                        cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                            selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    }
                     cb.BuildVisualContainer();
                     EditorUtility.SetDirty(cb);
                 }
@@ -1232,6 +1310,22 @@ namespace SandBlocks.Editor
 
             EditorUtility.SetDirty(selectedLevel);
             Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced bus capacities to match crowd counts!");
+        }
+
+        private static bool IsPointInPolygon(Vector2 pt, List<Vector2> poly)
+        {
+            if (poly == null || poly.Count < 3) return true;
+            bool inside = false;
+            int j = poly.Count - 1;
+            for (int i = 0; i < poly.Count; j = i++)
+            {
+                if (((poly[i].y > pt.y) != (poly[j].y > pt.y)) &&
+                    (pt.x < (poly[j].x - poly[i].x) * (pt.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+                {
+                    inside = !inside;
+                }
+            }
+            return inside;
         }
     }
 }

@@ -7,18 +7,17 @@ namespace SandBlocks.Core.Boundary
 {
     public enum ContainerShapeType
     {
-        Rectangle,
-        Funnel,
-        CustomPolygon
+        Rectangle = 0,
+        CustomPolygon = 1
     }
 
     public class ContainerBoundary : MonoBehaviour, IContainerBoundary
     {
         [Header("Shape Configuration")]
         [SerializeField] protected ContainerShapeType shapeType = ContainerShapeType.Rectangle;
-        [SerializeField] protected float width = 5.4f;
-        [SerializeField] protected float height = 5.8f;
-        [SerializeField] protected Vector2 containerCenter = new Vector2(0f, 0.4f);
+        [SerializeField] protected float width = 8.58f;
+        [SerializeField] protected float height = 7.13f;
+        [SerializeField] protected Vector2 containerCenter = new Vector2(0f, 0.63f);
 
         [Header("Border Offsets (Left, Right, Top, Bottom)")]
         [Tooltip("Independent X offset for Left border (negative moves left/outward, positive moves right/inward)")]
@@ -33,16 +32,9 @@ namespace SandBlocks.Core.Boundary
         [Tooltip("Independent Y offset for Bottom border (negative moves down, positive moves up)")]
         [SerializeField] protected float bottomBorderOffset = 0f;
 
-        [Header("Bottom Wall & Exit Enclosure")]
-        [Tooltip("If true, encloses the container with a solid bottom wall so particles never fall out automatically from gravity")]
-        [SerializeField] protected bool encloseBottomWall = true;
-        [Tooltip("Exit opening width if encloseBottomWall is false")]
-        [SerializeField] protected float exitWidth = 1.3f;
-        [SerializeField] protected float nozzleDetectionRadius = 1.6f;
-
-        [Header("Funnel Specific Settings")]
-        [SerializeField] protected float funnelTopY = 3.0f;
-        [SerializeField] protected float funnelNozzleY = -3.0f;
+        [Header("Custom Polygon Points (Local Coordinates)")]
+        [Tooltip("Custom polygon vertices. You can move, add, and shape them directly in the Scene view with handles.")]
+        [SerializeField] protected List<Vector2> customPolygonPoints = new List<Vector2>();
 
         [Header("Visual Styling")]
         [SerializeField] protected bool autoBuildVisuals = true;
@@ -52,7 +44,7 @@ namespace SandBlocks.Core.Boundary
         [SerializeField] protected float borderBeamThickness = 0.32f;
         [Tooltip("Depth (Z-scale) of the border beams")]
         [SerializeField] protected float borderBeamDepth = 0.5f;
-        [Tooltip("If true, creates the interior backplate cube")]
+        [Tooltip("If true, creates the interior backplate")]
         [SerializeField] protected bool showBackPlate = true;
 
         protected List<LineSegment> segments = new List<LineSegment>();
@@ -66,9 +58,8 @@ namespace SandBlocks.Core.Boundary
         }
 
         public ContainerShapeType ShapeType => shapeType;
-        public float NozzleRadius => nozzleDetectionRadius;
         public float BottomY => Bounds.yMin;
-        public bool EncloseBottomWall => encloseBottomWall;
+        public float TopY => Bounds.yMax;
         public float Width => width;
         public float Height => height;
         public Vector2 ContainerCenter => containerCenter;
@@ -82,8 +73,10 @@ namespace SandBlocks.Core.Boundary
 
         public float LeftX => transform.position.x + containerCenter.x - width * 0.5f + leftBorderOffset;
         public float RightX => transform.position.x + containerCenter.x + width * 0.5f + rightBorderOffset;
-        public float TopY => transform.position.y + containerCenter.y + height * 0.5f + topBorderOffset;
+        public float TopYCoord => transform.position.y + containerCenter.y + height * 0.5f + topBorderOffset;
         public float BottomYCoord => transform.position.y + containerCenter.y - height * 0.5f + bottomBorderOffset;
+
+        public List<Vector2> CustomPolygonPoints => customPolygonPoints;
 
         public void SetContainerShape(ContainerShapeType type, float w, float h, Vector2 center)
         {
@@ -108,15 +101,15 @@ namespace SandBlocks.Core.Boundary
             }
         }
 
-        public float2 NozzlePosition
+        public void SetCustomPolygonPoints(List<Vector2> points)
         {
-            get
+            if (points == null || points.Count < 3) return;
+            customPolygonPoints = new List<Vector2>(points);
+            shapeType = ContainerShapeType.CustomPolygon;
+            RebuildSegments();
+            if (autoBuildVisuals)
             {
-                if (shapeType == ContainerShapeType.Funnel)
-                {
-                    return new float2(transform.position.x, transform.position.y + funnelNozzleY + bottomBorderOffset);
-                }
-                return new float2(transform.position.x + containerCenter.x, transform.position.y + containerCenter.y - height * 0.5f + bottomBorderOffset);
+                BuildVisualContainer();
             }
         }
 
@@ -124,18 +117,27 @@ namespace SandBlocks.Core.Boundary
         {
             get
             {
-                if (shapeType == ContainerShapeType.Funnel)
+                if (shapeType == ContainerShapeType.CustomPolygon && customPolygonPoints != null && customPolygonPoints.Count >= 3)
                 {
-                    float minX = transform.position.x - width * 0.5f + leftBorderOffset;
-                    float maxX = transform.position.x + width * 0.5f + rightBorderOffset;
-                    float minY = transform.position.y + funnelNozzleY + bottomBorderOffset;
-                    float maxY = transform.position.y + funnelTopY + topBorderOffset;
+                    float minX = float.MaxValue, maxX = float.MinValue;
+                    float minY = float.MaxValue, maxY = float.MinValue;
+                    Vector2 originPos = transform.position;
+
+                    for (int i = 0; i < customPolygonPoints.Count; i++)
+                    {
+                        Vector2 p = originPos + customPolygonPoints[i];
+                        if (p.x < minX) minX = p.x;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.y > maxY) maxY = p.y;
+                    }
+
                     return new Rect(minX, minY, Mathf.Max(0.1f, maxX - minX), Mathf.Max(0.1f, maxY - minY));
                 }
 
                 float lx = LeftX;
                 float rx = RightX;
-                float ty = TopY;
+                float ty = TopYCoord;
                 float by = BottomYCoord;
 
                 float xMin = Mathf.Min(lx, rx);
@@ -149,6 +151,10 @@ namespace SandBlocks.Core.Boundary
 
         protected virtual void Awake()
         {
+            if (shapeType == ContainerShapeType.CustomPolygon)
+            {
+                EnsureDefaultPolygonPoints();
+            }
             RebuildSegments();
             if (autoBuildVisuals && visualRoot == null)
             {
@@ -158,6 +164,10 @@ namespace SandBlocks.Core.Boundary
 
         protected virtual void OnValidate()
         {
+            if (shapeType == ContainerShapeType.CustomPolygon)
+            {
+                EnsureDefaultPolygonPoints();
+            }
             RebuildSegments();
 #if UNITY_EDITOR
             if (autoBuildVisuals && !Application.isPlaying)
@@ -183,16 +193,15 @@ namespace SandBlocks.Core.Boundary
             }
             else
             {
-                BuildFunnelSegments();
+                BuildCustomPolygonSegments();
             }
         }
 
         private void BuildRectangleSegments()
         {
-            float cx = transform.position.x + containerCenter.x;
             float leftX = LeftX;
             float rightX = RightX;
-            float topY = TopY;
+            float topY = TopYCoord;
             float bottomY = BottomYCoord;
 
             float2 topLeft = new float2(leftX, topY);
@@ -200,56 +209,96 @@ namespace SandBlocks.Core.Boundary
             float2 bottomRight = new float2(rightX, bottomY);
             float2 bottomLeft = new float2(leftX, bottomY);
 
-            // Top wall (Index 0)
+            // Inward normals for rectangle:
+            // Top wall (Left -> Right): normal points DOWN (0, -1)
             AddSegment(topLeft, topRight);
-            // Right wall (Index 1)
+            // Right wall (Top -> Bottom): normal points LEFT (-1, 0)
             AddSegment(topRight, bottomRight);
-
-            if (encloseBottomWall)
-            {
-                // Solid bottom wall (Index 2): Completely enclosed so particles never fall out!
-                AddSegment(bottomRight, bottomLeft);
-            }
-            else
-            {
-                float halfNozzle = exitWidth * 0.5f;
-                float2 nozzleRight = new float2(cx + halfNozzle, bottomY);
-                float2 nozzleLeft = new float2(cx - halfNozzle, bottomY);
-                AddSegment(bottomRight, nozzleRight);
-                AddSegment(nozzleLeft, bottomLeft);
-            }
-
-            // Left wall (Index 3 if enclosed, Index 4 if nozzle opening)
+            // Bottom wall (Right -> Left): normal points UP (0, 1)
+            AddSegment(bottomRight, bottomLeft);
+            // Left wall (Bottom -> Top): normal points RIGHT (1, 0)
             AddSegment(bottomLeft, topLeft);
         }
 
-        private void BuildFunnelSegments()
+        private void BuildCustomPolygonSegments()
         {
-            float halfN = exitWidth * 0.5f;
-            float posX = transform.position.x;
-            float posY = transform.position.y;
+            EnsureDefaultPolygonPoints();
+            if (customPolygonPoints.Count < 3) return;
 
-            float leftX = posX - width * 0.5f + leftBorderOffset;
-            float rightX = posX + width * 0.5f + rightBorderOffset;
-            float topY = posY + funnelTopY + topBorderOffset;
-            float nozzleY = posY + funnelNozzleY + bottomBorderOffset;
+            int n = customPolygonPoints.Count;
 
-            float2 pTopLeft = new float2(leftX, topY);
-            float2 pTopRight = new float2(rightX, topY);
-            float2 pMidRight = new float2(rightX * 0.95f, (topY + nozzleY) * 0.5f);
-            float2 pNozzleRight = new float2(posX + halfN, nozzleY);
-            float2 pNozzleLeft = new float2(posX - halfN, nozzleY);
-            float2 pMidLeft = new float2(leftX * 0.95f, (topY + nozzleY) * 0.5f);
-
-            AddSegment(pTopLeft, pTopRight);
-            AddSegment(pTopRight, pMidRight);
-            AddSegment(pMidRight, pNozzleRight);
-            if (encloseBottomWall)
+            // 1. Calculate signed area to detect winding order (Shoelace formula)
+            float signedArea = 0f;
+            for (int i = 0; i < n; i++)
             {
-                AddSegment(pNozzleRight, pNozzleLeft);
+                Vector2 a = customPolygonPoints[i];
+                Vector2 b = customPolygonPoints[(i + 1) % n];
+                signedArea += (a.x * b.y - b.x * a.y);
             }
-            AddSegment(pNozzleLeft, pMidLeft);
-            AddSegment(pMidLeft, pTopLeft);
+            signedArea *= 0.5f;
+
+            // If Counter-Clockwise (signedArea > 0): left-hand normal (-dir.y, dir.x) points INWARD
+            // If Clockwise (signedArea < 0): right-hand normal (dir.y, -dir.x) points INWARD
+            bool isCCW = signedArea >= 0f;
+
+            // 2. Generate edges in world coordinates
+            Vector2 originPos = transform.position;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 pA = originPos + customPolygonPoints[i];
+                Vector2 pB = originPos + customPolygonPoints[(i + 1) % n];
+
+                float2 a = new float2(pA.x, pA.y);
+                float2 b = new float2(pB.x, pB.y);
+
+                float2 dir = b - a;
+                float len = math.length(dir);
+                if (len < 0.0001f) continue;
+                dir /= len;
+
+                // Guaranteed inward-pointing normal
+                float2 normal = isCCW ? new float2(-dir.y, dir.x) : new float2(dir.y, -dir.x);
+                segments.Add(new LineSegment { a = a, b = b, normal = normal });
+            }
+        }
+
+        public void EnsureDefaultPolygonPoints()
+        {
+            if (customPolygonPoints == null) customPolygonPoints = new List<Vector2>();
+            if (customPolygonPoints.Count >= 3) return;
+
+            customPolygonPoints.Clear();
+            float halfW = width * 0.5f;
+            float halfH = height * 0.5f;
+            Vector2 c = containerCenter;
+
+            // Default CCW rectangular polygon
+            customPolygonPoints.Add(new Vector2(c.x - halfW, c.y - halfH)); // Bottom-Left
+            customPolygonPoints.Add(new Vector2(c.x + halfW, c.y - halfH)); // Bottom-Right
+            customPolygonPoints.Add(new Vector2(c.x + halfW, c.y + halfH)); // Top-Right
+            customPolygonPoints.Add(new Vector2(c.x - halfW, c.y + halfH)); // Top-Left
+        }
+
+        public void ResetToDefaultBox()
+        {
+            customPolygonPoints.Clear();
+            EnsureDefaultPolygonPoints();
+            RebuildSegments();
+            BuildVisualContainer();
+        }
+
+        public void ResetToHexagon()
+        {
+            customPolygonPoints.Clear();
+            float radius = Mathf.Min(width, height) * 0.5f;
+            Vector2 c = containerCenter;
+            for (int i = 0; i < 6; i++)
+            {
+                float angle = i * 60f * Mathf.Deg2Rad;
+                customPolygonPoints.Add(new Vector2(c.x + radius * Mathf.Cos(angle), c.y + radius * Mathf.Sin(angle)));
+            }
+            RebuildSegments();
+            BuildVisualContainer();
         }
 
         protected void AddSegment(float2 a, float2 b)
@@ -284,29 +333,25 @@ namespace SandBlocks.Core.Boundary
             return point;
         }
 
-        public bool IsInNozzleZone(float2 point, float radius)
-        {
-            return math.distance(point, NozzlePosition) <= (nozzleDetectionRadius + radius);
-        }
-
         [ContextMenu("Rebuild Visual Container")]
         public void BuildVisualContainer()
         {
-            if (visualRoot == null)
+            // Destroy all existing visual containers under this transform to avoid duplicates
+            for (int i = transform.childCount - 1; i >= 0; i--)
             {
-                var existing = transform.Find("VisualContainer");
-                if (existing != null) visualRoot = existing.gameObject;
+                Transform child = transform.GetChild(i);
+                if (child != null && child.name.Contains("VisualContainer"))
+                {
+                    if (Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
             }
-
-            if (visualRoot != null)
-            {
-                if (Application.isPlaying) Destroy(visualRoot);
-                else DestroyImmediate(visualRoot);
-            }
+            visualRoot = null;
 
             visualRoot = new GameObject("VisualContainer");
             visualRoot.transform.SetParent(transform);
             visualRoot.transform.localPosition = Vector3.zero;
+            visualRoot.transform.localRotation = Quaternion.identity;
 
             RebuildSegments();
 
@@ -322,7 +367,7 @@ namespace SandBlocks.Core.Boundary
                 float length = Vector3.Distance(start, end);
 
                 var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                beam.name = GetSegmentName(i, segments.Count);
+                beam.name = $"BorderBeam_{i}";
                 beam.transform.SetParent(visualRoot.transform);
                 beam.transform.position = mid;
                 beam.transform.rotation = Quaternion.FromToRotation(Vector3.right, (end - start).normalized);
@@ -353,32 +398,6 @@ namespace SandBlocks.Core.Boundary
             }
         }
 
-        private string GetSegmentName(int index, int totalSegments)
-        {
-            if (totalSegments == 4)
-            {
-                switch (index)
-                {
-                    case 0: return "BorderBeam_Top";
-                    case 1: return "BorderBeam_Right";
-                    case 2: return "BorderBeam_Bottom";
-                    case 3: return "BorderBeam_Left";
-                }
-            }
-            else if (totalSegments == 5)
-            {
-                switch (index)
-                {
-                    case 0: return "BorderBeam_Top";
-                    case 1: return "BorderBeam_Right";
-                    case 2: return "BorderBeam_BottomRight";
-                    case 3: return "BorderBeam_BottomLeft";
-                    case 4: return "BorderBeam_Left";
-                }
-            }
-            return $"BorderBeam_{index}";
-        }
-
         private void OnDrawGizmos()
         {
             Gizmos.color = Color.cyan;
@@ -386,8 +405,16 @@ namespace SandBlocks.Core.Boundary
             {
                 Gizmos.DrawLine(new Vector3(segments[i].a.x, segments[i].a.y, 0f), new Vector3(segments[i].b.x, segments[i].b.y, 0f));
             }
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(new Vector3(NozzlePosition.x, NozzlePosition.y, 0f), nozzleDetectionRadius);
+
+            if (shapeType == ContainerShapeType.CustomPolygon && customPolygonPoints != null)
+            {
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.9f);
+                Vector3 originPos = transform.position;
+                for (int i = 0; i < customPolygonPoints.Count; i++)
+                {
+                    Gizmos.DrawWireSphere(originPos + (Vector3)customPolygonPoints[i], 0.12f);
+                }
+            }
         }
     }
 }

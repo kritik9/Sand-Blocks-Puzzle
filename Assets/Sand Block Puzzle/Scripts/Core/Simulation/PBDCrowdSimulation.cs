@@ -22,6 +22,7 @@ namespace SandBlocks.Core.Simulation
         private bool isInitialized;
 
         public int ActiveCount => activeCount;
+        public int Capacity => capacity;
         public bool IsInitialized => isInitialized;
         public NativeArray<CrowdParticle> Particles => particles;
 

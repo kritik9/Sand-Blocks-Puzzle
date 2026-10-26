@@ -10,6 +10,15 @@ namespace SandBlocks.Puzzle.Grid
         [SerializeField] private int columns = 6;
         [SerializeField] private int rows = 5;
         [SerializeField] private float cellSize = 1.35f;
+
+        [Header("Anchoring (Grows Downward & Centered)")]
+        [Tooltip("If true, automatically computes origin so top row stays anchored at topAnchorY and columns are centered on centerX")]
+        [SerializeField] private bool useTopCenterAnchor = true;
+        [Tooltip("World Y coordinate where the top row (collection row) is placed")]
+        [SerializeField] private float topAnchorY = -3.8f;
+        [Tooltip("World X coordinate where the grid center is aligned")]
+        [SerializeField] private float centerX = 0f;
+
         [SerializeField] private Vector2 origin = new Vector2(-3.4f, -9.2f);
 
         [Header("Visual Styling")]
@@ -21,11 +30,75 @@ namespace SandBlocks.Puzzle.Grid
         private List<VehicleBase> registeredVehicles = new List<VehicleBase>();
         private GameObject visualRoot;
 
+        public event System.Action OnGridDimensionsChanged;
+
         public int Columns => columns;
         public int Rows => rows;
         public float CellSize => cellSize;
         public Vector2 Origin => origin;
         public IReadOnlyList<VehicleBase> RegisteredVehicles => registeredVehicles;
+
+        public bool UseTopCenterAnchor
+        {
+            get => useTopCenterAnchor;
+            set { useTopCenterAnchor = value; RecalculateOrigin(); }
+        }
+
+        public float TopAnchorY
+        {
+            get => topAnchorY;
+            set { topAnchorY = value; RecalculateOrigin(); }
+        }
+
+        public float CenterX
+        {
+            get => centerX;
+            set { centerX = value; RecalculateOrigin(); }
+        }
+
+        public float Width => columns * cellSize;
+        public float Height => rows * cellSize;
+        public float TopY => origin.y + (rows - 1) * cellSize;
+        public float BottomY => origin.y;
+        public float LeftX => origin.x;
+        public float RightX => origin.x + (columns - 1) * cellSize;
+
+        public void RecalculateOrigin()
+        {
+            if (useTopCenterAnchor)
+            {
+                origin.x = centerX - (columns - 1) * 0.5f * cellSize;
+                origin.y = topAnchorY - (rows - 1) * cellSize;
+            }
+            OnGridDimensionsChanged?.Invoke();
+        }
+
+        public void SetGridDimensions(int newCols, int newRows)
+        {
+            columns = Mathf.Max(2, newCols);
+            rows = Mathf.Max(2, newRows);
+            RecalculateOrigin();
+            grid = new VehicleBase[columns, rows];
+            if (autoBuildVisuals)
+            {
+                BuildVisualGrid();
+            }
+            OnGridDimensionsChanged?.Invoke();
+        }
+
+        public void AutoAlignWithBoundary(SandBlocks.Core.Boundary.ContainerBoundary boundary, float verticalGap = 0.9f)
+        {
+            if (boundary != null)
+            {
+                centerX = boundary.transform.position.x + boundary.ContainerCenter.x;
+                topAnchorY = boundary.BottomY - verticalGap;
+                RecalculateOrigin();
+                if (autoBuildVisuals)
+                {
+                    BuildVisualGrid();
+                }
+            }
+        }
 
         public VehicleBase GetVehicleAt(int x, int y)
         {
@@ -38,11 +111,29 @@ namespace SandBlocks.Puzzle.Grid
 
         private void Awake()
         {
+            RecalculateOrigin();
             grid = new VehicleBase[columns, rows];
             if (autoBuildVisuals)
             {
                 BuildVisualGrid();
             }
+        }
+
+        private void OnValidate()
+        {
+            RecalculateOrigin();
+#if UNITY_EDITOR
+            if (autoBuildVisuals && !Application.isPlaying)
+            {
+                UnityEditor.EditorApplication.delayCall += () =>
+                {
+                    if (this != null && autoBuildVisuals && !Application.isPlaying)
+                    {
+                        BuildVisualGrid();
+                    }
+                };
+            }
+#endif
         }
 
         private void SafeDestroy(Object obj)
@@ -54,9 +145,21 @@ namespace SandBlocks.Puzzle.Grid
 
         public void BuildVisualGrid()
         {
-            if (visualRoot != null) SafeDestroy(visualRoot);
+            // 1. Destroy all existing visual grid instances under this transform
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                if (child != null && child.name.Contains("[VisualGrid]"))
+                {
+                    SafeDestroy(child.gameObject);
+                }
+            }
+            visualRoot = null;
+
             visualRoot = new GameObject("[VisualGrid]");
             visualRoot.transform.SetParent(transform);
+            visualRoot.transform.localPosition = Vector3.zero;
+            visualRoot.transform.localRotation = Quaternion.identity;
 
             // 1. Board Backing Tray
             float totalW = columns * cellSize + 0.6f;
@@ -251,6 +354,75 @@ namespace SandBlocks.Puzzle.Grid
             }
 
             return reachable;
+        }
+
+        /// <summary>
+        /// Finds the shortest collision-free grid path (list of waypoints) from startPos to targetPos for the given vehicle.
+        /// Returns an empty list if target is unreachable.
+        /// </summary>
+        public List<Vector2Int> FindPath(VehicleBase vehicle, Vector2Int startPos, Vector2Int targetPos)
+        {
+            var path = new List<Vector2Int>();
+            if (vehicle == null) return path;
+
+            if (startPos == targetPos)
+            {
+                path.Add(startPos);
+                return path;
+            }
+
+            if (!CanPlace(vehicle, targetPos) && targetPos != startPos)
+            {
+                return path;
+            }
+
+            var queue = new Queue<Vector2Int>();
+            var parent = new Dictionary<Vector2Int, Vector2Int>();
+
+            queue.Enqueue(startPos);
+            parent[startPos] = startPos;
+
+            Vector2Int[] directions = new Vector2Int[]
+            {
+                Vector2Int.up,
+                Vector2Int.down,
+                Vector2Int.left,
+                Vector2Int.right
+            };
+
+            bool found = false;
+            while (queue.Count > 0)
+            {
+                Vector2Int curr = queue.Dequeue();
+                if (curr == targetPos)
+                {
+                    found = true;
+                    break;
+                }
+
+                for (int i = 0; i < directions.Length; i++)
+                {
+                    Vector2Int next = curr + directions[i];
+                    if (!parent.ContainsKey(next) && CanPlace(vehicle, next))
+                    {
+                        parent[next] = curr;
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+
+            if (!found) return path;
+
+            Vector2Int step = targetPos;
+            while (step != startPos)
+            {
+                path.Add(step);
+                step = parent[step];
+            }
+            path.Add(startPos);
+            path.Reverse();
+
+            return path;
         }
 
         /// <summary>
