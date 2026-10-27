@@ -44,11 +44,12 @@ namespace SandBlocks.Editor
         // Unified Grid Editor State
         private readonly string[] tabLabelsClassic = new string[] { "Crowd & Container", "Buses & Parking Grid", "Balance & Scene" };
         private readonly string[] tabLabelsUnified = new string[] { "Unified Grid & Cells", "Unified Buses & Destination", "Unified Balance & Scene" };
-        private enum UnifiedTool { Walkable, Blocked, Passenger, Destination }
+        private enum UnifiedTool { Walkable, Blocked, Hole, Passenger, Destination }
         private UnifiedTool activeUnifiedTool = UnifiedTool.Passenger;
         private int unifiedBrushColor = 0;
         private int unifiedPassengerCount = 10;
         private int selectedUnifiedBusIndex = -1;
+        private bool unifiedWalkableAfterCollection = false;
 
         // Image Import State
         private bool showImageImportSection = true;
@@ -336,9 +337,11 @@ namespace SandBlocks.Editor
                     {
                         for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
                         {
-                            if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Blocked)
+                            var cell = selectedLevel.unifiedCells[i];
+                            if (cell.cellType == UnifiedCellType.Blocked || cell.cellType == UnifiedCellType.Hole)
                             {
-                                pg.SetCellBlocked(selectedLevel.unifiedCells[i].gridPosition.x, selectedLevel.unifiedCells[i].gridPosition.y, true);
+                                bool hideVisual = (cell.cellType == UnifiedCellType.Hole) || cell.hideVisual;
+                                pg.SetCellBlocked(cell.gridPosition.x, cell.gridPosition.y, true, hideVisual: hideVisual);
                             }
                         }
                     }
@@ -1959,9 +1962,27 @@ namespace SandBlocks.Editor
         private void DrawUnifiedGridLayoutTab()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label("1. Unified Grid Configuration (Dimensions, Rotation & Shared Destination)", EditorStyles.boldLabel);
+            GUILayout.Label("1. Unified Grid Configuration & Mode", EditorStyles.boldLabel);
 
             EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("Unified Gameplay Flow:");
+            if (GUILayout.Toggle(selectedLevel.unifiedMode == UnifiedMode.DestinationDropOff, "🏁 Destination Drop-Off", EditorStyles.miniButtonLeft))
+            {
+                selectedLevel.unifiedMode = UnifiedMode.DestinationDropOff;
+            }
+            if (GUILayout.Toggle(selectedLevel.unifiedMode == UnifiedMode.BusDriveAway, "🚀 Bus Drive-Away on Full", EditorStyles.miniButtonRight))
+            {
+                selectedLevel.unifiedMode = UnifiedMode.BusDriveAway;
+                if (activeUnifiedTool == UnifiedTool.Destination) activeUnifiedTool = UnifiedTool.Passenger;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (selectedLevel.unifiedMode == UnifiedMode.BusDriveAway)
+            {
+                EditorGUILayout.HelpBox("Bus Drive-Away Mode: No destination station. Filled buses leave the grid as they are filled. Total bus capacity should match total passengers on the grid.", MessageType.Info);
+            }
 
             EditorGUILayout.BeginHorizontal();
             selectedLevel.unifiedGridColumns = EditorGUILayout.IntSlider("Grid Columns:", selectedLevel.unifiedGridColumns, 4, 24);
@@ -1980,12 +2001,15 @@ namespace SandBlocks.Editor
             selectedLevel.unifiedCellSize = EditorGUILayout.Slider("Cell Size:", selectedLevel.unifiedCellSize, 1.0f, 2.5f);
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.BeginHorizontal();
-            int maxDestX = Mathf.Max(0, selectedLevel.unifiedGridColumns - 1);
-            int maxDestY = Mathf.Max(0, selectedLevel.unifiedGridRows - 1);
-            selectedLevel.sharedDestinationPos.x = EditorGUILayout.IntSlider($"Destination X (0..{maxDestX}):", selectedLevel.sharedDestinationPos.x, 0, maxDestX);
-            selectedLevel.sharedDestinationPos.y = EditorGUILayout.IntSlider($"Destination Y (0..{maxDestY}):", selectedLevel.sharedDestinationPos.y, 0, maxDestY);
-            EditorGUILayout.EndHorizontal();
+            if (selectedLevel.unifiedMode == UnifiedMode.DestinationDropOff)
+            {
+                EditorGUILayout.BeginHorizontal();
+                int maxDestX = Mathf.Max(0, selectedLevel.unifiedGridColumns - 1);
+                int maxDestY = Mathf.Max(0, selectedLevel.unifiedGridRows - 1);
+                selectedLevel.sharedDestinationPos.x = EditorGUILayout.IntSlider($"Destination X (0..{maxDestX}):", selectedLevel.sharedDestinationPos.x, 0, maxDestX);
+                selectedLevel.sharedDestinationPos.y = EditorGUILayout.IntSlider($"Destination Y (0..{maxDestY}):", selectedLevel.sharedDestinationPos.y, 0, maxDestY);
+                EditorGUILayout.EndHorizontal();
+            }
 
             if (EditorGUI.EndChangeCheck())
             {
@@ -2003,10 +2027,70 @@ namespace SandBlocks.Editor
             EditorGUILayout.BeginHorizontal();
             GUILayout.Label("Active Tool:", EditorStyles.boldLabel, GUILayout.Width(80));
             if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Walkable, "🚶 Walkable", EditorStyles.miniButtonLeft)) activeUnifiedTool = UnifiedTool.Walkable;
-            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Blocked, "🧱 Blocked (Obstacle)", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Blocked;
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Blocked, "🧱 Blocked (Solid)", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Blocked;
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Hole, "🕳️ Hole (Removed)", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Hole;
             if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Passenger, "👥 Passenger Cell", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Passenger;
-            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Destination, "🏁 Set Destination", EditorStyles.miniButtonRight)) activeUnifiedTool = UnifiedTool.Destination;
+            if (selectedLevel.unifiedMode == UnifiedMode.DestinationDropOff)
+            {
+                if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Destination, "🏁 Set Destination", EditorStyles.miniButtonRight)) activeUnifiedTool = UnifiedTool.Destination;
+            }
             EditorGUILayout.EndHorizontal();
+
+            // Blocked Cell Visual Mode Settings (Always visible when Blocked or Hole tool is active)
+            if (activeUnifiedTool == UnifiedTool.Blocked || activeUnifiedTool == UnifiedTool.Hole)
+            {
+                EditorGUILayout.Space(4);
+                EditorGUILayout.HelpBox(
+                    activeUnifiedTool == UnifiedTool.Blocked
+                        ? "🧱 Solid Blocked: Renders a raised dark 3D obstacle block on the grid. Impassable for buses."
+                        : "🕳️ Hole (Removed): Visually removes this cell completely from the grid (creates custom grid outlines, cutouts, or holes). Impassable for buses.",
+                    MessageType.Info);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Blocked Cell Visual Mode:", EditorStyles.boldLabel, GUILayout.Width(160));
+                bool isSolid = (activeUnifiedTool == UnifiedTool.Blocked);
+                if (GUILayout.Toggle(isSolid, "🧱 Show Blocked (Solid)", EditorStyles.radioButton)) activeUnifiedTool = UnifiedTool.Blocked;
+                if (GUILayout.Toggle(!isSolid, "🕳️ Remove from Grid (Hole)", EditorStyles.radioButton)) activeUnifiedTool = UnifiedTool.Hole;
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("Make All Blocked Cells Solid", EditorStyles.miniButtonLeft))
+                {
+                    Undo.RecordObject(selectedLevel, "Convert Blocked Cells to Solid");
+                    for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                    {
+                        var cell = selectedLevel.unifiedCells[i];
+                        if (cell.cellType == UnifiedCellType.Hole)
+                        {
+                            cell.cellType = UnifiedCellType.Blocked;
+                            cell.hideVisual = false;
+                            selectedLevel.unifiedCells[i] = cell;
+                        }
+                        else if (cell.cellType == UnifiedCellType.Blocked)
+                        {
+                            cell.hideVisual = false;
+                            selectedLevel.unifiedCells[i] = cell;
+                        }
+                    }
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                if (GUILayout.Button("Make All Blocked Cells Holes (Removed)", EditorStyles.miniButtonRight))
+                {
+                    Undo.RecordObject(selectedLevel, "Convert Blocked Cells to Holes");
+                    for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                    {
+                        var cell = selectedLevel.unifiedCells[i];
+                        if (cell.cellType == UnifiedCellType.Blocked)
+                        {
+                            cell.cellType = UnifiedCellType.Hole;
+                            cell.hideVisual = true;
+                            selectedLevel.unifiedCells[i] = cell;
+                        }
+                    }
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
 
             if (activeUnifiedTool == UnifiedTool.Passenger)
             {
@@ -2047,6 +2131,11 @@ namespace SandBlocks.Editor
                 if (GUILayout.Button("28", GUILayout.Width(30))) unifiedPassengerCount = 28;
                 if (GUILayout.Button("56", GUILayout.Width(30))) unifiedPassengerCount = 56;
                 EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.BeginHorizontal();
+                unifiedWalkableAfterCollection = EditorGUILayout.ToggleLeft(" 🔓 Walkable After Collection (Becomes open path when cleared)", unifiedWalkableAfterCollection);
+                EditorGUILayout.EndHorizontal();
             }
 
             EditorGUILayout.Space(4);
@@ -2060,11 +2149,14 @@ namespace SandBlocks.Editor
                     EditorUtility.SetDirty(selectedLevel);
                 }
             }
-            if (GUILayout.Button("Set Destination to Bottom-Left (0, 0)"))
+            if (selectedLevel.unifiedMode == UnifiedMode.DestinationDropOff)
             {
-                Undo.RecordObject(selectedLevel, "Set Destination");
-                selectedLevel.sharedDestinationPos = Vector2Int.zero;
-                EditorUtility.SetDirty(selectedLevel);
+                if (GUILayout.Button("Set Destination to Bottom-Left (0, 0)"))
+                {
+                    Undo.RecordObject(selectedLevel, "Set Destination");
+                    selectedLevel.sharedDestinationPos = Vector2Int.zero;
+                    EditorUtility.SetDirty(selectedLevel);
+                }
             }
             EditorGUILayout.EndHorizontal();
 
@@ -2074,6 +2166,81 @@ namespace SandBlocks.Editor
 
             // Interactive Canvas
             DrawUnifiedGridCanvas();
+
+            EditorGUILayout.Space(6);
+            DrawConfiguredPassengerStopsList();
+        }
+
+        private void DrawConfiguredPassengerStopsList()
+        {
+            if (selectedLevel == null || selectedLevel.unifiedCells == null) return;
+
+            var stops = selectedLevel.unifiedCells.FindAll(c => c.cellType == UnifiedCellType.Passenger);
+            if (stops.Count == 0) return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label($"3. Configured Passenger Stops ({stops.Count}) - Walkable Options", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("🔓 Set All Stops Walkable When Cleared"))
+            {
+                Undo.RecordObject(selectedLevel, "Set All Passenger Stops Walkable");
+                for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                {
+                    if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Passenger)
+                    {
+                        var cell = selectedLevel.unifiedCells[i];
+                        cell.walkableAfterCollection = true;
+                        selectedLevel.unifiedCells[i] = cell;
+                    }
+                }
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            if (GUILayout.Button("🔒 Set All Stops Stays Blocked"))
+            {
+                Undo.RecordObject(selectedLevel, "Set All Passenger Stops Blocked");
+                for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                {
+                    if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Passenger)
+                    {
+                        var cell = selectedLevel.unifiedCells[i];
+                        cell.walkableAfterCollection = false;
+                        selectedLevel.unifiedCells[i] = cell;
+                    }
+                }
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(3);
+
+            for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+            {
+                var cell = selectedLevel.unifiedCells[i];
+                if (cell.cellType != UnifiedCellType.Passenger) continue;
+
+                EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+                Color prevBg = GUI.backgroundColor;
+                GUI.backgroundColor = GetColor(cell.colorId);
+                GUILayout.Box("", GUILayout.Width(18), GUILayout.Height(18));
+                GUI.backgroundColor = prevBg;
+
+                GUILayout.Label($"Stop at ({cell.gridPosition.x}, {cell.gridPosition.y}) | {GetColorName(cell.colorId)} | Count: {cell.passengerCount}", GUILayout.Width(240));
+
+                bool newWalkable = EditorGUILayout.ToggleLeft(cell.walkableAfterCollection ? "🔓 Walkable When Cleared" : "🔒 Stays Blocked", cell.walkableAfterCollection);
+                if (newWalkable != cell.walkableAfterCollection)
+                {
+                    Undo.RecordObject(selectedLevel, "Toggle Stop Walkable");
+                    cell.walkableAfterCollection = newWalkable;
+                    selectedLevel.unifiedCells[i] = cell;
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndVertical();
         }
 
         private void DrawUnifiedGridCanvas()
@@ -2081,16 +2248,16 @@ namespace SandBlocks.Editor
             int cols = selectedLevel.unifiedGridColumns;
             int rows = selectedLevel.unifiedGridRows;
 
-            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 260f, 480f);
-            float boardHeight = boardWidth * ((float)rows / cols);
-            float cellW = boardWidth / cols;
-            float cellH = boardHeight / rows;
+            float canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 260f, 480f);
+            float canvasHeight = canvasWidth * ((float)rows / cols);
+            float cellW = canvasWidth / cols;
+            float cellH = canvasHeight / rows;
 
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
-            Rect canvasRect = GUILayoutUtility.GetRect(boardWidth, boardHeight);
-            EditorGUI.DrawRect(canvasRect, new Color(0.12f, 0.13f, 0.16f, 1f));
+            Rect canvasRect = GUILayoutUtility.GetRect(canvasWidth, canvasHeight);
+            EditorGUI.DrawRect(canvasRect, new Color(0.18f, 0.18f, 0.2f, 1f));
 
             // Draw cells (Inverted Y: Row 0 is at bottom)
             for (int r = 0; r < rows; r++)
@@ -2105,7 +2272,7 @@ namespace SandBlocks.Editor
                     Vector2Int pos = new Vector2Int(c, r);
 
                     var cellData = selectedLevel.GetUnifiedCell(pos);
-                    bool isDest = (pos == selectedLevel.sharedDestinationPos || cellData.cellType == UnifiedCellType.Destination);
+                    bool isDest = (selectedLevel.unifiedMode == UnifiedMode.DestinationDropOff) && (pos == selectedLevel.sharedDestinationPos || cellData.cellType == UnifiedCellType.Destination);
 
                     Color tileColor;
                     string label = "";
@@ -2117,16 +2284,23 @@ namespace SandBlocks.Editor
                         label = "DEST";
                         textColor = Color.black;
                     }
-                    else if (cellData.cellType == UnifiedCellType.Blocked)
+                    else if (cellData.cellType == UnifiedCellType.Blocked && !cellData.hideVisual)
                     {
                         tileColor = new Color(0.24f, 0.25f, 0.28f, 1f); // Dark obstacle
                         label = "✕";
                         textColor = new Color(0.6f, 0.6f, 0.65f, 1f);
                     }
+                    else if (cellData.cellType == UnifiedCellType.Hole || (cellData.cellType == UnifiedCellType.Blocked && cellData.hideVisual))
+                    {
+                        tileColor = new Color(0.12f, 0.12f, 0.15f, 0.35f); // Cutout hole
+                        label = "🕳️";
+                        textColor = new Color(0.5f, 0.5f, 0.55f, 0.8f);
+                    }
                     else if (cellData.cellType == UnifiedCellType.Passenger)
                     {
                         tileColor = GetColor(cellData.colorId);
-                        label = $"{cellData.passengerCount}";
+                        string walkTag = cellData.walkableAfterCollection ? "🔓" : "🔒";
+                        label = $"{cellData.passengerCount} {walkTag}";
                         textColor = (cellData.colorId == 4 || cellData.colorId == 0) ? Color.white : Color.black;
                     }
                     else
@@ -2182,10 +2356,13 @@ namespace SandBlocks.Editor
                             selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Walkable, 0, 0);
                             break;
                         case UnifiedTool.Blocked:
-                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Blocked, 0, 0);
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Blocked, 0, 0, false, hideVisual: false);
+                            break;
+                        case UnifiedTool.Hole:
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Hole, 0, 0, false, hideVisual: true);
                             break;
                         case UnifiedTool.Passenger:
-                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Passenger, unifiedBrushColor, unifiedPassengerCount);
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Passenger, unifiedBrushColor, unifiedPassengerCount, unifiedWalkableAfterCollection);
                             break;
                         case UnifiedTool.Destination:
                             selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Destination, 0, 0);
@@ -2306,15 +2483,21 @@ namespace SandBlocks.Editor
                         tileColor = new Color(1f, 0.82f, 0.15f, 1f);
                         tileText = "DEST";
                     }
-                    else if (cellData.cellType == UnifiedCellType.Blocked)
+                    else if (cellData.cellType == UnifiedCellType.Blocked && !cellData.hideVisual)
                     {
                         tileColor = new Color(0.24f, 0.25f, 0.28f, 1f);
                         tileText = "✕";
                     }
+                    else if (cellData.cellType == UnifiedCellType.Hole || (cellData.cellType == UnifiedCellType.Blocked && cellData.hideVisual))
+                    {
+                        tileColor = new Color(0.12f, 0.12f, 0.15f, 0.35f);
+                        tileText = "🕳️";
+                    }
                     else if (cellData.cellType == UnifiedCellType.Passenger)
                     {
                         tileColor = Color.Lerp(GetColor(cellData.colorId), Color.white, 0.35f);
-                        tileText = $"P:{cellData.passengerCount}";
+                        string walkTag = cellData.walkableAfterCollection ? "🔓" : "🔒";
+                        tileText = $"P:{cellData.passengerCount} {walkTag}";
                     }
                     else
                     {

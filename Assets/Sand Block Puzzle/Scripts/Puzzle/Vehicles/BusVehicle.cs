@@ -866,9 +866,10 @@ namespace SandBlocks.Puzzle.Vehicles
             }
 
             if (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive)
+                SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
+                SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff)
             {
-                // In Unified Grid mode, the bus stays on the grid for manual player driving to the destination
+                // In DestinationDropOff mode, the bus stays on the grid for manual player driving to the destination
                 return;
             }
             // Classic mode drive away:
@@ -902,10 +903,13 @@ namespace SandBlocks.Puzzle.Vehicles
                 default: driveDir = Vector3.right; break;
             }
 
+            var grid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
+            Vector3 worldDriveDir = (grid != null) ? grid.transform.TransformDirection(driveDir) : driveDir;
+
             float elapsed = 0f;
             float duration = 0.8f;
             Vector3 startPos = transform.position;
-            Vector3 endPos = startPos + driveDir * 15f;
+            Vector3 endPos = startPos + worldDriveDir * 15f;
 
             while (elapsed < duration)
             {

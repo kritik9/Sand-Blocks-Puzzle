@@ -131,9 +131,13 @@ namespace SandBlocks.Puzzle.Input
             }
             else if (isHeld && selectedVehicle != null)
             {
-                if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
+                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
+
+                if (selectedVehicle.IsFull && !shouldStayForDropOff)
                 {
-                    // Bus became full while hovering and is driving away: release gracefully
+                    // Bus became full while dragging and is driving away: release gracefully
                     activePath.Clear();
                     selectedVehicle = null;
                     return;
@@ -280,6 +284,17 @@ namespace SandBlocks.Puzzle.Input
             }
         }
 
+        public void RefreshReachablePositions()
+        {
+            if (selectedVehicle != null && puzzleGrid != null)
+            {
+                var newReachable = puzzleGrid.GetReachablePositions(selectedVehicle, currentHoveredGrid);
+                newReachable.UnionWith(puzzleGrid.GetReachablePositions(selectedVehicle, initialGridPos));
+                reachablePositions = newReachable;
+                lastTargetDestination = new Vector2Int(-999, -999);
+            }
+        }
+
         private VehicleBase RaycastVehicle(Vector2 screenPos)
         {
             Ray ray = gameCamera.ScreenPointToRay(screenPos);
@@ -290,7 +305,11 @@ namespace SandBlocks.Puzzle.Input
             for (int i = 0; i < hits.Length; i++)
             {
                 var v = hits[i].collider.GetComponentInParent<VehicleBase>();
-                if (v != null && (!v.IsFull || (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive)))
+                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
+
+                if (v != null && (!v.IsFull || shouldStayForDropOff))
                 {
                     if (hits[i].distance < closestDist)
                     {

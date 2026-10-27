@@ -1,0 +1,169 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
+  m_Name: Level_07
+  m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
+  gameplayMode: 1
+  levelName: Level 7
+  particleRadius: 0.15
+  maxParticles: 100
+  containerShape: 0
+  containerWidth: 4.67
+  containerHeight: 5.27
+  containerCenter: {x: 0, y: 1.5}
+  leftBorderOffset: 0
+  rightBorderOffset: 0
+  topBorderOffset: 0
+  bottomBorderOffset: 0
+  customPolygonPoints: []
+  patternType: 0
+  gridColumns: 6
+  gridRows: 6
+  customCrowdColors: 050000000500000005000000050000000500000005000000050000000000000000000000000000000000000005000000050000000200000002000000020000000200000005000000050000000300000004000000040000000300000005000000050000000300000003000000030000000300000005000000050000000500000005000000050000000500000005000000
+  colorMapTexture: {fileID: 0}
+  puzzleColumns: 6
+  puzzleRows: 6
+  buses: []
+  unifiedGridColumns: 10
+  unifiedGridRows: 10
+  unifiedGridRotation: 0
+  unifiedCellSize: 1
+  unifiedMode: 1
+  sharedDestinationPos: {x: 0, y: 1}
+  unifiedCells:
+  - gridPosition: {x: 5, y: 7}
+    cellType: 2
+    colorId: 4
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 4, y: 7}
+    cellType: 2
+    colorId: 4
+    passengerCount: 10
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 7, y: 3}
+    cellType: 2
+    colorId: 3
+    passengerCount: 10
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 3, y: 6}
+    cellType: 1
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 3, y: 5}
+    cellType: 1
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 2, y: 5}
+    cellType: 1
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 4, y: 1}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 5, y: 1}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 8, y: 3}
+    cellType: 2
+    colorId: 3
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 8, y: 2}
+    cellType: 2
+    colorId: 3
+    passengerCount: 10
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 7, y: 2}
+    cellType: 2
+    colorId: 3
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 3}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 4, y: 3}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 4, y: 2}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 5, y: 2}
+    cellType: 4
+    colorId: 0
+    passengerCount: 0
+    walkableAfterCollection: 0
+    hideVisual: 1
+  - gridPosition: {x: 0, y: 9}
+    cellType: 2
+    colorId: 7
+    passengerCount: 10
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 8}
+    cellType: 2
+    colorId: 7
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 8}
+    cellType: 2
+    colorId: 7
+    passengerCount: 10
+    walkableAfterCollection: 0
+    hideVisual: 0
+  unifiedBuses:
+  - name: Pink Bus
+    colorId: 4
+    capacity: 15
+    length: 3
+    rotationDegrees: 90
+    gridPosition: {x: 0, y: 4}
+  - name: Blue Bus
+    colorId: 3
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 4, y: 6}
+  - name: Blue Bus
+    colorId: 7
+    capacity: 25
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 6, y: 5}
