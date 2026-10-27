@@ -5,6 +5,29 @@ using SandBlocks.Core.Boundary;
 
 namespace SandBlocks.Core.Data
 {
+    public enum GameplayMode
+    {
+        ClassicTwoArea = 0,
+        UnifiedGrid = 1
+    }
+
+    public enum UnifiedCellType
+    {
+        Walkable = 0,
+        Blocked = 1,
+        Passenger = 2,
+        Destination = 3
+    }
+
+    [Serializable]
+    public struct UnifiedCellData
+    {
+        public Vector2Int gridPosition;
+        public UnifiedCellType cellType;
+        public int colorId;
+        public int passengerCount;
+    }
+
     public enum LevelPatternType
     {
         LipsShape = 0,
@@ -30,6 +53,10 @@ namespace SandBlocks.Core.Data
     [CreateAssetMenu(fileName = "Level_01", menuName = "SandBlocks/Level Data")]
     public class LevelData : ScriptableObject
     {
+        [Header("Gameplay Approach")]
+        [Tooltip("ClassicTwoArea: Separate crowd container + bus parking grid. UnifiedGrid: Single unified grid containing passengers and buses.")]
+        public GameplayMode gameplayMode = GameplayMode.ClassicTwoArea;
+
         [Header("General Settings")]
         public string levelName = "Level 1";
         public float particleRadius = 0.28f;
@@ -88,6 +115,141 @@ namespace SandBlocks.Core.Data
             new BusSpawnData { name = "Green Bus",   colorId = 1, capacity = 4, length = 2, rotationDegrees = 180, gridPosition = new Vector2Int(4, 1) },
             new BusSpawnData { name = "Long White",  colorId = 5, capacity = 10, length = 6, rotationDegrees = 0,  gridPosition = new Vector2Int(0, 0) }
         };
+
+        [Header("Unified Grid Configuration")]
+        [Tooltip("Columns for the unified grid")]
+        public int unifiedGridColumns = 8;
+        [Tooltip("Rows for the unified grid")]
+        public int unifiedGridRows = 8;
+        [Tooltip("Grid rotation in degrees: 0, 90, 180, or 270")]
+        [Range(0, 360)]
+        public int unifiedGridRotation = 0;
+        [Tooltip("Cell size in world units for the unified grid")]
+        public float unifiedCellSize = 1.35f;
+        [Tooltip("Grid position of the shared destination station for passenger drop-off")]
+        public Vector2Int sharedDestinationPos = new Vector2Int(0, 0);
+
+        [Tooltip("Configured cells (blocked obstacles, passenger cells, destination) for the unified grid")]
+        public List<UnifiedCellData> unifiedCells = new List<UnifiedCellData>();
+
+        [Tooltip("Buses placed on the unified grid")]
+        public List<BusSpawnData> unifiedBuses = new List<BusSpawnData>();
+
+        public List<Vector2Int> GetDestinationCells()
+        {
+            var list = new List<Vector2Int>();
+            if (unifiedCells != null)
+            {
+                for (int i = 0; i < unifiedCells.Count; i++)
+                {
+                    if (unifiedCells[i].cellType == UnifiedCellType.Destination)
+                    {
+                        list.Add(unifiedCells[i].gridPosition);
+                    }
+                }
+            }
+            if (list.Count == 0)
+            {
+                list.Add(sharedDestinationPos);
+            }
+            return list;
+        }
+
+        public UnifiedCellData GetUnifiedCell(Vector2Int pos)
+        {
+            if (unifiedCells != null)
+            {
+                for (int i = 0; i < unifiedCells.Count; i++)
+                {
+                    if (unifiedCells[i].gridPosition == pos) return unifiedCells[i];
+                }
+            }
+            return new UnifiedCellData
+            {
+                gridPosition = pos,
+                cellType = (pos == sharedDestinationPos ? UnifiedCellType.Destination : UnifiedCellType.Walkable),
+                colorId = 0,
+                passengerCount = 0
+            };
+        }
+
+        public void SetUnifiedCell(Vector2Int pos, UnifiedCellType type, int colorId, int passengerCount)
+        {
+            if (unifiedCells == null) unifiedCells = new List<UnifiedCellData>();
+
+            for (int i = 0; i < unifiedCells.Count; i++)
+            {
+                if (unifiedCells[i].gridPosition == pos)
+                {
+                    if (type == UnifiedCellType.Walkable)
+                    {
+                        unifiedCells.RemoveAt(i);
+                    }
+                    else
+                    {
+                        var cell = unifiedCells[i];
+                        cell.cellType = type;
+                        cell.colorId = colorId;
+                        cell.passengerCount = passengerCount;
+                        unifiedCells[i] = cell;
+                    }
+                    return;
+                }
+            }
+
+            if (type != UnifiedCellType.Walkable)
+            {
+                unifiedCells.Add(new UnifiedCellData
+                {
+                    gridPosition = pos,
+                    cellType = type,
+                    colorId = colorId,
+                    passengerCount = passengerCount
+                });
+            }
+        }
+
+        public int GetTotalUnifiedPassengers()
+        {
+            if (unifiedCells == null) return 0;
+            int total = 0;
+            for (int i = 0; i < unifiedCells.Count; i++)
+            {
+                if (unifiedCells[i].cellType == UnifiedCellType.Passenger)
+                {
+                    total += unifiedCells[i].passengerCount;
+                }
+            }
+            return total;
+        }
+
+        public int GetUnifiedPassengersByColor(int cId)
+        {
+            if (unifiedCells == null) return 0;
+            int count = 0;
+            for (int i = 0; i < unifiedCells.Count; i++)
+            {
+                if (unifiedCells[i].cellType == UnifiedCellType.Passenger && unifiedCells[i].colorId == cId)
+                {
+                    count += unifiedCells[i].passengerCount;
+                }
+            }
+            return count;
+        }
+
+        public int GetUnifiedBusCapacityByColor(int cId)
+        {
+            if (unifiedBuses == null) return 0;
+            int cap = 0;
+            for (int i = 0; i < unifiedBuses.Count; i++)
+            {
+                if (unifiedBuses[i].colorId == cId)
+                {
+                    cap += unifiedBuses[i].capacity;
+                }
+            }
+            return cap;
+        }
 
         public int GetColorForPosition(float y, float x, float u, float v)
         {

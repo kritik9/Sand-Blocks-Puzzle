@@ -41,6 +41,15 @@ namespace SandBlocks.Editor
         // Bus Editor State
         private int selectedBusIndex = -1;
 
+        // Unified Grid Editor State
+        private readonly string[] tabLabelsClassic = new string[] { "Crowd & Container", "Buses & Parking Grid", "Balance & Scene" };
+        private readonly string[] tabLabelsUnified = new string[] { "Unified Grid & Cells", "Unified Buses & Destination", "Unified Balance & Scene" };
+        private enum UnifiedTool { Walkable, Blocked, Passenger, Destination }
+        private UnifiedTool activeUnifiedTool = UnifiedTool.Passenger;
+        private int unifiedBrushColor = 0;
+        private int unifiedPassengerCount = 10;
+        private int selectedUnifiedBusIndex = -1;
+
         // Image Import State
         private bool showImageImportSection = true;
         private int importGridCols = 16;
@@ -140,23 +149,55 @@ namespace SandBlocks.Editor
 
             selectedLevel.EnsureCustomGridInitialized();
 
+            // Gameplay Approach Selector
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Gameplay Approach:", EditorStyles.boldLabel, GUILayout.Width(135));
+            EditorGUI.BeginChangeCheck();
+            selectedLevel.gameplayMode = (GameplayMode)EditorGUILayout.EnumPopup(selectedLevel.gameplayMode);
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+
             EditorGUILayout.Space(4);
-            selectedTab = GUILayout.Toolbar(selectedTab, tabLabels, GUILayout.Height(28));
+            string[] activeTabLabels = (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid) ? tabLabelsUnified : tabLabelsClassic;
+            selectedTab = GUILayout.Toolbar(selectedTab, activeTabLabels, GUILayout.Height(28));
             EditorGUILayout.Space(6);
 
             scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
 
-            switch (selectedTab)
+            if (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid)
             {
-                case 0:
-                    DrawContainerAndCrowdTab();
-                    break;
-                case 1:
-                    DrawBusesAndParkingTab();
-                    break;
-                case 2:
-                    DrawBalanceAndSceneTab();
-                    break;
+                switch (selectedTab)
+                {
+                    case 0:
+                        DrawUnifiedGridLayoutTab();
+                        break;
+                    case 1:
+                        DrawUnifiedBusesTab();
+                        break;
+                    case 2:
+                        DrawUnifiedBalanceTab();
+                        break;
+                }
+            }
+            else
+            {
+                switch (selectedTab)
+                {
+                    case 0:
+                        DrawContainerAndCrowdTab();
+                        break;
+                    case 1:
+                        DrawBusesAndParkingTab();
+                        break;
+                    case 2:
+                        DrawBalanceAndSceneTab();
+                        break;
+                }
             }
 
             EditorGUILayout.EndScrollView();
@@ -263,32 +304,74 @@ namespace SandBlocks.Editor
 
             SaveCurrentLevel();
 
-            // 1. Assign to GameManager
+            var lm = FindAnyObjectByType<LevelManager>();
+            if (lm != null)
+            {
+                lm.SetupScreenForLevel(selectedLevel);
+                Debug.Log($"<color=green>[SandBlocks]</color> Applied '{selectedLevel.name}' via LevelManager to active scene.");
+                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+                return;
+            }
+
             var gm = FindAnyObjectByType<GameManager>();
             if (gm != null)
             {
                 var soGM = new SerializedObject(gm);
                 soGM.FindProperty("currentLevel").objectReferenceValue = selectedLevel;
                 soGM.ApplyModifiedProperties();
-                Debug.Log($"<color=green>[SandBlocks]</color> Assigned '{selectedLevel.name}' to GameManager in active scene.");
             }
 
-            // 2. Update visual boundary in scene
-            var cb = FindAnyObjectByType<ContainerBoundary>();
-            if (cb != null)
+            if (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid)
             {
-                if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                var cb = FindAnyObjectByType<ContainerBoundary>();
+                if (cb != null) cb.gameObject.SetActive(false);
+
+                var pg = FindAnyObjectByType<PuzzleGrid>();
+                if (pg != null)
                 {
-                    cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                    pg.CenterGridAtZero = true;
+                    pg.SetGridRotation(selectedLevel.unifiedGridRotation);
+                    pg.ClearBlockedCells();
+                    if (selectedLevel.unifiedCells != null)
+                    {
+                        for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                        {
+                            if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Blocked)
+                            {
+                                pg.SetCellBlocked(selectedLevel.unifiedCells[i].gridPosition.x, selectedLevel.unifiedCells[i].gridPosition.y, true);
+                            }
+                        }
+                    }
+                    pg.SetGridDimensions(selectedLevel.unifiedGridColumns, selectedLevel.unifiedGridRows);
                 }
-                else
+            }
+            else
+            {
+                var cb = FindAnyObjectByType<ContainerBoundary>();
+                if (cb != null)
                 {
-                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
-                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    cb.gameObject.SetActive(true);
+                    if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                    {
+                        cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                    }
+                    else
+                    {
+                        cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                            selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                    }
+                    cb.BuildVisualContainer();
+                    EditorUtility.SetDirty(cb);
                 }
-                cb.BuildVisualContainer();
-                EditorUtility.SetDirty(cb);
-                Debug.Log($"<color=green>[SandBlocks]</color> Updated scene ContainerBoundary to {selectedLevel.containerShape} ({selectedLevel.containerWidth}x{selectedLevel.containerHeight}).");
+
+                var pg = FindAnyObjectByType<PuzzleGrid>();
+                if (pg != null)
+                {
+                    pg.CenterGridAtZero = false;
+                    pg.SetGridRotation(0);
+                    pg.ClearBlockedCells();
+                    pg.SetGridDimensions(selectedLevel.puzzleColumns, selectedLevel.puzzleRows);
+                }
             }
 
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
@@ -1494,7 +1577,7 @@ namespace SandBlocks.Editor
             Rect busRect = new Rect(busX, busY, busW, busH);
 
             Color busColor = GetColor(bus.colorId);
-            bool isSelected = (selectedBusIndex == index);
+            bool isSelected = (selectedBusIndex == index || selectedUnifiedBusIndex == index);
 
             // Draw bus body
             EditorGUI.DrawRect(busRect, busColor);
@@ -1867,6 +1950,719 @@ namespace SandBlocks.Editor
 
             EditorUtility.SetDirty(selectedLevel);
             Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced bus capacities to match crowd counts!");
+        }
+
+        // =========================================================================
+        // UNIFIED GRID SYSTEM TABS & EDITING
+        // =========================================================================
+
+        private void DrawUnifiedGridLayoutTab()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("1. Unified Grid Configuration (Dimensions, Rotation & Shared Destination)", EditorStyles.boldLabel);
+
+            EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.BeginHorizontal();
+            selectedLevel.unifiedGridColumns = EditorGUILayout.IntSlider("Grid Columns:", selectedLevel.unifiedGridColumns, 4, 24);
+            selectedLevel.unifiedGridRows = EditorGUILayout.IntSlider("Grid Rows:", selectedLevel.unifiedGridRows, 4, 24);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("Grid Rotation:");
+            if (GUILayout.Toggle(selectedLevel.unifiedGridRotation == 0, "0° (Default)", EditorStyles.miniButtonLeft)) selectedLevel.unifiedGridRotation = 0;
+            if (GUILayout.Toggle(selectedLevel.unifiedGridRotation == 90, "90° (Up)", EditorStyles.miniButtonMid)) selectedLevel.unifiedGridRotation = 90;
+            if (GUILayout.Toggle(selectedLevel.unifiedGridRotation == 180, "180° (Invert)", EditorStyles.miniButtonMid)) selectedLevel.unifiedGridRotation = 180;
+            if (GUILayout.Toggle(selectedLevel.unifiedGridRotation == 270, "270° (Down)", EditorStyles.miniButtonRight)) selectedLevel.unifiedGridRotation = 270;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            selectedLevel.unifiedCellSize = EditorGUILayout.Slider("Cell Size:", selectedLevel.unifiedCellSize, 1.0f, 2.5f);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            int maxDestX = Mathf.Max(0, selectedLevel.unifiedGridColumns - 1);
+            int maxDestY = Mathf.Max(0, selectedLevel.unifiedGridRows - 1);
+            selectedLevel.sharedDestinationPos.x = EditorGUILayout.IntSlider($"Destination X (0..{maxDestX}):", selectedLevel.sharedDestinationPos.x, 0, maxDestX);
+            selectedLevel.sharedDestinationPos.y = EditorGUILayout.IntSlider($"Destination Y (0..{maxDestY}):", selectedLevel.sharedDestinationPos.y, 0, maxDestY);
+            EditorGUILayout.EndHorizontal();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorUtility.SetDirty(selectedLevel);
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(6);
+
+            // Tools & Brush Selector
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("2. Cell Type & Passenger Painting Tools", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Active Tool:", EditorStyles.boldLabel, GUILayout.Width(80));
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Walkable, "🚶 Walkable", EditorStyles.miniButtonLeft)) activeUnifiedTool = UnifiedTool.Walkable;
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Blocked, "🧱 Blocked (Obstacle)", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Blocked;
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Passenger, "👥 Passenger Cell", EditorStyles.miniButtonMid)) activeUnifiedTool = UnifiedTool.Passenger;
+            if (GUILayout.Toggle(activeUnifiedTool == UnifiedTool.Destination, "🏁 Set Destination", EditorStyles.miniButtonRight)) activeUnifiedTool = UnifiedTool.Destination;
+            EditorGUILayout.EndHorizontal();
+
+            if (activeUnifiedTool == UnifiedTool.Passenger)
+            {
+                EditorGUILayout.Space(4);
+                // Passenger Color & Count
+                EditorGUILayout.LabelField("Passenger Color:");
+                int totalEntries = (palette != null && palette.Entries != null) ? palette.Entries.Length : fallbackColors.Length;
+                int perRow = 6;
+                for (int i = 0; i < totalEntries; i++)
+                {
+                    if (i % perRow == 0)
+                    {
+                        if (i > 0) EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.BeginHorizontal();
+                    }
+                    int cId = (palette != null && palette.Entries != null) ? palette.Entries[i].id : i;
+                    string cName = (palette != null && palette.Entries != null) ? palette.Entries[i].name : GetColorName(i);
+                    Color c = (palette != null && palette.Entries != null) ? palette.Entries[i].color : GetColor(i);
+
+                    Color prevC = GUI.backgroundColor;
+                    GUI.backgroundColor = c;
+                    bool isSelected = (unifiedBrushColor == cId);
+                    if (GUILayout.Button(isSelected ? $"✓ {cName}" : cName, GUILayout.Height(24), GUILayout.MinWidth(55)))
+                    {
+                        unifiedBrushColor = cId;
+                    }
+                    GUI.backgroundColor = prevC;
+                }
+                if (totalEntries > 0) EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.BeginHorizontal();
+                unifiedPassengerCount = EditorGUILayout.IntSlider("Passengers in Cell:", unifiedPassengerCount, 1, 56);
+                if (GUILayout.Button("5", GUILayout.Width(30))) unifiedPassengerCount = 5;
+                if (GUILayout.Button("10", GUILayout.Width(30))) unifiedPassengerCount = 10;
+                if (GUILayout.Button("15", GUILayout.Width(30))) unifiedPassengerCount = 15;
+                if (GUILayout.Button("20", GUILayout.Width(30))) unifiedPassengerCount = 20;
+                if (GUILayout.Button("28", GUILayout.Width(30))) unifiedPassengerCount = 28;
+                if (GUILayout.Button("56", GUILayout.Width(30))) unifiedPassengerCount = 56;
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Clear All Cells to Walkable"))
+            {
+                if (EditorUtility.DisplayDialog("Clear Grid", "Reset all cells to walkable?", "Yes", "Cancel"))
+                {
+                    Undo.RecordObject(selectedLevel, "Clear Unified Cells");
+                    selectedLevel.unifiedCells.Clear();
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+            }
+            if (GUILayout.Button("Set Destination to Bottom-Left (0, 0)"))
+            {
+                Undo.RecordObject(selectedLevel, "Set Destination");
+                selectedLevel.sharedDestinationPos = Vector2Int.zero;
+                EditorUtility.SetDirty(selectedLevel);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(6);
+
+            // Interactive Canvas
+            DrawUnifiedGridCanvas();
+        }
+
+        private void DrawUnifiedGridCanvas()
+        {
+            int cols = selectedLevel.unifiedGridColumns;
+            int rows = selectedLevel.unifiedGridRows;
+
+            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 260f, 480f);
+            float boardHeight = boardWidth * ((float)rows / cols);
+            float cellW = boardWidth / cols;
+            float cellH = boardHeight / rows;
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            Rect canvasRect = GUILayoutUtility.GetRect(boardWidth, boardHeight);
+            EditorGUI.DrawRect(canvasRect, new Color(0.12f, 0.13f, 0.16f, 1f));
+
+            // Draw cells (Inverted Y: Row 0 is at bottom)
+            for (int r = 0; r < rows; r++)
+            {
+                int visualRow = (rows - 1) - r;
+                float y = canvasRect.y + visualRow * cellH;
+
+                for (int c = 0; c < cols; c++)
+                {
+                    float x = canvasRect.x + c * cellW;
+                    Rect cellRect = new Rect(x + 1.5f, y + 1.5f, cellW - 3f, cellH - 3f);
+                    Vector2Int pos = new Vector2Int(c, r);
+
+                    var cellData = selectedLevel.GetUnifiedCell(pos);
+                    bool isDest = (pos == selectedLevel.sharedDestinationPos || cellData.cellType == UnifiedCellType.Destination);
+
+                    Color tileColor;
+                    string label = "";
+                    Color textColor = Color.black;
+
+                    if (isDest)
+                    {
+                        tileColor = new Color(1f, 0.82f, 0.15f, 1f); // Gold
+                        label = "DEST";
+                        textColor = Color.black;
+                    }
+                    else if (cellData.cellType == UnifiedCellType.Blocked)
+                    {
+                        tileColor = new Color(0.24f, 0.25f, 0.28f, 1f); // Dark obstacle
+                        label = "✕";
+                        textColor = new Color(0.6f, 0.6f, 0.65f, 1f);
+                    }
+                    else if (cellData.cellType == UnifiedCellType.Passenger)
+                    {
+                        tileColor = GetColor(cellData.colorId);
+                        label = $"{cellData.passengerCount}";
+                        textColor = (cellData.colorId == 4 || cellData.colorId == 0) ? Color.white : Color.black;
+                    }
+                    else
+                    {
+                        tileColor = new Color(0.92f, 0.92f, 0.95f, 1f); // Walkable
+                    }
+
+                    EditorGUI.DrawRect(cellRect, tileColor);
+
+                    if (!string.IsNullOrEmpty(label))
+                    {
+                        var lblStyle = new GUIStyle(EditorStyles.boldLabel)
+                        {
+                            alignment = TextAnchor.MiddleCenter,
+                            fontSize = Mathf.Clamp(Mathf.FloorToInt(cellH * 0.42f), 8, 14),
+                            normal = { textColor = textColor }
+                        };
+                        GUI.Label(cellRect, label, lblStyle);
+                    }
+                }
+            }
+
+            // Outline
+            Handles.color = new Color(0.95f, 0.65f, 0.2f, 0.9f);
+            Handles.DrawPolyLine(
+                new Vector3(canvasRect.xMin, canvasRect.yMin),
+                new Vector3(canvasRect.xMax, canvasRect.yMin),
+                new Vector3(canvasRect.xMax, canvasRect.yMax),
+                new Vector3(canvasRect.xMin, canvasRect.yMax),
+                new Vector3(canvasRect.xMin, canvasRect.yMin)
+            );
+
+            // Handle painting input
+            Event evt = Event.current;
+            if ((evt.type == EventType.MouseDown || evt.type == EventType.MouseDrag) && canvasRect.Contains(evt.mousePosition))
+            {
+                int clickCol = Mathf.Clamp(Mathf.FloorToInt((evt.mousePosition.x - canvasRect.x) / cellW), 0, cols - 1);
+                int visualR = Mathf.Clamp(Mathf.FloorToInt((evt.mousePosition.y - canvasRect.y) / cellH), 0, rows - 1);
+                int clickRow = (rows - 1) - visualR;
+                Vector2Int clickPos = new Vector2Int(clickCol, clickRow);
+
+                Undo.RecordObject(selectedLevel, "Paint Unified Cell");
+
+                if (evt.button == 1) // Right click erases to Walkable
+                {
+                    selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Walkable, 0, 0);
+                }
+                else
+                {
+                    switch (activeUnifiedTool)
+                    {
+                        case UnifiedTool.Walkable:
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Walkable, 0, 0);
+                            break;
+                        case UnifiedTool.Blocked:
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Blocked, 0, 0);
+                            break;
+                        case UnifiedTool.Passenger:
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Passenger, unifiedBrushColor, unifiedPassengerCount);
+                            break;
+                        case UnifiedTool.Destination:
+                            selectedLevel.SetUnifiedCell(clickPos, UnifiedCellType.Destination, 0, 0);
+                            selectedLevel.sharedDestinationPos = clickPos;
+                            break;
+                    }
+                }
+
+                EditorUtility.SetDirty(selectedLevel);
+                evt.Use();
+                Repaint();
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField($"Unified Grid: {cols}x{rows} | Rotation: {selectedLevel.unifiedGridRotation}° | Destination: ({selectedLevel.sharedDestinationPos.x}, {selectedLevel.sharedDestinationPos.y})", EditorStyles.centeredGreyMiniLabel);
+        }
+
+        private void DrawUnifiedBusesTab()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("1. Unified Buses Placement & Route Preview", EditorStyles.boldLabel);
+
+            if (selectedLevel.unifiedBuses == null) selectedLevel.unifiedBuses = new List<BusSpawnData>();
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label($"Total Buses Placed: {selectedLevel.unifiedBuses.Count}", EditorStyles.miniBoldLabel);
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("+ Add Bus", GUILayout.Width(100)))
+            {
+                AddNewUnifiedBus();
+            }
+            if (GUILayout.Button("Duplicate", GUILayout.Width(80)) && selectedUnifiedBusIndex >= 0 && selectedUnifiedBusIndex < selectedLevel.unifiedBuses.Count)
+            {
+                DuplicateUnifiedBus(selectedUnifiedBusIndex);
+            }
+            if (GUILayout.Button("Delete", GUILayout.Width(70)) && selectedUnifiedBusIndex >= 0 && selectedUnifiedBusIndex < selectedLevel.unifiedBuses.Count)
+            {
+                DeleteUnifiedBus(selectedUnifiedBusIndex);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(6);
+
+            // Visual Board with Buses Overlaid
+            DrawVisualUnifiedPuzzleBoard();
+
+            EditorGUILayout.Space(6);
+
+            if (selectedLevel.unifiedBuses.Count > 0)
+            {
+                DrawUnifiedBusPropertiesEditor();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("No buses defined for this unified grid. Click '+ Add Bus' to place buses.", MessageType.Info);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawVisualUnifiedPuzzleBoard()
+        {
+            int gridCols = selectedLevel.unifiedGridColumns;
+            int gridRows = selectedLevel.unifiedGridRows;
+
+            float boardWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 80f, 260f, 480f);
+            float boardHeight = boardWidth * ((float)gridRows / gridCols);
+            float cellW = boardWidth / gridCols;
+            float cellH = boardHeight / gridRows;
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            Rect boardRect = GUILayoutUtility.GetRect(boardWidth, boardHeight);
+            EditorGUI.DrawRect(boardRect, new Color(0.15f, 0.16f, 0.18f, 1f));
+
+            // Occupancy map for bus overlaps
+            var busOccupancy = new Dictionary<Vector2Int, List<int>>();
+            if (selectedLevel.unifiedBuses != null)
+            {
+                for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++)
+                {
+                    var bus = selectedLevel.unifiedBuses[i];
+                    var cells = LevelData.GetOccupiedCells(bus);
+                    for (int c = 0; c < cells.Count; c++)
+                    {
+                        var cell = cells[c];
+                        if (!busOccupancy.ContainsKey(cell)) busOccupancy[cell] = new List<int>();
+                        busOccupancy[cell].Add(i);
+                    }
+                }
+            }
+
+            // Draw base tiles
+            for (int r = 0; r < gridRows; r++)
+            {
+                int visualRow = (gridRows - 1) - r;
+                float y = boardRect.y + visualRow * cellH;
+
+                for (int c = 0; c < gridCols; c++)
+                {
+                    float x = boardRect.x + c * cellW;
+                    Rect tileRect = new Rect(x + 1.5f, y + 1.5f, cellW - 3f, cellH - 3f);
+                    Vector2Int pos = new Vector2Int(c, r);
+
+                    var cellData = selectedLevel.GetUnifiedCell(pos);
+                    bool isDest = (pos == selectedLevel.sharedDestinationPos);
+                    bool hasBusOverlap = busOccupancy.ContainsKey(pos) && busOccupancy[pos].Count > 1;
+
+                    Color tileColor;
+                    string tileText = "";
+
+                    if (isDest)
+                    {
+                        tileColor = new Color(1f, 0.82f, 0.15f, 1f);
+                        tileText = "DEST";
+                    }
+                    else if (cellData.cellType == UnifiedCellType.Blocked)
+                    {
+                        tileColor = new Color(0.24f, 0.25f, 0.28f, 1f);
+                        tileText = "✕";
+                    }
+                    else if (cellData.cellType == UnifiedCellType.Passenger)
+                    {
+                        tileColor = Color.Lerp(GetColor(cellData.colorId), Color.white, 0.35f);
+                        tileText = $"P:{cellData.passengerCount}";
+                    }
+                    else
+                    {
+                        tileColor = hasBusOverlap ? new Color(1f, 0.3f, 0.3f, 0.9f) : new Color(0.92f, 0.92f, 0.95f, 1f);
+                    }
+
+                    EditorGUI.DrawRect(tileRect, tileColor);
+
+                    if (!string.IsNullOrEmpty(tileText) && !busOccupancy.ContainsKey(pos))
+                    {
+                        var s = new GUIStyle(EditorStyles.boldLabel) { alignment = TextAnchor.MiddleCenter, fontSize = 8, normal = { textColor = Color.black } };
+                        GUI.Label(tileRect, tileText, s);
+                    }
+                }
+            }
+
+            // Draw each bus on top
+            if (selectedLevel.unifiedBuses != null)
+            {
+                for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++)
+                {
+                    var bus = selectedLevel.unifiedBuses[i];
+                    DrawBusOnGrid(i, bus, boardRect, cellW, cellH, gridRows);
+                }
+            }
+
+            // Click selection
+            Event evt = Event.current;
+            if (evt.type == EventType.MouseDown && boardRect.Contains(evt.mousePosition) && evt.button == 0)
+            {
+                int clickCol = Mathf.Clamp(Mathf.FloorToInt((evt.mousePosition.x - boardRect.x) / cellW), 0, gridCols - 1);
+                int visualR = Mathf.Clamp(Mathf.FloorToInt((evt.mousePosition.y - boardRect.y) / cellH), 0, gridRows - 1);
+                int clickRow = (gridRows - 1) - visualR;
+                Vector2Int clickPos = new Vector2Int(clickCol, clickRow);
+
+                if (busOccupancy.ContainsKey(clickPos) && busOccupancy[clickPos].Count > 0)
+                {
+                    selectedUnifiedBusIndex = busOccupancy[clickPos][0];
+                }
+                else if (selectedUnifiedBusIndex >= 0 && selectedUnifiedBusIndex < selectedLevel.unifiedBuses.Count)
+                {
+                    var b = selectedLevel.unifiedBuses[selectedUnifiedBusIndex];
+                    b.gridPosition = clickPos;
+                    selectedLevel.unifiedBuses[selectedUnifiedBusIndex] = b;
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                evt.Use();
+                Repaint();
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawUnifiedBusPropertiesEditor()
+        {
+            if (selectedUnifiedBusIndex < 0 || selectedUnifiedBusIndex >= selectedLevel.unifiedBuses.Count)
+            {
+                selectedUnifiedBusIndex = 0;
+            }
+
+            string[] busLabels = new string[selectedLevel.unifiedBuses.Count];
+            for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++)
+            {
+                var b = selectedLevel.unifiedBuses[i];
+                string cName = GetColorName(b.colorId);
+                busLabels[i] = $"{i + 1}: {b.name} [{cName}] (Cap: {b.capacity}, Len: {b.length})";
+            }
+
+            selectedUnifiedBusIndex = EditorGUILayout.Popup("Selected Bus:", selectedUnifiedBusIndex, busLabels);
+            var bus = selectedLevel.unifiedBuses[selectedUnifiedBusIndex];
+
+            EditorGUI.BeginChangeCheck();
+
+            bus.name = EditorGUILayout.TextField("Bus Name:", bus.name);
+
+            // Color Selection
+            EditorGUILayout.BeginVertical();
+            EditorGUILayout.LabelField("Bus Color:");
+            int busTotalEntries = (palette != null && palette.Entries != null) ? palette.Entries.Length : fallbackColors.Length;
+            int busPerRow = 6;
+            for (int i = 0; i < busTotalEntries; i++)
+            {
+                if (i % busPerRow == 0)
+                {
+                    if (i > 0) EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.BeginHorizontal();
+                }
+
+                int cId = (palette != null && palette.Entries != null) ? palette.Entries[i].id : i;
+                string cName = (palette != null && palette.Entries != null) ? palette.Entries[i].name : GetColorName(i);
+                Color c = (palette != null && palette.Entries != null) ? palette.Entries[i].color : GetColor(i);
+
+                Color prevC = GUI.backgroundColor;
+                GUI.backgroundColor = c;
+                bool isBusColor = (bus.colorId == cId);
+                if (GUILayout.Button(isBusColor ? $"✓ {cName}" : cName, GUILayout.Height(22), GUILayout.MinWidth(55)))
+                {
+                    bus.colorId = cId;
+                }
+                GUI.backgroundColor = prevC;
+            }
+            if (busTotalEntries > 0) EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+
+            int maxGridCols = selectedLevel.unifiedGridColumns;
+            int maxGridRows = selectedLevel.unifiedGridRows;
+            int maxGridX = Mathf.Max(0, maxGridCols - 1);
+            int maxGridY = Mathf.Max(0, maxGridRows - 1);
+            int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
+
+            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 56);
+            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, maxAllowedLength);
+
+            // Rotation Buttons
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("Rotation Direction:");
+            if (GUILayout.Toggle(bus.rotationDegrees == 0, "Right (0° →)", EditorStyles.miniButtonLeft)) bus.rotationDegrees = 0;
+            if (GUILayout.Toggle(bus.rotationDegrees == 90, "Up (90° ↑)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 90;
+            if (GUILayout.Toggle(bus.rotationDegrees == 180, "Left (180° ←)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 180;
+            if (GUILayout.Toggle(bus.rotationDegrees == 270, "Down (270° ↓)", EditorStyles.miniButtonRight)) bus.rotationDegrees = 270;
+            EditorGUILayout.EndHorizontal();
+
+            // Coordinates
+            EditorGUILayout.BeginHorizontal();
+            bus.gridPosition.x = EditorGUILayout.IntSlider($"Grid X (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
+            bus.gridPosition.y = EditorGUILayout.IntSlider($"Grid Y (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
+            EditorGUILayout.EndHorizontal();
+
+            // Nudge D-Pad
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("Nudge Bus Position:", EditorStyles.miniLabel);
+            if (GUILayout.Button("◄", GUILayout.Width(28)) && bus.gridPosition.x > 0) bus.gridPosition.x--;
+            if (GUILayout.Button("►", GUILayout.Width(28)) && bus.gridPosition.x < maxGridX) bus.gridPosition.x++;
+            if (GUILayout.Button("▲", GUILayout.Width(28)) && bus.gridPosition.y < maxGridY) bus.gridPosition.y++;
+            if (GUILayout.Button("▼", GUILayout.Width(28)) && bus.gridPosition.y > 0) bus.gridPosition.y--;
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(selectedLevel, "Edit Unified Bus");
+                selectedLevel.unifiedBuses[selectedUnifiedBusIndex] = bus;
+                EditorUtility.SetDirty(selectedLevel);
+            }
+        }
+
+        private void AddNewUnifiedBus()
+        {
+            Undo.RecordObject(selectedLevel, "Add Unified Bus");
+            if (selectedLevel.unifiedBuses == null) selectedLevel.unifiedBuses = new List<BusSpawnData>();
+
+            var newBus = new BusSpawnData
+            {
+                name = $"Bus {selectedLevel.unifiedBuses.Count + 1}",
+                colorId = unifiedBrushColor,
+                capacity = 10,
+                length = 2,
+                rotationDegrees = 0,
+                gridPosition = new Vector2Int(0, 0)
+            };
+
+            selectedLevel.unifiedBuses.Add(newBus);
+            selectedUnifiedBusIndex = selectedLevel.unifiedBuses.Count - 1;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        private void DuplicateUnifiedBus(int index)
+        {
+            Undo.RecordObject(selectedLevel, "Duplicate Unified Bus");
+            var src = selectedLevel.unifiedBuses[index];
+            var clone = src;
+            clone.name = $"{src.name} (Copy)";
+            selectedLevel.unifiedBuses.Add(clone);
+            selectedUnifiedBusIndex = selectedLevel.unifiedBuses.Count - 1;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        private void DeleteUnifiedBus(int index)
+        {
+            Undo.RecordObject(selectedLevel, "Delete Unified Bus");
+            selectedLevel.unifiedBuses.RemoveAt(index);
+            selectedUnifiedBusIndex = Mathf.Clamp(selectedUnifiedBusIndex - 1, 0, selectedLevel.unifiedBuses.Count - 1);
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        private void DrawUnifiedBalanceTab()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("Unified Grid Passenger & Bus Capacity Balance", EditorStyles.boldLabel);
+
+            int totalPassengers = selectedLevel.GetTotalUnifiedPassengers();
+            int totalBusCapacity = 0;
+            if (selectedLevel.unifiedBuses != null)
+            {
+                for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++) totalBusCapacity += selectedLevel.unifiedBuses[i].capacity;
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.HelpBox($"Total Passengers in Grid: {totalPassengers} | Total Bus Capacity: {totalBusCapacity}", MessageType.Info);
+            if (GUILayout.Button("Auto-Balance Buses", GUILayout.Width(140), GUILayout.Height(38)))
+            {
+                AutoBalanceUnifiedBuses();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(6);
+
+            // Table of Colors
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Color", EditorStyles.boldLabel, GUILayout.Width(90));
+            GUILayout.Label("Passengers", EditorStyles.boldLabel, GUILayout.Width(80));
+            GUILayout.Label("Buses", EditorStyles.boldLabel, GUILayout.Width(60));
+            GUILayout.Label("Capacity", EditorStyles.boldLabel, GUILayout.Width(70));
+            GUILayout.Label("Status", EditorStyles.boldLabel);
+            EditorGUILayout.EndHorizontal();
+
+            var colorIds = new List<int>();
+            if (palette != null && palette.Entries != null)
+            {
+                for (int i = 0; i < palette.Entries.Length; i++) colorIds.Add(palette.Entries[i].id);
+            }
+            else
+            {
+                for (int i = 0; i < fallbackColors.Length; i++) colorIds.Add(i);
+            }
+
+            for (int i = 0; i < colorIds.Count; i++)
+            {
+                int cId = colorIds[i];
+                int pCount = selectedLevel.GetUnifiedPassengersByColor(cId);
+                int bCap = selectedLevel.GetUnifiedBusCapacityByColor(cId);
+
+                int busCount = 0;
+                if (selectedLevel.unifiedBuses != null)
+                {
+                    for (int b = 0; b < selectedLevel.unifiedBuses.Count; b++)
+                    {
+                        if (selectedLevel.unifiedBuses[b].colorId == cId) busCount++;
+                    }
+                }
+
+                if (pCount == 0 && busCount == 0) continue;
+
+                EditorGUILayout.BeginHorizontal();
+                Color c = GetColor(cId);
+                Color prevC = GUI.color;
+                GUI.color = c;
+                GUILayout.Label($"■ {GetColorName(cId)}", GUILayout.Width(90));
+                GUI.color = prevC;
+
+                GUILayout.Label($"{pCount}", GUILayout.Width(80));
+                GUILayout.Label($"{busCount}", GUILayout.Width(60));
+                GUILayout.Label($"{bCap}", GUILayout.Width(70));
+
+                if (pCount > 0 && busCount == 0)
+                {
+                    GUI.color = Color.red;
+                    GUILayout.Label("✕ Missing Bus (Cannot Complete)");
+                    GUI.color = prevC;
+                }
+                else if (bCap < pCount)
+                {
+                    GUI.color = new Color(1f, 0.6f, 0.1f);
+                    GUILayout.Label($"⚠ Bus Capacity < Passengers ({bCap}/{pCount}) - Will reuse bus!");
+                    GUI.color = prevC;
+                }
+                else
+                {
+                    GUI.color = Color.green;
+                    GUILayout.Label("✓ Balanced");
+                    GUI.color = prevC;
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+
+            if (GUILayout.Button("Apply Unified Level to Active Scene", GUILayout.Height(30)))
+            {
+                ApplyLevelToScene();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void AutoBalanceUnifiedBuses()
+        {
+            Undo.RecordObject(selectedLevel, "Auto-Balance Unified Buses");
+
+            var colorIds = new List<int>();
+            if (palette != null && palette.Entries != null)
+            {
+                for (int i = 0; i < palette.Entries.Length; i++) colorIds.Add(palette.Entries[i].id);
+            }
+            else
+            {
+                for (int i = 0; i < fallbackColors.Length; i++) colorIds.Add(i);
+            }
+
+            for (int i = 0; i < colorIds.Count; i++)
+            {
+                int cId = colorIds[i];
+                int pCount = selectedLevel.GetUnifiedPassengersByColor(cId);
+                if (pCount <= 0) continue;
+
+                // Check if matching bus exists
+                var matchingBuses = new List<int>();
+                if (selectedLevel.unifiedBuses != null)
+                {
+                    for (int b = 0; b < selectedLevel.unifiedBuses.Count; b++)
+                    {
+                        if (selectedLevel.unifiedBuses[b].colorId == cId) matchingBuses.Add(b);
+                    }
+                }
+
+                if (matchingBuses.Count == 0)
+                {
+                    // Add a bus for this color
+                    if (selectedLevel.unifiedBuses == null) selectedLevel.unifiedBuses = new List<BusSpawnData>();
+                    selectedLevel.unifiedBuses.Add(new BusSpawnData
+                    {
+                        name = $"{GetColorName(cId)} Bus",
+                        colorId = cId,
+                        capacity = Mathf.Min(pCount, 56),
+                        length = 2,
+                        rotationDegrees = 0,
+                        gridPosition = new Vector2Int(0, 0)
+                    });
+                }
+                else
+                {
+                    int capPerBus = Mathf.Max(1, pCount / matchingBuses.Count);
+                    for (int m = 0; m < matchingBuses.Count; m++)
+                    {
+                        var bus = selectedLevel.unifiedBuses[matchingBuses[m]];
+                        bus.capacity = Mathf.Clamp(capPerBus, 1, 56);
+                        selectedLevel.unifiedBuses[matchingBuses[m]] = bus;
+                    }
+                }
+            }
+
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced unified buses!");
         }
 
         private static bool IsPointInPolygon(Vector2 pt, List<Vector2> poly)

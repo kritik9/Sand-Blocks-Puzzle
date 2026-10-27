@@ -125,11 +125,15 @@ namespace SandBlocks.Gameplay
             float bottomY = -9.5f;
             float maxContentWidth = 8.1f;
 
-            if (boundary != null)
+            if (boundary != null && boundary.gameObject.activeInHierarchy)
             {
                 Rect bRect = boundary.Bounds;
                 topY = bRect.yMax;
                 maxContentWidth = Mathf.Max(maxContentWidth, bRect.width);
+            }
+            else if (puzzleGrid != null)
+            {
+                topY = puzzleGrid.TopY + puzzleGrid.CellSize * 0.5f;
             }
 
             if (puzzleGrid != null)

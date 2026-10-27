@@ -83,6 +83,7 @@ namespace SandBlocks.Puzzle.Vehicles
         private float lastShakeTime = -1f;
 
         public Vector3 VisualShakeOffset => visualShakeOffset;
+        public System.Action<BusVehicle> OnBusFullOverride;
         public Transform PassengerParent { get => passengerParent != null ? passengerParent : charactersParent; set => passengerParent = value; }
         public Transform CharactersParent => PassengerParent;
         public List<GameObject> PassengerList { get => passengerList; set => passengerList = value; }
@@ -431,33 +432,30 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void ApplyColor(CrowdColorPalette palette)
         {
-            colorPalette = palette;
-            if (palette == null) return;
-
-            Color targetColor = palette.GetColor(colorId);
+            if (palette != null) colorPalette = palette;
+            if (colorPalette == null)
+            {
+                var gm = FindAnyObjectByType<Gameplay.GameManager>();
+                if (gm != null && gm.Palette != null) colorPalette = gm.Palette;
+            }
+#if UNITY_EDITOR
+            if (colorPalette == null)
+            {
+                colorPalette = UnityEditor.AssetDatabase.LoadAssetAtPath<CrowdColorPalette>("Assets/Sand Block Puzzle/Settings/CrowdColorPalette.asset");
+            }
+#endif
+            Color targetColor = colorPalette != null ? colorPalette.GetColor(colorId) : GetColorFallback(colorId);
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
             propBlock.SetColor(BaseColorId, targetColor);
             propBlock.SetColor(ColorId_Prop, targetColor);
 
-            if (bodyRenderer == null)
+            var allRenderers = GetComponentsInChildren<Renderer>(true);
+            foreach (var r in allRenderers)
             {
-                var renderers = GetComponentsInChildren<Renderer>();
-                foreach (var r in renderers)
-                {
-                    if (r == null) continue;
-                    string n = r.gameObject.name.ToLower();
-                    if (n.Contains("bus") || n.Contains("body") || n.Contains("cube"))
-                    {
-                        bodyRenderer = r;
-                        break;
-                    }
-                }
-                if (bodyRenderer == null && renderers.Length > 0) bodyRenderer = renderers[0];
-            }
-
-            if (bodyRenderer != null)
-            {
-                bodyRenderer.SetPropertyBlock(propBlock);
+                if (r == null) continue;
+                string n = r.gameObject.name.ToLower();
+                if (n.Contains("chair") || n.Contains("seat") || n.Contains("passenger") || n.Contains("text") || n.Contains("canvas")) continue;
+                r.SetPropertyBlock(propBlock);
             }
 
             if (seatPassengers != null)
@@ -470,6 +468,24 @@ namespace SandBlocks.Puzzle.Vehicles
                     }
                 }
             }
+        }
+
+
+        private Color GetColorFallback(int id)
+        {
+            Color[] fallbacks = new Color[]
+            {
+                new Color(0.18f, 0.55f, 1f, 1f),
+                new Color(0.2f, 0.85f, 0.35f, 1f),
+                new Color(1f, 0.82f, 0.1f, 1f),
+                new Color(1f, 0.35f, 0.65f, 1f),
+                new Color(0.18f, 0.18f, 0.22f, 1f),
+                new Color(0.92f, 0.92f, 0.95f, 1f),
+                new Color(1f, 0.5f, 0.1f, 1f),
+                new Color(1f, 0.208f, 0.102f, 1f),
+                new Color(0.102f, 1f, 0.674f, 1f)
+            };
+            return (id >= 0 && id < fallbacks.Length) ? fallbacks[id] : Color.white;
         }
 
         private void BuildSeatOffsets()
@@ -709,6 +725,28 @@ namespace SandBlocks.Puzzle.Vehicles
         }
 
         /// <summary>
+        /// Unboards one passenger from the bus, hiding its visual roof seat and returning its launch position.
+        /// </summary>
+        public bool TryUnboardPassenger(out Vector3 seatWorldPos)
+        {
+            seatWorldPos = transform.position;
+            if (passengerCount <= 0 && boardedPassengerCount <= 0) return false;
+
+            int lastIdx = Mathf.Max(boardedPassengerCount - 1, passengerCount - 1);
+            if (seatPassengers != null && lastIdx >= 0 && lastIdx < seatPassengers.Count && seatPassengers[lastIdx] != null)
+            {
+                seatWorldPos = seatPassengers[lastIdx].transform.position;
+            }
+
+            if (passengerCount > 0) passengerCount--;
+            if (boardedPassengerCount > 0) boardedPassengerCount--;
+
+            UpdatePassengerVisuals();
+            UpdatePassengerCountUI();
+            return true;
+        }
+
+        /// <summary>
         /// Shows the exact number of boarded passengers on the bus (up to capacity).
         /// Only the chosen center seats become visible as passengers board.
         /// </summary>
@@ -821,6 +859,19 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public override void OnFull()
         {
+            if (OnBusFullOverride != null)
+            {
+                OnBusFullOverride.Invoke(this);
+                return;
+            }
+
+            if (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive)
+            {
+                // In Unified Grid mode, the bus stays on the grid for manual player driving to the destination
+                return;
+            }
+            // Classic mode drive away:
             var grid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
             if (grid != null)
             {

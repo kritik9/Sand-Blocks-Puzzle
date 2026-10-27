@@ -26,6 +26,11 @@ namespace SandBlocks.Puzzle.Grid
         [SerializeField] private Color trayColor = new Color(0.96f, 0.58f, 0.72f, 1f);
         [SerializeField] private Color tileColor = new Color(0.98f, 0.94f, 0.94f, 1f);
 
+        [Header("Grid Rotation & Layout Mode")]
+        [SerializeField] private int gridRotationDegrees = 0;
+        [SerializeField] private bool centerGridAtZero = false;
+
+        private HashSet<Vector2Int> blockedCells = new HashSet<Vector2Int>();
         private VehicleBase[,] grid;
         private List<VehicleBase> registeredVehicles = new List<VehicleBase>();
         private GameObject visualRoot;
@@ -37,6 +42,35 @@ namespace SandBlocks.Puzzle.Grid
         public float CellSize => cellSize;
         public Vector2 Origin => origin;
         public IReadOnlyList<VehicleBase> RegisteredVehicles => registeredVehicles;
+        public IReadOnlyCollection<Vector2Int> BlockedCells => blockedCells;
+        public int GridRotationDegrees => gridRotationDegrees;
+
+        public bool CenterGridAtZero
+        {
+            get => centerGridAtZero;
+            set { centerGridAtZero = value; RecalculateOrigin(); }
+        }
+
+        public void SetGridRotation(int degrees)
+        {
+            gridRotationDegrees = (degrees % 360 + 360) % 360;
+            transform.localRotation = Quaternion.Euler(0f, 0f, gridRotationDegrees);
+        }
+
+        public bool IsCellBlocked(int x, int y) => blockedCells.Contains(new Vector2Int(x, y));
+        public bool IsCellBlocked(Vector2Int pos) => blockedCells.Contains(pos);
+
+        public void SetCellBlocked(int x, int y, bool blocked)
+        {
+            Vector2Int pos = new Vector2Int(x, y);
+            if (blocked) blockedCells.Add(pos);
+            else blockedCells.Remove(pos);
+        }
+
+        public void ClearBlockedCells()
+        {
+            blockedCells.Clear();
+        }
 
         public bool UseTopCenterAnchor
         {
@@ -65,7 +99,12 @@ namespace SandBlocks.Puzzle.Grid
 
         public void RecalculateOrigin()
         {
-            if (useTopCenterAnchor)
+            if (centerGridAtZero)
+            {
+                origin.x = -(columns - 1) * 0.5f * cellSize;
+                origin.y = -(rows - 1) * 0.5f * cellSize;
+            }
+            else if (useTopCenterAnchor)
             {
                 origin.x = centerX - (columns - 1) * 0.5f * cellSize;
                 origin.y = topAnchorY - (rows - 1) * cellSize;
@@ -169,7 +208,8 @@ namespace SandBlocks.Puzzle.Grid
             var tray = GameObject.CreatePrimitive(PrimitiveType.Cube);
             tray.name = "BoardTray";
             tray.transform.SetParent(visualRoot.transform);
-            tray.transform.position = center;
+            tray.transform.localPosition = center;
+            tray.transform.localRotation = Quaternion.identity;
             tray.transform.localScale = new Vector3(totalW, totalH, 0.2f);
             var trayCol = tray.GetComponent<Collider>();
             if (trayCol != null) SafeDestroy(trayCol);
@@ -186,17 +226,28 @@ namespace SandBlocks.Puzzle.Grid
             {
                 for (int y = 0; y < rows; y++)
                 {
-                    Vector3 tilePos = new Vector3(origin.x + x * cellSize, origin.y + y * cellSize, 0.05f);
+                    bool isBlocked = IsCellBlocked(x, y);
+                    Vector3 tilePos = new Vector3(origin.x + x * cellSize, origin.y + y * cellSize, isBlocked ? 0.12f : 0.05f);
                     var tile = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    tile.name = $"Tile_{x}_{y}";
+                    tile.name = isBlocked ? $"BlockedTile_{x}_{y}" : $"Tile_{x}_{y}";
                     tile.transform.SetParent(visualRoot.transform);
-                    tile.transform.position = tilePos;
-                    tile.transform.localScale = new Vector3(cellSize * 0.92f, cellSize * 0.92f, 0.08f);
+                    tile.transform.localPosition = tilePos;
+                    tile.transform.localRotation = Quaternion.identity;
+                    tile.transform.localScale = isBlocked ? new Vector3(cellSize * 0.95f, cellSize * 0.95f, 0.22f) : new Vector3(cellSize * 0.92f, cellSize * 0.92f, 0.08f);
 
                     var col = tile.GetComponent<Collider>();
                     if (col != null) SafeDestroy(col);
 
-                    tile.GetComponent<Renderer>().sharedMaterial = tileMat;
+                    if (isBlocked)
+                    {
+                        var blockedMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+                        blockedMat.color = new Color(0.25f, 0.25f, 0.3f, 1f);
+                        tile.GetComponent<Renderer>().sharedMaterial = blockedMat;
+                    }
+                    else
+                    {
+                        tile.GetComponent<Renderer>().sharedMaterial = tileMat;
+                    }
                 }
             }
         }
@@ -206,18 +257,20 @@ namespace SandBlocks.Puzzle.Grid
             float xOffset = isVertical ? 0f : (length - 1) * 0.5f;
             float yOffset = isVertical ? (length - 1) * 0.5f : 0f;
 
-            float worldX = origin.x + (gridPos.x + xOffset) * cellSize;
-            float worldY = origin.y + (gridPos.y + yOffset) * cellSize;
-            return new Vector3(worldX, worldY, 0f);
+            float localX = origin.x + (gridPos.x + xOffset) * cellSize;
+            float localY = origin.y + (gridPos.y + yOffset) * cellSize;
+            return transform.TransformPoint(new Vector3(localX, localY, 0f));
         }
 
         public Vector2Int WorldToGrid(Vector3 worldPos, int length = 1, bool isVertical = false)
         {
+            Vector3 local = transform.InverseTransformPoint(worldPos);
+
             float xOffset = isVertical ? 0f : (length - 1) * 0.5f;
             float yOffset = isVertical ? (length - 1) * 0.5f : 0f;
 
-            int gx = Mathf.RoundToInt((worldPos.x - origin.x) / cellSize - xOffset);
-            int gy = Mathf.RoundToInt((worldPos.y - origin.y) / cellSize - yOffset);
+            int gx = Mathf.RoundToInt((local.x - origin.x) / cellSize - xOffset);
+            int gy = Mathf.RoundToInt((local.y - origin.y) / cellSize - yOffset);
 
             int maxGx = columns - (isVertical ? 1 : length);
             int maxGy = rows - (isVertical ? length : 1);
@@ -265,6 +318,7 @@ namespace SandBlocks.Puzzle.Grid
                 int gy = vehicle.IsVertical ? pos.y + i : pos.y;
 
                 if (gx < 0 || gx >= columns || gy < 0 || gy >= rows) return false;
+                if (IsCellBlocked(gx, gy)) return false;
 
                 VehicleBase occupant = grid[gx, gy];
                 if (occupant != null && occupant != vehicle) return false;

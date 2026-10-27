@@ -92,6 +92,7 @@ namespace SandBlocks.Gameplay
         [SerializeField] private ContainerBoundary boundary;
         [SerializeField] private PuzzleGrid puzzleGrid;
         [SerializeField] private BusVehicle busPrefab;
+        public BusVehicle BusPrefab => busPrefab;
 
         public CrowdColorPalette Palette
         {

@@ -49,6 +49,9 @@ namespace SandBlocks.Gameplay
         [SerializeField] private ContainerBoundary boundary;
         [SerializeField] private SandBlocks.Puzzle.Grid.PuzzleGrid puzzleGrid;
         [SerializeField] private AdaptiveCameraFramer cameraFramer;
+        [SerializeField] private SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager unifiedGridManager;
+        [SerializeField] private CrowdTransferController crowdTransfer;
+        [SerializeField] private CrowdColorPalette palette;
 
         /// <summary>
         /// Event invoked whenever a new level is loaded: (levelIndex, levelData)
@@ -111,9 +114,16 @@ namespace SandBlocks.Gameplay
         private void FindDependencies()
         {
             if (gameManager == null) gameManager = FindAnyObjectByType<GameManager>();
-            if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
+            if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>(FindObjectsInactive.Include);
             if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
             if (cameraFramer == null) cameraFramer = FindAnyObjectByType<AdaptiveCameraFramer>();
+            if (unifiedGridManager == null) unifiedGridManager = FindAnyObjectByType<SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager>(FindObjectsInactive.Include);
+            if (crowdTransfer == null) crowdTransfer = FindAnyObjectByType<CrowdTransferController>(FindObjectsInactive.Include);
+            if (palette == null && gameManager != null && gameManager.Palette != null) palette = gameManager.Palette;
+            if (palette == null) palette = Resources.Load<CrowdColorPalette>("CrowdColorPalette");
+#if UNITY_EDITOR
+            if (palette == null) palette = UnityEditor.AssetDatabase.LoadAssetAtPath<CrowdColorPalette>("Assets/Sand Block Puzzle/Settings/CrowdColorPalette.asset");
+#endif
         }
 
         private void AutoDetectUIElements()
@@ -302,46 +312,104 @@ namespace SandBlocks.Gameplay
 
             FindDependencies();
 
-            // 1. Update the Container Boundary shape and visual dimensions if enabled
-            if (updateBoundaryOnLevelLoad && boundary != null)
+            if (level.gameplayMode == GameplayMode.UnifiedGrid)
             {
-                if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                // Deactivate Classic Container System
+                if (boundary != null) boundary.gameObject.SetActive(false);
+                if (crowdTransfer != null)
                 {
-                    boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                    crowdTransfer.ClearActiveTransfers();
+                    crowdTransfer.gameObject.SetActive(false);
                 }
-                else
+                var sim = FindAnyObjectByType<SandBlocks.Core.Simulation.PBDCrowdSimulation>(FindObjectsInactive.Include);
+                if (sim != null) sim.gameObject.SetActive(false);
+                var rend = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>(FindObjectsInactive.Include);
+                if (rend != null) rend.gameObject.SetActive(false);
+
+                // Clear GameManager classic state and buses
+                if (gameManager != null)
                 {
-                    boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
-                        level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                    gameManager.StopAllCoroutines();
+                    if (puzzleGrid != null) puzzleGrid.Clear();
                 }
-                boundary.BuildVisualContainer();
-            }
 
-            // 2. Update Puzzle Grid dimensions from LevelData
-            if (puzzleGrid != null)
-            {
-                int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
-                int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
-                puzzleGrid.SetGridDimensions(cols, rows);
-            }
+                // Activate Unified Grid Manager
+                if (unifiedGridManager == null)
+                {
+                    var ugGo = new GameObject("Unified Grid Controller");
+                    ugGo.transform.SetParent(puzzleGrid != null ? puzzleGrid.transform.parent : transform);
+                    unifiedGridManager = ugGo.AddComponent<SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager>();
+                }
 
-            // 3. Instruct GameManager to reload simulation and spawn buses
-            if (gameManager != null)
-            {
-                // Boundary was already updated in step 1, avoid duplicate rebuild
-                gameManager.LoadLevel(level, syncBoundary: false);
-            }
+                unifiedGridManager.gameObject.SetActive(true);
+                unifiedGridManager.Initialize(level, puzzleGrid, palette);
 
-            // 4. Adaptively frame the camera view to fit the updated dimensions
-            if (cameraFramer != null)
+                if (cameraFramer != null)
+                {
+                    cameraFramer.FrameView();
+                }
+            }
+            else // ClassicTwoArea
             {
-                cameraFramer.FrameView();
+                // Deactivate Unified Grid
+                if (unifiedGridManager != null)
+                {
+                    unifiedGridManager.Cleanup();
+                    unifiedGridManager.gameObject.SetActive(false);
+                }
+
+                // Activate Classic Container System
+                if (boundary != null)
+                {
+                    boundary.gameObject.SetActive(true);
+                    if (updateBoundaryOnLevelLoad)
+                    {
+                        if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                        {
+                            boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                        }
+                        else
+                        {
+                            boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
+                                level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                        }
+                        boundary.BuildVisualContainer();
+                    }
+                }
+
+                var sim = FindAnyObjectByType<SandBlocks.Core.Simulation.PBDCrowdSimulation>(FindObjectsInactive.Include);
+                if (sim != null) sim.gameObject.SetActive(true);
+                var rend = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>(FindObjectsInactive.Include);
+                if (rend != null) rend.gameObject.SetActive(true);
+
+                if (crowdTransfer != null)
+                {
+                    crowdTransfer.gameObject.SetActive(true);
+                }
+
+                if (puzzleGrid != null)
+                {
+                    puzzleGrid.CenterGridAtZero = false;
+                    puzzleGrid.SetGridRotation(0);
+                    puzzleGrid.ClearBlockedCells();
+                    int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
+                    int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
+                    puzzleGrid.SetGridDimensions(cols, rows);
+                }
+
+                // Instruct GameManager to reload simulation and spawn buses
+                if (gameManager != null)
+                {
+                    gameManager.LoadLevel(level, syncBoundary: false);
+                }
+
+                if (cameraFramer != null)
+                {
+                    cameraFramer.FrameView();
+                }
             }
         }
 
-        /// <summary>
-        /// Refreshes UI button interactable states and level label text.
-        /// </summary>
         /// <summary>
         /// Prepares container boundary, puzzle grid dimensions, and camera framing without spawning vehicles or crowd particles.
         /// Useful when the Home Screen is active so the 3D scene geometry is ready behind the UI.
@@ -351,25 +419,46 @@ namespace SandBlocks.Gameplay
             if (level == null) return;
             FindDependencies();
 
-            if (updateBoundaryOnLevelLoad && boundary != null)
+            if (level.gameplayMode == GameplayMode.UnifiedGrid)
             {
-                if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                if (boundary != null) boundary.gameObject.SetActive(false);
+                if (puzzleGrid != null)
                 {
-                    boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                    puzzleGrid.CenterGridAtZero = true;
+                    puzzleGrid.SetGridRotation(level.unifiedGridRotation);
+                    puzzleGrid.ClearBlockedCells();
+                    puzzleGrid.SetGridDimensions(level.unifiedGridColumns, level.unifiedGridRows);
                 }
-                else
-                {
-                    boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
-                        level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
-                }
-                boundary.BuildVisualContainer();
             }
-
-            if (puzzleGrid != null)
+            else
             {
-                int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
-                int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
-                puzzleGrid.SetGridDimensions(cols, rows);
+                if (boundary != null)
+                {
+                    boundary.gameObject.SetActive(true);
+                    if (updateBoundaryOnLevelLoad)
+                    {
+                        if (level.containerShape == ContainerShapeType.CustomPolygon && level.customPolygonPoints != null && level.customPolygonPoints.Count >= 3)
+                        {
+                            boundary.SetCustomPolygonPoints(level.customPolygonPoints);
+                        }
+                        else
+                        {
+                            boundary.SetContainerShape(level.containerShape, level.containerWidth, level.containerHeight, level.containerCenter,
+                                level.leftBorderOffset, level.rightBorderOffset, level.topBorderOffset, level.bottomBorderOffset);
+                        }
+                        boundary.BuildVisualContainer();
+                    }
+                }
+
+                if (puzzleGrid != null)
+                {
+                    puzzleGrid.CenterGridAtZero = false;
+                    puzzleGrid.SetGridRotation(0);
+                    puzzleGrid.ClearBlockedCells();
+                    int cols = level.puzzleColumns > 0 ? level.puzzleColumns : 6;
+                    int rows = level.puzzleRows > 0 ? level.puzzleRows : 5;
+                    puzzleGrid.SetGridDimensions(cols, rows);
+                }
             }
 
             if (cameraFramer != null)

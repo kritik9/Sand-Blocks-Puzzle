@@ -94,7 +94,7 @@ namespace SandBlocks.Puzzle.Input
             if (isDown)
             {
                 var vehicle = RaycastVehicle(screenPos);
-                if (vehicle != null && !vehicle.IsFull)
+                if (vehicle != null && (!vehicle.IsFull || SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null))
                 {
                     selectedVehicle = vehicle;
                     initialWorldPos = vehicle.transform.position;
@@ -131,7 +131,7 @@ namespace SandBlocks.Puzzle.Input
             }
             else if (isHeld && selectedVehicle != null)
             {
-                if (selectedVehicle.IsFull)
+                if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
                 {
                     // Bus became full while hovering and is driving away: release gracefully
                     activePath.Clear();
@@ -239,7 +239,7 @@ namespace SandBlocks.Puzzle.Input
             }
             else if (isUp && selectedVehicle != null)
             {
-                if (selectedVehicle.IsFull)
+                if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
                 {
                     activePath.Clear();
                     selectedVehicle = null;
@@ -290,7 +290,7 @@ namespace SandBlocks.Puzzle.Input
             for (int i = 0; i < hits.Length; i++)
             {
                 var v = hits[i].collider.GetComponentInParent<VehicleBase>();
-                if (v != null && !v.IsFull)
+                if (v != null && (!v.IsFull || (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive)))
                 {
                     if (hits[i].distance < closestDist)
                     {
