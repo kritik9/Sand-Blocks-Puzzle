@@ -46,13 +46,13 @@ MonoBehaviour:
     gridPosition: {x: 1, y: 2}
   - name: Black Bus R
     colorId: 5
-    capacity: 68
+    capacity: 56
     length: 3
     rotationDegrees: 270
     gridPosition: {x: 5, y: 1}
   - name: Orange Bus
     colorId: 5
-    capacity: 67
+    capacity: 53
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 2, y: 1}
@@ -64,13 +64,19 @@ MonoBehaviour:
     gridPosition: {x: 0, y: 0}
   - name: Green Bus
     colorId: 5
-    capacity: 67
+    capacity: 53
     length: 3
     rotationDegrees: 180
     gridPosition: {x: 3, y: 0}
   - name: Long White
     colorId: 5
-    capacity: 67
+    capacity: 53
     length: 3
     rotationDegrees: 90
     gridPosition: {x: 0, y: 1}
+  - name: Bus 8
+    colorId: 5
+    capacity: 54
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 4}

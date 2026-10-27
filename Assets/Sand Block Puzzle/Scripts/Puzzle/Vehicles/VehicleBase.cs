@@ -4,9 +4,11 @@ namespace SandBlocks.Puzzle.Vehicles
 {
     public abstract class VehicleBase : MonoBehaviour, IVehicle
     {
+        public const int MaxVehicleCapacity = 56;
+
         [Header("Vehicle Configuration")]
         [SerializeField] protected int colorId;
-        [SerializeField] protected int capacity = 4;
+        [SerializeField] protected int capacity = 56;
         [SerializeField] protected int length = 2;
         [SerializeField] protected bool isVertical;
 

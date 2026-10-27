@@ -289,9 +289,10 @@ namespace SandBlocks.Gameplay
             {
                 commuter.transform.localScale = Vector3.one * activeScale;
 
-                // Manage passenger character animations, color, and colliders
+                // Manage passenger character color and colliders (disable animators to remove animations)
                 var charPassenger = commuter.GetComponent<CharacterPassenger>() ?? commuter.AddComponent<CharacterPassenger>();
-                charPassenger.PlayRunning();
+                var commuterAnim = commuter.GetComponentInChildren<Animator>();
+                if (commuterAnim != null) commuterAnim.enabled = false;
 
                 if (palette != null)
                 {

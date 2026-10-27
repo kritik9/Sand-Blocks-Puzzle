@@ -9,6 +9,7 @@ namespace SandBlocks.Puzzle.Vehicles
 {
     public class BusVehicle : VehicleBase
     {
+        public const int MaxBusCapacity = 56;
         [Header("Orientation & Alignment")]
         [Tooltip("Fixed in-plane puzzle rotation (0 = Right, 90 = Up, 180 = Left, 270 = Down)")]
         [Range(0, 360)]
@@ -17,18 +18,24 @@ namespace SandBlocks.Puzzle.Vehicles
         [Tooltip("Optional visual rotation offset in degrees")]
         [SerializeField] private Vector3 visualRotationOffset = Vector3.zero;
 
-        [Header("Pre-placed Seat Passengers")]
-        [Tooltip("Existing passenger GameObjects placed on the seats of the bus prefab. Enabled one-by-one as passengers board.")]
+        [Header("Passenger References (Assigned in Inspector)")]
+        [Tooltip("Parent transform containing the passenger models on the bus. Children are used directly without any name lookup.")]
+        [SerializeField] private Transform passengerParent;
+
+        [Tooltip("Legacy fallback parent reference")]
+        [SerializeField] private Transform charactersParent;
+
+        [Tooltip("Optional direct list of passenger GameObjects. If assigned, this takes precedence over passengerParent.")]
+        [SerializeField] private List<GameObject> passengerList = new List<GameObject>();
+
+        [Header("Active Centered Passenger Slots")]
+        [Tooltip("Active passenger GameObjects chosen for this bus (settled in center for capacity < 56).")]
         [SerializeField] private List<GameObject> seatPassengers = new List<GameObject>();
 
         [Header("Visual Components")]
         [SerializeField] private Renderer bodyRenderer;
         [SerializeField] private Transform seatsParent;
         [SerializeField] private GameObject passengerPrefab;
-
-        [Header("Characters Parent & Hierarchy")]
-        [Tooltip("Parent transform where seated and boarded characters are stored")]
-        [SerializeField] private Transform charactersParent;
 
         [Header("Seats Configuration")]
         [Tooltip("Physical seat transforms on this bus model. Visible characters will be positioned and oriented on these seats.")]
@@ -58,6 +65,7 @@ namespace SandBlocks.Puzzle.Vehicles
         [Range(1.0f, 3.0f)]
         [SerializeField] private float spawnOvershoot = 1.70158f;
 
+        private readonly List<GameObject> allRoofPassengers = new List<GameObject>();
         private List<Vector3> seatLocalOffsets = new List<Vector3>();
         private List<GameObject> spawnedPassengers = new List<GameObject>();
         private int boardedPassengerCount = 0;
@@ -75,9 +83,11 @@ namespace SandBlocks.Puzzle.Vehicles
         private float lastShakeTime = -1f;
 
         public Vector3 VisualShakeOffset => visualShakeOffset;
+        public Transform PassengerParent { get => passengerParent != null ? passengerParent : charactersParent; set => passengerParent = value; }
+        public Transform CharactersParent => PassengerParent;
+        public List<GameObject> PassengerList { get => passengerList; set => passengerList = value; }
         public List<GameObject> SeatPassengers => seatPassengers;
         public int BoardedPassengerCount => boardedPassengerCount;
-        public Transform CharactersParent => charactersParent;
         public List<Transform> SeatTransforms => seatTransforms;
         public int SeatCount => seatTransforms != null ? seatTransforms.Count : 0;
         public GameObject PassengerPrefab => passengerPrefab;
@@ -116,20 +126,28 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void InitializeSeatPassengers()
         {
-            AutoDetectHierarchyAndSeats();
+            SetupPassengerSlots();
 
-            if (seatPassengers != null)
+            if (allRoofPassengers != null)
+            {
+                for (int i = 0; i < allRoofPassengers.Count; i++)
+                {
+                    if (allRoofPassengers[i] != null)
+                    {
+                        allRoofPassengers[i].SetActive(false);
+                        var anim = allRoofPassengers[i].GetComponentInChildren<Animator>(true);
+                        if (anim != null) anim.enabled = false;
+                    }
+                }
+            }
+
+            if (seatPassengers != null && colorPalette != null)
             {
                 for (int i = 0; i < seatPassengers.Count; i++)
                 {
                     if (seatPassengers[i] != null)
                     {
-                        seatPassengers[i].SetActive(false);
-                        EnsureSittingAnimation(seatPassengers[i]);
-                        if (colorPalette != null)
-                        {
-                            ApplyColorToPassenger(seatPassengers[i], colorId);
-                        }
+                        ApplyColorToPassenger(seatPassengers[i], colorId);
                     }
                 }
             }
@@ -183,85 +201,125 @@ namespace SandBlocks.Puzzle.Vehicles
             UpdatePassengerCountUI();
         }
 
-        [ContextMenu("Detect Seats and Hierarchy")]
-        public void AutoDetectHierarchyAndSeats()
+        [ContextMenu("Setup Passenger Slots")]
+        public void SetupPassengerSlots()
         {
-            // 1. Detect pre-placed seat passengers if empty
-            if (seatPassengers == null) seatPassengers = new List<GameObject>();
-            if (seatPassengers.Count == 0)
+            allRoofPassengers.Clear();
+
+            // 1. Collect all available passengers strictly from inspector fields (NO name searching)
+            if (passengerList != null && passengerList.Count > 0)
             {
-                var allTransforms = GetComponentsInChildren<Transform>(true);
-                var foundPassengers = new List<GameObject>();
-                for (int i = 0; i < allTransforms.Length; i++)
+                for (int i = 0; i < passengerList.Count; i++)
                 {
-                    Transform t = allTransforms[i];
-                    if (t == transform) continue;
-                    string n = t.name.ToLower();
-                    if (n.Contains("passenger") && !n.Contains("count") && !n.Contains("text") && !n.Contains("canvas"))
+                    if (passengerList[i] != null) allRoofPassengers.Add(passengerList[i]);
+                }
+            }
+            else
+            {
+                Transform parentToUse = passengerParent != null ? passengerParent : charactersParent;
+                if (parentToUse != null)
+                {
+                    for (int i = 0; i < parentToUse.childCount; i++)
                     {
-                        if (t.GetComponent<CharacterPassenger>() != null || t.GetComponent<Animator>() != null || t.GetComponentInChildren<SkinnedMeshRenderer>(true) != null)
+                        var child = parentToUse.GetChild(i);
+                        if (child != null)
                         {
-                            if (!foundPassengers.Contains(t.gameObject))
-                            {
-                                foundPassengers.Add(t.gameObject);
-                            }
+                            allRoofPassengers.Add(child.gameObject);
                         }
                     }
                 }
-                foundPassengers.Sort((a, b) =>
+            }
+
+            if (allRoofPassengers.Count == 0)
+            {
+                seatPassengers = new List<GameObject>();
+                return;
+            }
+
+            // 2. Disable animators on all models to eliminate animations
+            for (int i = 0; i < allRoofPassengers.Count; i++)
+            {
+                var anim = allRoofPassengers[i].GetComponentInChildren<Animator>(true);
+                if (anim != null) anim.enabled = false;
+            }
+
+            // 3. Clear legacy chair transforms
+            if (seatTransforms != null && seatTransforms.Count > 0)
+            {
+                seatTransforms.Clear();
+            }
+
+            // 4. If capacity >= all available models, use all models sorted front-to-back, left-to-right
+            int targetCount = Mathf.Clamp(capacity, 1, allRoofPassengers.Count);
+            if (targetCount >= allRoofPassengers.Count)
+            {
+                var allSorted = new List<GameObject>(allRoofPassengers);
+                allSorted.Sort((a, b) =>
                 {
-                    string pA = a.transform.parent != null ? a.transform.parent.name : "";
-                    string pB = b.transform.parent != null ? b.transform.parent.name : "";
-                    int cmp = string.Compare(pA, pB, System.StringComparison.Ordinal);
-                    if (cmp != 0) return cmp;
+                    float dz = b.transform.localPosition.z - a.transform.localPosition.z;
+                    if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
                     return a.transform.localPosition.x.CompareTo(b.transform.localPosition.x);
                 });
-                seatPassengers = foundPassengers;
+                seatPassengers = allSorted;
+                return;
             }
 
-            // 2. Detect charactersParent if null
-            if (charactersParent == null)
+            // 5. Centered selection for capacity < max capacity:
+            // Settle passengers in center by choosing the models closest to geometric center
+            Vector3 center = Vector3.zero;
+            for (int i = 0; i < allRoofPassengers.Count; i++)
             {
-                charactersParent = transform.Find("CharactersParent")
-                    ?? transform.Find("CharacterParent")
-                    ?? transform.Find("Characters Parent")
-                    ?? transform.Find("Chaarcter Parent")
-                    ?? transform.Find("Characters");
+                center += allRoofPassengers[i].transform.localPosition;
+            }
+            center /= allRoofPassengers.Count;
+
+            var scored = new List<System.Tuple<float, GameObject>>();
+            for (int i = 0; i < allRoofPassengers.Count; i++)
+            {
+                var p = allRoofPassengers[i];
+                Vector3 lp = p.transform.localPosition;
+                float dz = Mathf.Abs(lp.z - center.z);
+                float dx = Mathf.Abs(lp.x - center.x);
+                float distScore = dz * 1.0f + dx * 0.05f;
+                scored.Add(new System.Tuple<float, GameObject>(distScore, p));
             }
 
-            if (charactersParent == null)
+            scored.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+
+            // Choose the exact 'capacity' passengers closest to center
+            var chosen = new List<GameObject>();
+            for (int i = 0; i < targetCount; i++)
             {
-                var go = new GameObject("CharactersParent");
-                go.transform.SetParent(transform, false);
-                charactersParent = go.transform;
+                chosen.Add(scored[i].Item2);
             }
 
-            // 3. Detect seat transforms if empty
-            if (seatTransforms == null) seatTransforms = new List<Transform>();
-            if (seatTransforms.Count == 0)
+            // Explicitly deactivate any unchosen passenger model so only the center ones can be visible
+            for (int i = targetCount; i < scored.Count; i++)
             {
-                Transform searchRoot = seatsParent != null ? seatsParent : transform;
-                var all = searchRoot.GetComponentsInChildren<Transform>(true);
-                var list = new List<Transform>();
-                for (int i = 0; i < all.Length; i++)
+                var unchosen = scored[i].Item2;
+                if (unchosen != null)
                 {
-                    Transform t = all[i];
-                    if (t == transform || t == searchRoot || t == charactersParent) continue;
-                    string n = t.name.ToLower();
-                    if (n.Contains("chair") || n.Contains("seat"))
-                    {
-                        list.Add(t);
-                    }
+                    unchosen.SetActive(false);
+                    var anim = unchosen.GetComponentInChildren<Animator>(true);
+                    if (anim != null) anim.enabled = false;
                 }
-                list.Sort((a, b) => string.Compare(a.name, b.name, System.StringComparison.Ordinal));
-                seatTransforms = list;
             }
 
-            // 4. Detect passenger count text if null
-            if (passengerCountText == null)
+            // Sort chosen center passengers front-to-back, left-to-right for orderly fill
+            chosen.Sort((a, b) =>
             {
-                passengerCountText = GetComponentInChildren<TMP_Text>(true);
-            }
+                float dz = b.transform.localPosition.z - a.transform.localPosition.z;
+                if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
+                return a.transform.localPosition.x.CompareTo(b.transform.localPosition.x);
+            });
+
+            seatPassengers = chosen;
+        }
+
+        // Backwards compatibility alias
+        public void AutoDetectHierarchyAndSeats()
+        {
+            SetupPassengerSlots();
         }
 
         public void UpdatePassengerCountUI()
@@ -280,6 +338,19 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void ClearPassengers()
         {
+            // Deactivate all available roof passengers
+            if (allRoofPassengers != null)
+            {
+                for (int i = 0; i < allRoofPassengers.Count; i++)
+                {
+                    if (allRoofPassengers[i] != null)
+                    {
+                        allRoofPassengers[i].SetActive(false);
+                        var anim = allRoofPassengers[i].GetComponentInChildren<Animator>(true);
+                        if (anim != null) anim.enabled = false;
+                    }
+                }
+            }
             if (seatPassengers != null)
             {
                 for (int i = 0; i < seatPassengers.Count; i++)
@@ -300,14 +371,6 @@ namespace SandBlocks.Puzzle.Vehicles
             }
             spawnedPassengers.Clear();
 
-            if (charactersParent != null)
-            {
-                for (int i = charactersParent.childCount - 1; i >= 0; i--)
-                {
-                    SafeDestroy(charactersParent.GetChild(i).gameObject);
-                }
-            }
-
             boardedPassengerCount = 0;
             passengerCount = 0;
             UpdatePassengerCountUI();
@@ -321,7 +384,7 @@ namespace SandBlocks.Puzzle.Vehicles
         public void Initialize(int id, int cap, int len, int rotDegrees, Vector2Int startPos)
         {
             colorId = id;
-            capacity = cap;
+            capacity = Mathf.Clamp(cap, 1, MaxBusCapacity);
             length = len;
             rotationDegrees = Mathf.RoundToInt(rotDegrees / 90f) * 90 % 360;
             if (rotationDegrees < 0) rotationDegrees += 360;
@@ -595,20 +658,19 @@ namespace SandBlocks.Puzzle.Vehicles
 
             if (IsFull) return false;
 
-            AutoDetectHierarchyAndSeats();
+            if (seatPassengers == null || seatPassengers.Count == 0)
+            {
+                SetupPassengerSlots();
+            }
 
             int seatIndex = passengerCount;
             if (seatPassengers != null && seatIndex < seatPassengers.Count && seatPassengers[seatIndex] != null)
             {
                 targetSeatWorldPos = seatPassengers[seatIndex].transform.position;
             }
-            else if (seatTransforms != null && seatIndex < seatTransforms.Count && seatTransforms[seatIndex] != null)
-            {
-                targetSeatWorldPos = seatTransforms[seatIndex].position;
-            }
             else
             {
-                targetSeatWorldPos = transform.position + Vector3.up * 0.4f;
+                targetSeatWorldPos = transform.position + Vector3.up * 1.0f;
             }
 
             passengerCount++;
@@ -620,36 +682,67 @@ namespace SandBlocks.Puzzle.Vehicles
         public bool TryReserveSeat(out Vector3 targetSeatWorldPos, out bool isVisibleSeat)
         {
             bool success = TryReserveSeat(out targetSeatWorldPos);
-            isVisibleSeat = seatPassengers != null && (passengerCount - 1) < seatPassengers.Count;
+            isVisibleSeat = true;
             return success;
         }
 
         /// <summary>
         /// Boards a passenger into the bus.
-        /// Enables the next pre-placed seat passenger, colors it, and ensures sitting animation.
+        /// Reveals passenger models on the roof container according to exact capacity and boarded count.
         /// When bus capacity is reached, calls OnFull() to drive away.
         /// </summary>
         public void BoardPassenger()
         {
-            AutoDetectHierarchyAndSeats();
-
-            if (seatPassengers != null && boardedPassengerCount < seatPassengers.Count)
+            if (seatPassengers == null || seatPassengers.Count == 0)
             {
-                GameObject p = seatPassengers[boardedPassengerCount];
-                if (p != null)
-                {
-                    p.SetActive(true);
-                    ApplyColorToPassenger(p, colorId);
-                    EnsureSittingAnimation(p);
-                }
+                SetupPassengerSlots();
             }
 
             boardedPassengerCount++;
+            UpdatePassengerVisuals();
             PlayPassengerBoardPop();
 
             if (boardedPassengerCount >= capacity)
             {
                 OnFull();
+            }
+        }
+
+        /// <summary>
+        /// Shows the exact number of boarded passengers on the bus (up to capacity).
+        /// Only the chosen center seats become visible as passengers board.
+        /// </summary>
+        public void UpdatePassengerVisuals()
+        {
+            if (seatPassengers == null || seatPassengers.Count == 0)
+            {
+                SetupPassengerSlots();
+            }
+            if (seatPassengers == null || seatPassengers.Count == 0) return;
+
+            // Show exact boarded count on the bus, never exceeding capacity
+            int targetVisibleCount = Mathf.Clamp(boardedPassengerCount, 0, seatPassengers.Count);
+
+            for (int i = 0; i < seatPassengers.Count; i++)
+            {
+                var p = seatPassengers[i];
+                if (p == null) continue;
+
+                bool shouldBeVisible = (i < targetVisibleCount);
+                if (p.activeSelf != shouldBeVisible)
+                {
+                    p.SetActive(shouldBeVisible);
+                }
+
+                if (shouldBeVisible)
+                {
+                    ApplyColorToPassenger(p, colorId);
+                    var anim = p.GetComponentInChildren<Animator>(true);
+                    if (anim != null && anim.enabled)
+                    {
+                        anim.enabled = false;
+                    }
+                }
             }
         }
 
@@ -698,21 +791,10 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void EnsureSittingAnimation(GameObject p)
         {
+            // Animation removed as requested; disable any animator on bus passengers
             if (p == null) return;
-            var charPass = p.GetComponent<CharacterPassenger>();
-            if (charPass != null && charPass.gameObject.activeInHierarchy)
-            {
-                charPass.PlaySitting();
-            }
-            else
-            {
-                var anim = p.GetComponentInChildren<Animator>(true);
-                if (anim != null && p.activeInHierarchy)
-                {
-                    anim.SetBool("isRunning", false);
-                    anim.SetBool("IsSitting", true);
-                }
-            }
+            var anim = p.GetComponentInChildren<Animator>(true);
+            if (anim != null) anim.enabled = false;
         }
 
         public override bool TryAddPassenger(out Vector3 targetSeatWorldPos)

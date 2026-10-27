@@ -166,14 +166,17 @@ namespace SandBlocks.Core.Data
             }
         }
 
-        public void ResizeGrid(int newCols, int newRows)
+        public void ResizeGrid(int newCols, int newRows, bool adjustContainerSize = false, bool stretchResample = false)
         {
             if (newCols == gridColumns && newRows == gridRows && customCrowdColors != null && customCrowdColors.Length == newCols * newRows) return;
-            newCols = Mathf.Clamp(newCols, 4, 64);
-            newRows = Mathf.Clamp(newRows, 4, 64);
+            newCols = Mathf.Clamp(newCols, 2, 64);
+            newRows = Mathf.Clamp(newRows, 2, 64);
             int[] oldColors = customCrowdColors;
             int oldCols = gridColumns;
             int oldRows = gridRows;
+
+            float cellW = containerWidth / Mathf.Max(1, oldCols);
+            float cellH = containerHeight / Mathf.Max(1, oldRows);
 
             gridColumns = newCols;
             gridRows = newRows;
@@ -185,16 +188,178 @@ namespace SandBlocks.Core.Data
                 return;
             }
 
-            for (int r = 0; r < newRows; r++)
+            if (stretchResample)
             {
-                float v = (r + 0.5f) / newRows;
-                int oldR = Mathf.Clamp(Mathf.FloorToInt(v * oldRows), 0, oldRows - 1);
-                for (int c = 0; c < newCols; c++)
+                for (int r = 0; r < newRows; r++)
                 {
-                    float u = (c + 0.5f) / newCols;
-                    int oldC = Mathf.Clamp(Mathf.FloorToInt(u * oldCols), 0, oldCols - 1);
-                    customCrowdColors[r * newCols + c] = oldColors[oldR * oldCols + oldC];
+                    float v = (r + 0.5f) / newRows;
+                    int oldR = Mathf.Clamp(Mathf.FloorToInt(v * oldRows), 0, oldRows - 1);
+                    for (int c = 0; c < newCols; c++)
+                    {
+                        float u = (c + 0.5f) / newCols;
+                        int oldC = Mathf.Clamp(Mathf.FloorToInt(u * oldCols), 0, oldCols - 1);
+                        customCrowdColors[r * newCols + c] = oldColors[oldR * oldCols + oldC];
+                    }
                 }
+            }
+            else
+            {
+                // Preserve exact cells 1:1 without altering inside cell shape or size
+                for (int r = 0; r < newRows; r++)
+                {
+                    for (int c = 0; c < newCols; c++)
+                    {
+                        if (r < oldRows && c < oldCols)
+                        {
+                            customCrowdColors[r * newCols + c] = oldColors[r * oldCols + c];
+                        }
+                        else
+                        {
+                            customCrowdColors[r * newCols + c] = 5; // White background
+                        }
+                    }
+                }
+            }
+
+            if (adjustContainerSize)
+            {
+                containerWidth = Mathf.Max(1.0f, newCols * cellW);
+                containerHeight = Mathf.Max(1.0f, newRows * cellH);
+            }
+        }
+
+        public void DeleteRow(int rowToDelete, bool adjustContainerHeight = true)
+        {
+            if (gridRows <= 2 || customCrowdColors == null) return;
+            if (rowToDelete < 0 || rowToDelete >= gridRows) return;
+
+            float cellH = containerHeight / Mathf.Max(1, gridRows);
+            int newRows = gridRows - 1;
+            int[] newColors = new int[gridColumns * newRows];
+
+            int targetR = 0;
+            for (int r = 0; r < gridRows; r++)
+            {
+                if (r == rowToDelete) continue;
+                for (int c = 0; c < gridColumns; c++)
+                {
+                    newColors[targetR * gridColumns + c] = customCrowdColors[r * gridColumns + c];
+                }
+                targetR++;
+            }
+
+            customCrowdColors = newColors;
+            gridRows = newRows;
+
+            if (adjustContainerHeight)
+            {
+                containerHeight = Mathf.Max(1.0f, newRows * cellH);
+            }
+        }
+
+        public void DeleteColumn(int colToDelete, bool adjustContainerWidth = true)
+        {
+            if (gridColumns <= 2 || customCrowdColors == null) return;
+            if (colToDelete < 0 || colToDelete >= gridColumns) return;
+
+            float cellW = containerWidth / Mathf.Max(1, gridColumns);
+            int newCols = gridColumns - 1;
+            int[] newColors = new int[newCols * gridRows];
+
+            for (int r = 0; r < gridRows; r++)
+            {
+                int targetC = 0;
+                for (int c = 0; c < gridColumns; c++)
+                {
+                    if (c == colToDelete) continue;
+                    newColors[r * newCols + targetC] = customCrowdColors[r * gridColumns + c];
+                    targetC++;
+                }
+            }
+
+            customCrowdColors = newColors;
+            gridColumns = newCols;
+
+            if (adjustContainerWidth)
+            {
+                containerWidth = Mathf.Max(1.0f, newCols * cellW);
+            }
+        }
+
+        public void InsertRow(int insertAtRow, int fillColor = 5, bool adjustContainerHeight = true)
+        {
+            EnsureCustomGridInitialized();
+            insertAtRow = Mathf.Clamp(insertAtRow, 0, gridRows);
+
+            float cellH = containerHeight / Mathf.Max(1, gridRows);
+            int newRows = gridRows + 1;
+            int[] newColors = new int[gridColumns * newRows];
+
+            int targetR = 0;
+            for (int r = 0; r <= gridRows; r++)
+            {
+                if (r == insertAtRow)
+                {
+                    for (int c = 0; c < gridColumns; c++)
+                    {
+                        newColors[targetR * gridColumns + c] = fillColor;
+                    }
+                    targetR++;
+                }
+
+                if (r < gridRows)
+                {
+                    for (int c = 0; c < gridColumns; c++)
+                    {
+                        newColors[targetR * gridColumns + c] = customCrowdColors[r * gridColumns + c];
+                    }
+                    targetR++;
+                }
+            }
+
+            customCrowdColors = newColors;
+            gridRows = newRows;
+
+            if (adjustContainerHeight)
+            {
+                containerHeight = Mathf.Max(1.0f, newRows * cellH);
+            }
+        }
+
+        public void InsertColumn(int insertAtCol, int fillColor = 5, bool adjustContainerWidth = true)
+        {
+            EnsureCustomGridInitialized();
+            insertAtCol = Mathf.Clamp(insertAtCol, 0, gridColumns);
+
+            float cellW = containerWidth / Mathf.Max(1, gridColumns);
+            int newCols = gridColumns + 1;
+            int[] newColors = new int[newCols * gridRows];
+
+            for (int r = 0; r < gridRows; r++)
+            {
+                int targetC = 0;
+                for (int c = 0; c <= gridColumns; c++)
+                {
+                    if (c == insertAtCol)
+                    {
+                        newColors[r * newCols + targetC] = fillColor;
+                        targetC++;
+                    }
+
+                    if (c < gridColumns)
+                    {
+                        newColors[r * newCols + targetC] = customCrowdColors[r * gridColumns + c];
+                        targetC++;
+                    }
+                }
+            }
+
+            customCrowdColors = newColors;
+            gridColumns = newCols;
+
+            if (adjustContainerWidth)
+            {
+                containerWidth = Mathf.Max(1.0f, newCols * cellW);
             }
         }
 

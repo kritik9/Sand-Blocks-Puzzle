@@ -29,8 +29,25 @@ namespace SandBlocks.Editor
         private string newColorName = "Purple";
         private Color newColorValue = new Color(0.65f, 0.25f, 0.95f, 1f);
 
+        // Crowd Painting & Row/Col Manipulation State
+        private enum CrowdPaintTool { Brush, Eraser, DeleteRow, DeleteColumn }
+        private CrowdPaintTool activePaintTool = CrowdPaintTool.Brush;
+        private bool autoAdjustContainerDimensions = true;
+        private bool lockSquareCells = true;
+        private bool showDeleteHeaders = true;
+        private int manualDeleteRowIndex = 0;
+        private int manualDeleteColIndex = 0;
+
         // Bus Editor State
         private int selectedBusIndex = -1;
+
+        // Image Import State
+        private bool showImageImportSection = true;
+        private int importGridCols = 16;
+        private int importGridRows = 16;
+        private float importMarginPercent = 4.5f;
+        private float whiteThreshold = 0.82f;
+        private bool flipVertical = false;
 
         // Default colors if palette asset not loaded
         private readonly Color[] fallbackColors = new Color[]
@@ -60,6 +77,7 @@ namespace SandBlocks.Editor
 
         private void OnEnable()
         {
+            wantsMouseMove = true;
             LoadPalette();
             LoadDefaultLevel();
         }
@@ -437,11 +455,13 @@ namespace SandBlocks.Editor
 
             // Grid Resolution Controls
             EditorGUILayout.BeginHorizontal();
-            int newCols = EditorGUILayout.IntSlider("Columns (Width):", selectedLevel.gridColumns, 8, 32);
-            int newRows = EditorGUILayout.IntSlider("Rows (Height):", selectedLevel.gridRows, 8, 32);
+            int newCols = EditorGUILayout.IntSlider("Columns (Width):", selectedLevel.gridColumns, 4, 32);
+            int newRows = EditorGUILayout.IntSlider("Rows (Height):", selectedLevel.gridRows, 4, 32);
             if (newCols != selectedLevel.gridColumns || newRows != selectedLevel.gridRows)
             {
-                selectedLevel.ResizeGrid(newCols, newRows);
+                Undo.RecordObject(selectedLevel, "Resize Crowd Grid");
+                selectedLevel.ResizeGrid(newCols, newRows, autoAdjustContainerDimensions, false);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
                 EditorUtility.SetDirty(selectedLevel);
             }
             EditorGUILayout.EndHorizontal();
@@ -477,6 +497,15 @@ namespace SandBlocks.Editor
 
             EditorGUILayout.Space(6);
 
+            DrawImageImportSection();
+
+            EditorGUILayout.Space(6);
+
+            // Row & Column Controls & Active Painting Tools
+            DrawCrowdRowColControls();
+
+            EditorGUILayout.Space(6);
+
             // Interactive Painting Canvas
             DrawInteractiveCrowdCanvas();
 
@@ -486,6 +515,220 @@ namespace SandBlocks.Editor
             DrawColorDistributionStats();
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawImageImportSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.BeginHorizontal();
+            showImageImportSection = EditorGUILayout.Foldout(showImageImportSection, "3. Import Grid Image / Pixel Art (Auto-Map Image)", true, EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Auto-Balance Buses", EditorStyles.miniButton, GUILayout.Width(130)))
+            {
+                AutoBalanceBusCapacities();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (showImageImportSection)
+            {
+                EditorGUILayout.HelpBox("Pass any grid image or pixel art chart (PNG/JPG). The editor automatically detects cells, ignores grid lines, matches each cell's color to your palette, and converts it into the level's crowd grid!", MessageType.None);
+
+                EditorGUILayout.BeginHorizontal();
+                selectedLevel.colorMapTexture = (Texture2D)EditorGUILayout.ObjectField("Grid Image Texture:", selectedLevel.colorMapTexture, typeof(Texture2D), false);
+                if (GUILayout.Button("Pick File...", GUILayout.Width(80)))
+                {
+                    string path = EditorUtility.OpenFilePanel("Select Grid / Pixel Art Image", "", "png,jpg,jpeg");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        if (path.StartsWith(Application.dataPath))
+                        {
+                            string rel = "Assets" + path.Substring(Application.dataPath.Length);
+                            selectedLevel.colorMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(rel);
+                        }
+                        else
+                        {
+                            byte[] bytes = System.IO.File.ReadAllBytes(path);
+                            Texture2D loaded = new Texture2D(2, 2);
+                            if (loaded.LoadImage(bytes))
+                            {
+                                selectedLevel.colorMapTexture = loaded;
+                            }
+                        }
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                importGridCols = EditorGUILayout.IntSlider("Image Grid Columns:", importGridCols, 4, 32);
+                importGridRows = EditorGUILayout.IntSlider("Image Grid Rows:", importGridRows, 4, 32);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                importMarginPercent = EditorGUILayout.Slider("Outer Border Trim %:", importMarginPercent, 0f, 20f);
+                whiteThreshold = EditorGUILayout.Slider("Background Brightness:", whiteThreshold, 0.7f, 0.98f);
+                EditorGUILayout.EndHorizontal();
+
+                flipVertical = EditorGUILayout.Toggle("Flip Y (Invert Rows):", flipVertical);
+
+                EditorGUILayout.Space(2);
+
+                EditorGUILayout.BeginHorizontal();
+                GUI.backgroundColor = new Color(0.2f, 0.85f, 0.35f, 1f);
+                if (GUILayout.Button("Auto-Convert Image to Crowd Grid", GUILayout.Height(30)))
+                {
+                    ImportImageToCrowdGrid();
+                }
+                GUI.backgroundColor = Color.white;
+
+                if (GUILayout.Button("Reset to Lips", GUILayout.Width(100), GUILayout.Height(30)))
+                {
+                    Undo.RecordObject(selectedLevel, "Bake Lips");
+                    selectedLevel.BakeLipsShape();
+                    EditorUtility.SetDirty(selectedLevel);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void ImportImageToCrowdGrid()
+        {
+            if (selectedLevel == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No active Level selected.", "OK");
+                return;
+            }
+
+            if (selectedLevel.colorMapTexture == null)
+            {
+                EditorUtility.DisplayDialog("Missing Image", "Please assign a Grid Image Texture first.", "OK");
+                return;
+            }
+
+            Texture2D source = selectedLevel.colorMapTexture;
+            Texture2D readable = null;
+            bool createdTemp = false;
+
+            try
+            {
+                if (source.isReadable)
+                {
+                    readable = source;
+                }
+                else
+                {
+                    RenderTexture rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32);
+                    Graphics.Blit(source, rt);
+                    RenderTexture prev = RenderTexture.active;
+                    RenderTexture.active = rt;
+                    readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+                    readable.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+                    readable.Apply();
+                    RenderTexture.active = prev;
+                    RenderTexture.ReleaseTemporary(rt);
+                    createdTemp = true;
+                }
+
+                Undo.RecordObject(selectedLevel, "Import Grid Image");
+
+                selectedLevel.ResizeGrid(importGridCols, importGridRows);
+
+                float marginU = importMarginPercent / 100f;
+                float marginV = importMarginPercent / 100f;
+                float u0 = marginU;
+                float u1 = 1f - marginU;
+                float v0 = marginV;
+                float v1 = 1f - marginV;
+
+                float cellU = (u1 - u0) / importGridCols;
+                float cellV = (v1 - v0) / importGridRows;
+
+                for (int r = 0; r < importGridRows; r++)
+                {
+                    int sampleR = flipVertical ? (importGridRows - 1 - r) : r;
+                    float v = v0 + (sampleR + 0.5f) * cellV;
+
+                    for (int c = 0; c < importGridCols; c++)
+                    {
+                        float u = u0 + (c + 0.5f) * cellU;
+
+                        // Sample a center cluster around cell center to eliminate grid line interference
+                        float du = cellU * 0.15f;
+                        float dv = cellV * 0.15f;
+                        Color s0 = readable.GetPixelBilinear(u, v);
+                        Color s1 = readable.GetPixelBilinear(u - du, v - dv);
+                        Color s2 = readable.GetPixelBilinear(u + du, v + dv);
+                        Color avg = (s0 * 2f + s1 + s2) * 0.25f;
+
+                        int colorId = ClassifyColorToPalette(avg);
+                        selectedLevel.SetPixel(c, r, colorId);
+                    }
+                }
+
+                selectedLevel.patternType = LevelPatternType.CustomGrid;
+                EditorUtility.SetDirty(selectedLevel);
+                Debug.Log($"<color=green>[SandBlocks]</color> Successfully converted image into {importGridCols}x{importGridRows} crowd grid!");
+            }
+            finally
+            {
+                if (createdTemp && readable != null)
+                {
+                    DestroyImmediate(readable);
+                }
+            }
+        }
+
+        private int ClassifyColorToPalette(Color c)
+        {
+            // If near white or light gray / background with low saturation, treat as background (ID 5)
+            float maxC = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+            float minC = Mathf.Min(c.r, Mathf.Min(c.g, c.b));
+            float delta = maxC - minC;
+
+            if (maxC >= whiteThreshold && delta < 0.12f)
+            {
+                return 5; // White Background
+            }
+
+            // Match against palette entries
+            if (palette != null && palette.Entries != null && palette.Entries.Length > 0)
+            {
+                int bestId = 5;
+                float bestDist = float.MaxValue;
+
+                for (int i = 0; i < palette.Entries.Length; i++)
+                {
+                    var entry = palette.Entries[i];
+                    if (entry.id == 5) continue; // Skip white background in color matching
+
+                    Color ec = entry.color;
+                    // Weighted RGB Euclidean distance (perception weighted)
+                    float dr = (c.r - ec.r) * 0.3f;
+                    float dg = (c.g - ec.g) * 0.59f;
+                    float db = (c.b - ec.b) * 0.11f;
+                    float dist = dr * dr + dg * dg + db * db;
+
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestId = entry.id;
+                    }
+                }
+                return bestId;
+            }
+
+            // Fallback matching
+            if (c.r > 0.75f && c.g < 0.35f && c.b < 0.35f) return 7; // Red
+            if (c.r > 0.8f && c.g < 0.6f && c.b > 0.5f) return 3;    // Pink
+            if (c.r > 0.8f && c.g > 0.7f && c.b < 0.25f) return 2;   // Yellow
+            if (c.r < 0.3f && c.g < 0.3f && c.b < 0.35f) return 4;   // Black
+            if (c.b > c.r && c.b > c.g) return 0;                    // Blue
+            if (c.g > c.r && c.g > c.b) return 1;                    // Green
+            if (c.r > 0.8f && c.g > 0.4f) return 6;                  // Orange
+
+            return 5;
         }
 
         private void DrawPaletteBrushBar()
@@ -589,31 +832,298 @@ namespace SandBlocks.Editor
             EditorGUILayout.EndVertical();
         }
 
+        private void SyncContainerBoundaryToScene()
+        {
+            var cb = FindAnyObjectByType<ContainerBoundary>();
+            if (cb != null)
+            {
+                if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
+                {
+                    cb.SetCustomPolygonPoints(selectedLevel.customPolygonPoints);
+                }
+                else
+                {
+                    cb.SetContainerShape(selectedLevel.containerShape, selectedLevel.containerWidth, selectedLevel.containerHeight, selectedLevel.containerCenter,
+                        selectedLevel.leftBorderOffset, selectedLevel.rightBorderOffset, selectedLevel.topBorderOffset, selectedLevel.bottomBorderOffset);
+                }
+                cb.BuildVisualContainer();
+                EditorUtility.SetDirty(cb);
+            }
+        }
+
+        private void DrawCrowdRowColControls()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Active Paint Tool Selector
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Active Tool:", EditorStyles.boldLabel, GUILayout.Width(80));
+            if (GUILayout.Toggle(activePaintTool == CrowdPaintTool.Brush, "🖌 Paint Brush", EditorStyles.miniButtonLeft)) activePaintTool = CrowdPaintTool.Brush;
+            if (GUILayout.Toggle(activePaintTool == CrowdPaintTool.Eraser, "🧼 Eraser (White)", EditorStyles.miniButtonMid)) activePaintTool = CrowdPaintTool.Eraser;
+            Color prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = (activePaintTool == CrowdPaintTool.DeleteRow) ? new Color(1f, 0.4f, 0.4f, 1f) : prevBg;
+            if (GUILayout.Toggle(activePaintTool == CrowdPaintTool.DeleteRow, "🗑 Delete Row Tool", EditorStyles.miniButtonMid)) activePaintTool = CrowdPaintTool.DeleteRow;
+            GUI.backgroundColor = (activePaintTool == CrowdPaintTool.DeleteColumn) ? new Color(1f, 0.4f, 0.4f, 1f) : prevBg;
+            if (GUILayout.Toggle(activePaintTool == CrowdPaintTool.DeleteColumn, "🗑 Delete Col Tool", EditorStyles.miniButtonRight)) activePaintTool = CrowdPaintTool.DeleteColumn;
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndHorizontal();
+
+            // Sizing Behavior Options
+            EditorGUILayout.BeginHorizontal();
+            autoAdjustContainerDimensions = EditorGUILayout.ToggleLeft("Auto-Adjust Container Size (Keep Cell Shape & Size)", autoAdjustContainerDimensions);
+            lockSquareCells = EditorGUILayout.ToggleLeft("Lock Square Cells (1:1)", lockSquareCells);
+            showDeleteHeaders = EditorGUILayout.ToggleLeft("Header ✕ Delete Buttons", showDeleteHeaders);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(2);
+
+            // Quick Trim / Expand Buttons
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Rows Trim/Add:", EditorStyles.miniBoldLabel, GUILayout.Width(95));
+            if (GUILayout.Button("- Top Row", EditorStyles.miniButtonLeft))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Top Row");
+                selectedLevel.DeleteRow(selectedLevel.gridRows - 1, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("+ Top Row", EditorStyles.miniButtonMid))
+            {
+                Undo.RecordObject(selectedLevel, "Add Top Row");
+                selectedLevel.InsertRow(selectedLevel.gridRows, 5, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("- Bottom (Exit)", EditorStyles.miniButtonMid))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Bottom Row");
+                selectedLevel.DeleteRow(0, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("+ Bottom (Exit)", EditorStyles.miniButtonRight))
+            {
+                Undo.RecordObject(selectedLevel, "Add Bottom Row");
+                selectedLevel.InsertRow(0, 5, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Cols Trim/Add:", EditorStyles.miniBoldLabel, GUILayout.Width(95));
+            if (GUILayout.Button("- Left Col", EditorStyles.miniButtonLeft))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Left Column");
+                selectedLevel.DeleteColumn(0, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("+ Left Col", EditorStyles.miniButtonMid))
+            {
+                Undo.RecordObject(selectedLevel, "Add Left Column");
+                selectedLevel.InsertColumn(0, 5, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("- Right Col", EditorStyles.miniButtonMid))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Right Column");
+                selectedLevel.DeleteColumn(selectedLevel.gridColumns - 1, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            if (GUILayout.Button("+ Right Col", EditorStyles.miniButtonRight))
+            {
+                Undo.RecordObject(selectedLevel, "Add Right Column");
+                selectedLevel.InsertColumn(selectedLevel.gridColumns, 5, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Specific Row/Col Index Deletion
+            EditorGUILayout.BeginHorizontal();
+            manualDeleteRowIndex = EditorGUILayout.IntSlider($"Delete Row (0..{selectedLevel.gridRows - 1}):", manualDeleteRowIndex, 0, Mathf.Max(0, selectedLevel.gridRows - 1));
+            if (GUILayout.Button("Delete Row", GUILayout.Width(80)))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Row");
+                selectedLevel.DeleteRow(manualDeleteRowIndex, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                manualDeleteRowIndex = Mathf.Clamp(manualDeleteRowIndex, 0, Mathf.Max(0, selectedLevel.gridRows - 1));
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            manualDeleteColIndex = EditorGUILayout.IntSlider($"Delete Col (0..{selectedLevel.gridColumns - 1}):", manualDeleteColIndex, 0, Mathf.Max(0, selectedLevel.gridColumns - 1));
+            if (GUILayout.Button("Delete Col", GUILayout.Width(80)))
+            {
+                Undo.RecordObject(selectedLevel, "Delete Column");
+                selectedLevel.DeleteColumn(manualDeleteColIndex, autoAdjustContainerDimensions);
+                if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                manualDeleteColIndex = Mathf.Clamp(manualDeleteColIndex, 0, Mathf.Max(0, selectedLevel.gridColumns - 1));
+                EditorUtility.SetDirty(selectedLevel);
+                GUIUtility.ExitGUI();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (activePaintTool == CrowdPaintTool.DeleteRow)
+            {
+                EditorGUILayout.HelpBox("Delete Row Tool Active: Click on any row in the canvas (or the left ✕ header) to delete it. Remaining cells stay 100% untouched.", MessageType.Warning);
+            }
+            else if (activePaintTool == CrowdPaintTool.DeleteColumn)
+            {
+                EditorGUILayout.HelpBox("Delete Column Tool Active: Click on any column in the canvas (or top ✕ header) to delete it. Remaining cells stay 100% untouched.", MessageType.Warning);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
         private void DrawInteractiveCrowdCanvas()
         {
             int cols = selectedLevel.gridColumns;
             int rows = selectedLevel.gridRows;
 
-            // Calculate canvas aspect ratio matching container
-            float aspect = selectedLevel.containerWidth / Mathf.Max(1f, selectedLevel.containerHeight);
-            float canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 60f, 240f, 440f);
-            float canvasHeight = canvasWidth / aspect;
-            canvasHeight = Mathf.Clamp(canvasHeight, 220f, 460f);
+            float cellW, cellH, canvasWidth, canvasHeight;
+            float rowHeaderW = showDeleteHeaders ? 24f : 0f;
+            float colHeaderH = showDeleteHeaders ? 18f : 0f;
+
+            if (lockSquareCells)
+            {
+                float availW = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 180f, 440f);
+                float maxCanvasH = 440f;
+                float cellSize = Mathf.Min(availW / Mathf.Max(1, cols), maxCanvasH / Mathf.Max(1, rows));
+                cellSize = Mathf.Clamp(cellSize, 8f, 26f);
+                cellW = cellSize;
+                cellH = cellSize;
+                canvasWidth = cols * cellW;
+                canvasHeight = rows * cellH;
+            }
+            else
+            {
+                float aspect = selectedLevel.containerWidth / Mathf.Max(1f, selectedLevel.containerHeight);
+                canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 200f, 440f);
+                canvasHeight = Mathf.Clamp(canvasWidth / aspect, 200f, 460f);
+                cellW = canvasWidth / cols;
+                cellH = canvasHeight / rows;
+            }
+
+            float totalW = canvasWidth + rowHeaderW;
+            float totalH = canvasHeight + colHeaderH;
 
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
-            Rect canvasRect = GUILayoutUtility.GetRect(canvasWidth, canvasHeight);
+            Rect totalRect = GUILayoutUtility.GetRect(totalW, totalH);
+            Rect canvasRect = new Rect(totalRect.x + rowHeaderW, totalRect.y + colHeaderH, canvasWidth, canvasHeight);
+
+            Event evt = Event.current;
+            Vector2 mousePos = evt.mousePosition;
+            bool mouseInCanvas = canvasRect.Contains(mousePos);
+
+            int hoveredCol = -1;
+            int hoveredVisualRow = -1;
+            int hoveredRow = -1;
+
+            if (mouseInCanvas)
+            {
+                hoveredCol = Mathf.Clamp(Mathf.FloorToInt((mousePos.x - canvasRect.x) / cellW), 0, cols - 1);
+                hoveredVisualRow = Mathf.Clamp(Mathf.FloorToInt((mousePos.y - canvasRect.y) / cellH), 0, rows - 1);
+                hoveredRow = (rows - 1) - hoveredVisualRow;
+                if (evt.type == EventType.MouseMove) Repaint();
+            }
+
+            // Draw Column Delete Headers (above canvas)
+            if (showDeleteHeaders)
+            {
+                Rect cornerRect = new Rect(totalRect.x, totalRect.y, rowHeaderW, colHeaderH);
+                EditorGUI.DrawRect(cornerRect, new Color(0.18f, 0.19f, 0.22f, 1f));
+                var miniHStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 8,
+                    normal = { textColor = Color.gray }
+                };
+                GUI.Label(cornerRect, "R/C", miniHStyle);
+
+                for (int c = 0; c < cols; c++)
+                {
+                    Rect colHeaderRect = new Rect(canvasRect.x + c * cellW, totalRect.y, cellW, colHeaderH - 1f);
+                    bool isHoveredCol = (hoveredCol == c && (activePaintTool == CrowdPaintTool.DeleteColumn || colHeaderRect.Contains(mousePos)));
+
+                    Color headerBg = isHoveredCol ? new Color(0.9f, 0.25f, 0.25f, 1f) : new Color(0.22f, 0.24f, 0.28f, 1f);
+                    EditorGUI.DrawRect(colHeaderRect, headerBg);
+
+                    string colText = (cellW >= 18f && !isHoveredCol) ? $"{c}" : "✕";
+                    var headerStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        alignment = TextAnchor.MiddleCenter,
+                        fontSize = (cellW >= 16f) ? 9 : 8,
+                        normal = { textColor = isHoveredCol ? Color.white : new Color(0.85f, 0.85f, 0.85f, 1f) }
+                    };
+                    GUI.Label(colHeaderRect, colText, headerStyle);
+
+                    if (evt.type == EventType.MouseDown && colHeaderRect.Contains(mousePos) && evt.button == 0)
+                    {
+                        Undo.RecordObject(selectedLevel, "Delete Column");
+                        selectedLevel.DeleteColumn(c, autoAdjustContainerDimensions);
+                        if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                        EditorUtility.SetDirty(selectedLevel);
+                        evt.Use();
+                        GUIUtility.ExitGUI();
+                    }
+                }
+            }
+
+            // Draw Row Delete Headers (left of canvas)
+            if (showDeleteHeaders)
+            {
+                for (int r = 0; r < rows; r++)
+                {
+                    int visualRow = (rows - 1) - r;
+                    Rect rowHeaderRect = new Rect(totalRect.x, canvasRect.y + visualRow * cellH, rowHeaderW - 1f, cellH);
+                    bool isHoveredRow = (hoveredRow == r && (activePaintTool == CrowdPaintTool.DeleteRow || rowHeaderRect.Contains(mousePos)));
+
+                    Color headerBg = isHoveredRow ? new Color(0.9f, 0.25f, 0.25f, 1f) : new Color(0.22f, 0.24f, 0.28f, 1f);
+                    EditorGUI.DrawRect(rowHeaderRect, headerBg);
+
+                    string rowText = isHoveredRow ? "✕" : $"{r}";
+                    var headerStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        alignment = TextAnchor.MiddleCenter,
+                        fontSize = 9,
+                        normal = { textColor = isHoveredRow ? Color.white : new Color(0.85f, 0.85f, 0.85f, 1f) }
+                    };
+                    GUI.Label(rowHeaderRect, rowText, headerStyle);
+
+                    if (evt.type == EventType.MouseDown && rowHeaderRect.Contains(mousePos) && evt.button == 0)
+                    {
+                        Undo.RecordObject(selectedLevel, "Delete Row");
+                        selectedLevel.DeleteRow(r, autoAdjustContainerDimensions);
+                        if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                        EditorUtility.SetDirty(selectedLevel);
+                        evt.Use();
+                        GUIUtility.ExitGUI();
+                    }
+                }
+            }
+
             // Dark background for canvas
             EditorGUI.DrawRect(canvasRect, new Color(0.12f, 0.13f, 0.16f, 1f));
-
-            float cellW = canvasRect.width / cols;
-            float cellH = canvasRect.height / rows;
 
             // Draw cells (Inverted Y: row 0 is at bottom, row rows-1 is at top)
             for (int r = 0; r < rows; r++)
             {
-                // Visual row (0 at top, rows - 1 at bottom)
                 int visualRow = (rows - 1) - r;
                 float cellY = canvasRect.y + visualRow * cellH;
 
@@ -625,7 +1135,7 @@ namespace SandBlocks.Editor
                     int colorId = selectedLevel.GetPixel(c, r);
                     Color cellColor = GetColor(colorId);
 
-                    // If CustomPolygon shape, dim cells outside polygon
+                    // Dim cells outside polygon if CustomPolygon
                     if (selectedLevel.containerShape == ContainerShapeType.CustomPolygon && selectedLevel.customPolygonPoints != null && selectedLevel.customPolygonPoints.Count >= 3)
                     {
                         float localX = Mathf.Lerp(selectedLevel.containerCenter.x - selectedLevel.containerWidth * 0.5f,
@@ -641,6 +1151,23 @@ namespace SandBlocks.Editor
                     }
 
                     EditorGUI.DrawRect(cellRect, cellColor);
+                }
+            }
+
+            // Hover Highlights for Delete Row / Column Mode
+            if (mouseInCanvas)
+            {
+                if (activePaintTool == CrowdPaintTool.DeleteRow && hoveredVisualRow >= 0)
+                {
+                    float y = canvasRect.y + hoveredVisualRow * cellH;
+                    Rect highlightRect = new Rect(canvasRect.x, y, canvasWidth, cellH);
+                    EditorGUI.DrawRect(highlightRect, new Color(1f, 0.2f, 0.2f, 0.45f));
+                }
+                else if (activePaintTool == CrowdPaintTool.DeleteColumn && hoveredCol >= 0)
+                {
+                    float x = canvasRect.x + hoveredCol * cellW;
+                    Rect highlightRect = new Rect(x, canvasRect.y, cellW, canvasHeight);
+                    EditorGUI.DrawRect(highlightRect, new Color(1f, 0.2f, 0.2f, 0.45f));
                 }
             }
 
@@ -660,21 +1187,45 @@ namespace SandBlocks.Editor
             Handles.color = Color.yellow;
             Handles.DrawLine(new Vector3(exitX, canvasRect.yMax, 0), new Vector3(exitX + exitW, canvasRect.yMax, 0));
 
-            // Handle Mouse Painting
-            Event evt = Event.current;
-            if ((evt.type == EventType.MouseDown || evt.type == EventType.MouseDrag) && canvasRect.Contains(evt.mousePosition))
+            // Mouse Interaction on Canvas
+            if (mouseInCanvas)
             {
-                int paintCol = Mathf.FloorToInt((evt.mousePosition.x - canvasRect.x) / cellW);
-                int visualR = Mathf.FloorToInt((evt.mousePosition.y - canvasRect.y) / cellH);
-                int paintRow = (rows - 1) - visualR;
-
-                int colorToApply = (evt.button == 1) ? 5 : activeBrushColor; // Right click erases to white
-
-                Undo.RecordObject(selectedLevel, "Paint Pixel");
-                PaintBrushAt(paintCol, paintRow, colorToApply);
-                EditorUtility.SetDirty(selectedLevel);
-                evt.Use();
-                Repaint();
+                if (activePaintTool == CrowdPaintTool.DeleteRow)
+                {
+                    if (evt.type == EventType.MouseDown && evt.button == 0)
+                    {
+                        Undo.RecordObject(selectedLevel, "Delete Row");
+                        selectedLevel.DeleteRow(hoveredRow, autoAdjustContainerDimensions);
+                        if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                        EditorUtility.SetDirty(selectedLevel);
+                        evt.Use();
+                        GUIUtility.ExitGUI();
+                    }
+                }
+                else if (activePaintTool == CrowdPaintTool.DeleteColumn)
+                {
+                    if (evt.type == EventType.MouseDown && evt.button == 0)
+                    {
+                        Undo.RecordObject(selectedLevel, "Delete Column");
+                        selectedLevel.DeleteColumn(hoveredCol, autoAdjustContainerDimensions);
+                        if (autoAdjustContainerDimensions) SyncContainerBoundaryToScene();
+                        EditorUtility.SetDirty(selectedLevel);
+                        evt.Use();
+                        GUIUtility.ExitGUI();
+                    }
+                }
+                else // Paint or Erase
+                {
+                    if ((evt.type == EventType.MouseDown || evt.type == EventType.MouseDrag) && (evt.button == 0 || evt.button == 1))
+                    {
+                        int colorToApply = (activePaintTool == CrowdPaintTool.Eraser || evt.button == 1) ? 5 : activeBrushColor;
+                        Undo.RecordObject(selectedLevel, "Paint Pixel");
+                        PaintBrushAt(hoveredCol, hoveredRow, colorToApply);
+                        EditorUtility.SetDirty(selectedLevel);
+                        evt.Use();
+                        Repaint();
+                    }
+                }
             }
 
             GUILayout.FlexibleSpace();
@@ -1045,8 +1596,14 @@ namespace SandBlocks.Editor
             }
             EditorGUILayout.EndVertical();
 
-            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 20);
-            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, 6);
+            int maxGridCols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
+            int maxGridRows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
+            int maxGridX = Mathf.Max(0, maxGridCols - 1);
+            int maxGridY = Mathf.Max(0, maxGridRows - 1);
+            int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
+
+            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 56);
+            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, maxAllowedLength);
 
             // Rotation Buttons
             EditorGUILayout.BeginHorizontal();
@@ -1059,8 +1616,8 @@ namespace SandBlocks.Editor
 
             // Grid Coordinates & Quick Nudge
             EditorGUILayout.BeginHorizontal();
-            bus.gridPosition.x = EditorGUILayout.IntSlider("Grid X (0..5):", bus.gridPosition.x, 0, 5);
-            bus.gridPosition.y = EditorGUILayout.IntSlider("Grid Y (0..4):", bus.gridPosition.y, 0, 4);
+            bus.gridPosition.x = EditorGUILayout.IntSlider($"Grid X (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
+            bus.gridPosition.y = EditorGUILayout.IntSlider($"Grid Y (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
             EditorGUILayout.EndHorizontal();
 
             // Nudge D-Pad
@@ -1068,8 +1625,8 @@ namespace SandBlocks.Editor
             GUILayout.FlexibleSpace();
             GUILayout.Label("Nudge Bus Position:", EditorStyles.miniLabel);
             if (GUILayout.Button("◄", GUILayout.Width(28)) && bus.gridPosition.x > 0) bus.gridPosition.x--;
-            if (GUILayout.Button("►", GUILayout.Width(28)) && bus.gridPosition.x < 5) bus.gridPosition.x++;
-            if (GUILayout.Button("▲", GUILayout.Width(28)) && bus.gridPosition.y < 4) bus.gridPosition.y++;
+            if (GUILayout.Button("►", GUILayout.Width(28)) && bus.gridPosition.x < maxGridX) bus.gridPosition.x++;
+            if (GUILayout.Button("▲", GUILayout.Width(28)) && bus.gridPosition.y < maxGridY) bus.gridPosition.y++;
             if (GUILayout.Button("▼", GUILayout.Width(28)) && bus.gridPosition.y > 0) bus.gridPosition.y--;
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
@@ -1091,7 +1648,7 @@ namespace SandBlocks.Editor
             {
                 name = $"Bus {selectedLevel.buses.Count + 1}",
                 colorId = activeBrushColor,
-                capacity = 4,
+                capacity = 56,
                 length = 2,
                 rotationDegrees = 0,
                 gridPosition = new Vector2Int(0, 0)
@@ -1302,7 +1859,7 @@ namespace SandBlocks.Editor
                     for (int m = 0; m < matchingBuses.Count; m++)
                     {
                         var bus = selectedLevel.buses[matchingBuses[m]];
-                        bus.capacity = capPerBus + (m == 0 ? remainder : 0);
+                        bus.capacity = Mathf.Clamp(capPerBus + (m == 0 ? remainder : 0), 1, 56);
                         selectedLevel.buses[matchingBuses[m]] = bus;
                     }
                 }
