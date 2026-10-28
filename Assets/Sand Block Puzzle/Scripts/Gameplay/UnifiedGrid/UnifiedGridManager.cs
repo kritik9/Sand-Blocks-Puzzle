@@ -753,6 +753,8 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             character.transform.SetParent(padTransform);
             character.transform.localEulerAngles = characterRotationEuler;
             character.transform.localScale = Vector3.one * characterScale;
+            var destCp = character.GetComponent<CharacterPassenger>();
+            if (destCp != null) destCp.PlayIdle();
 
             if (!destinationCellFigures.ContainsKey(destCell)) destinationCellFigures[destCell] = new List<GameObject>();
             var list = destinationCellFigures[destCell];
@@ -805,6 +807,8 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             GameObject flyer = CreatePassengerFigure(colorId);
             flyer.name = "InFlight_ToBus";
             flyer.transform.position = startPos;
+            var cpFlyer = flyer.GetComponent<CharacterPassenger>();
+            if (cpFlyer != null) cpFlyer.PlayRunning();
 
             Vector3 localSeatOffset = (targetBus != null && targetSeatPos != Vector3.zero)
                 ? targetBus.transform.InverseTransformPoint(targetSeatPos)
@@ -842,6 +846,8 @@ namespace SandBlocks.Gameplay.UnifiedGrid
 
             GameObject flyer = CreatePassengerFigure(colorId);
             flyer.name = "InFlight_ToDest";
+            var cpFlyer = flyer.GetComponent<CharacterPassenger>();
+            if (cpFlyer != null) cpFlyer.PlayRunning();
 
             Vector3 localSeatOffset = (sourceBus != null && sourceSeatPos != Vector3.zero)
                 ? sourceBus.transform.InverseTransformPoint(sourceSeatPos)
@@ -888,10 +894,9 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 fig.transform.localEulerAngles = characterRotationEuler;
                 var col = fig.GetComponent<Collider>();
                 if (col != null) Destroy(col);
-                var anim = fig.GetComponentInChildren<Animator>();
-                if (anim != null) anim.enabled = false;
                 var cp = fig.GetComponent<CharacterPassenger>() ?? fig.AddComponent<CharacterPassenger>();
                 cp.SetColor(c);
+                cp.PlayIdle();
             }
             else
             {

@@ -114,7 +114,7 @@ namespace SandBlocks.Gameplay
         {
             if (animator == null)
             {
-                animator = GetComponentInChildren<Animator>(false);
+                animator = GetComponentInChildren<Animator>(true);
             }
 
             // Find all renderers in children (include inactive so SetColor caches all variations)
@@ -181,8 +181,9 @@ namespace SandBlocks.Gameplay
             FindComponents();
             if (animator != null)
             {
-                animator.SetBool(IsRunningHash, false);
+                animator.enabled = true;
                 animator.SetBool(IsSittingHash, false);
+                animator.SetBool(IsRunningHash, false);
             }
         }
 
@@ -194,6 +195,7 @@ namespace SandBlocks.Gameplay
             FindComponents();
             if (animator != null)
             {
+                animator.enabled = true;
                 animator.SetBool(IsSittingHash, false);
                 animator.SetBool(IsRunningHash, true);
             }
