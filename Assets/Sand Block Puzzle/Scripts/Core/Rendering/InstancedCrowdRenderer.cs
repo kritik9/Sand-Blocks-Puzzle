@@ -10,11 +10,11 @@ namespace SandBlocks.Core.Rendering
     {
         [Header("Character Model Prefab (Recommended)")]
         [SerializeField] private GameObject characterPrefab;
-        [SerializeField] private float prefabScale = 0.1f;
+        [SerializeField] private float prefabScale = 0.08f;
 
         [Header("Character Orientation")]
-        [Tooltip("Character rotation in degrees (e.g. 90 on X so characters lay/tilt on board)")]
-        [SerializeField] private Vector3 characterRotationEuler = new Vector3(90f, 0f, 0f);
+        [Tooltip("Character rotation in degrees (e.g. 0,0,0 for upright Y-up character)")]
+        [SerializeField] private Vector3 characterRotationEuler = Vector3.zero;
 
         public float CharacterScale => prefabScale;
         public Vector3 CharacterRotationEuler => characterRotationEuler;
@@ -53,27 +53,27 @@ namespace SandBlocks.Core.Rendering
             pooledRenderers.Clear();
             pooledSpawnTimes.Clear();
 
-            // Setup fallback mesh if no prefab
-            if (characterPrefab == null)
+            // Setup fallback mesh and material
+            if (characterMesh == null && characterPrefab == null)
             {
-                if (characterMesh == null)
-                {
-                    var sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    characterMesh = sphereObj.GetComponent<MeshFilter>().sharedMesh;
-                    Destroy(sphereObj);
-                }
+                var sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                characterMesh = sphereObj.GetComponent<MeshFilter>().sharedMesh;
+                Destroy(sphereObj);
+            }
 
-                if (characterMaterial == null)
+            if (characterMaterial == null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit")
+                             ?? Shader.Find("SandBlocks/CrowdInstancedURP")
+                             ?? Shader.Find("Standard");
+                if (shader != null)
                 {
-                    Shader shader = Shader.Find("SandBlocks/CrowdInstancedURP");
-                    if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-                    if (shader == null) shader = Shader.Find("Standard");
-                    characterMaterial = new Material(shader) { enableInstancing = true };
+                    characterMaterial = new Material(shader) { enableInstancing = true, name = "Crowd_URPLit_Instanced" };
                 }
-                else
-                {
-                    characterMaterial.enableInstancing = true;
-                }
+            }
+            else
+            {
+                characterMaterial.enableInstancing = true;
             }
         }
 
@@ -104,8 +104,22 @@ namespace SandBlocks.Core.Rendering
                 var cols = instance.GetComponentsInChildren<Collider>();
                 for (int c = 0; c < cols.Length; c++) cols[c].enabled = false;
 
+                // Ensure all renderers on the instance have a functional material assigned
+                var instRends = instance.GetComponentsInChildren<Renderer>(true);
+                for (int r = 0; r < instRends.Length; r++)
+                {
+                    if (instRends[r] != null)
+                    {
+                        var mat = instRends[r].sharedMaterial;
+                        if ((mat == null || mat.shader == null || mat.shader.name == "Hidden/InternalErrorShader") && characterMaterial != null)
+                        {
+                            instRends[r].sharedMaterial = characterMaterial;
+                        }
+                    }
+                }
+
                 pooledCharacters.Add(instance);
-                pooledRenderers.Add(instance.GetComponentsInChildren<Renderer>());
+                pooledRenderers.Add(instRends);
                 pooledSpawnTimes.Add(Time.time);
             }
 
@@ -148,16 +162,24 @@ namespace SandBlocks.Core.Rendering
                 instance.transform.localScale = Vector3.one * (prefabScale * scaleMult);
 
                 // Apply color
-                if (palette != null && i < pooledRenderers.Count)
+                if (palette != null)
                 {
                     Color c = palette.GetColor(p.colorId);
-                    var rends = pooledRenderers[i];
-                    for (int r = 0; r < rends.Length; r++)
+                    var pass = instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
+                    if (pass != null)
                     {
-                        if (rends[r] == null) continue;
-                        propertyBlock.SetColor(BaseColorId, c);
-                        propertyBlock.SetColor(ColorId_Prop, c);
-                        rends[r].SetPropertyBlock(propertyBlock);
+                        pass.SetColor(c);
+                    }
+                    else if (i < pooledRenderers.Count)
+                    {
+                        var rends = pooledRenderers[i];
+                        for (int r = 0; r < rends.Length; r++)
+                        {
+                            if (rends[r] == null) continue;
+                            propertyBlock.SetColor(BaseColorId, c);
+                            propertyBlock.SetColor(ColorId_Prop, c);
+                            rends[r].SetPropertyBlock(propertyBlock);
+                        }
                     }
                 }
             }

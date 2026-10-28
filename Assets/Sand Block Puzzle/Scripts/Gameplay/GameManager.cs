@@ -63,6 +63,43 @@ namespace SandBlocks.Gameplay
         [Tooltip("If false, preserves whatever camera position and rotation you set in the scene")]
         [SerializeField] private bool autoPositionCamera = false;
 
+        [Header("Audio & Haptics Options")]
+        [Tooltip("Global toggle to enable or disable game sound effects and music")]
+        [SerializeField] private bool enableAudio = true;
+
+        [Tooltip("Global toggle to enable or disable device vibration / haptic feedback")]
+        [SerializeField] private bool enableHaptics = true;
+
+        public bool EnableAudio
+        {
+            get => enableAudio;
+            set => SetAudioEnabled(value);
+        }
+
+        public bool EnableHaptics
+        {
+            get => enableHaptics;
+            set => SetHapticsEnabled(value);
+        }
+
+        public void SetAudioEnabled(bool enabled)
+        {
+            enableAudio = enabled;
+            if (SandBlocks.Core.Audio.AudioManager.Instance != null)
+            {
+                SandBlocks.Core.Audio.AudioManager.Instance.SetAudioEnabled(enabled);
+            }
+        }
+
+        public void SetHapticsEnabled(bool enabled)
+        {
+            enableHaptics = enabled;
+            if (SandBlocks.Core.Haptics.HapticManager.Instance != null)
+            {
+                SandBlocks.Core.Haptics.HapticManager.Instance.SetHapticsEnabled(enabled);
+            }
+        }
+
         [Header("Home Screen UI")]
         [Tooltip("The Home Screen canvas panel/root object")]
         [SerializeField] private GameObject homeScreen;
@@ -93,6 +130,8 @@ namespace SandBlocks.Gameplay
         [SerializeField] private PuzzleGrid puzzleGrid;
         [SerializeField] private BusVehicle busPrefab;
         public BusVehicle BusPrefab => busPrefab;
+        [SerializeField] private CrowdTransferController crowdTransfer;
+        [SerializeField] private SandBlocks.Puzzle.Input.VehicleDragHandler dragHandler;
 
         public CrowdColorPalette Palette
         {
@@ -124,8 +163,10 @@ namespace SandBlocks.Gameplay
         private Coroutine activeStartSequence;
         private List<BusVehicle> spawnedBuses = new List<BusVehicle>();
         private bool isLevelStartAnimating = false;
+        private bool isLevelCompleted = false;
 
         public bool IsLevelStartAnimating => isLevelStartAnimating;
+        public bool IsLevelCompleted => isLevelCompleted;
 
         private void Awake()
         {
@@ -134,6 +175,8 @@ namespace SandBlocks.Gameplay
             if (crowdRenderer == null) crowdRenderer = FindAnyObjectByType<InstancedCrowdRenderer>();
             if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<PuzzleGrid>();
             if (levelManager == null) levelManager = FindAnyObjectByType<LevelManager>();
+            if (crowdTransfer == null) crowdTransfer = FindAnyObjectByType<CrowdTransferController>();
+            if (dragHandler == null) dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
 
             // Auto-detect BusContainer in scene if not assigned in inspector
             if (busContainer == null)
@@ -162,6 +205,10 @@ namespace SandBlocks.Gameplay
             {
                 SetupCamera();
             }
+
+            // Sync Audio and Haptic state
+            SetAudioEnabled(enableAudio);
+            SetHapticsEnabled(enableHaptics);
 
             // Auto-detect Home Screen UI if not assigned
             if (homeScreen == null)
@@ -591,6 +638,12 @@ namespace SandBlocks.Gameplay
             {
                 busPrefab.SetPassengerScale(crowdRenderer.CharacterScale);
             }
+
+            // Victory & Level Advancement Check for Classic Two Area mode
+            if (isGameStarted && !isLevelStartAnimating && !isLevelCompleted)
+            {
+                CheckLevelCompletion();
+            }
         }
 
         /// <summary>
@@ -599,6 +652,9 @@ namespace SandBlocks.Gameplay
         /// </summary>
         public void StartGame()
         {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+
             if (homeScreen != null)
             {
                 homeScreen.SetActive(false);
@@ -709,6 +765,18 @@ namespace SandBlocks.Gameplay
         }
 
         /// <summary>
+        /// Immediately cancels any active level start animation, stops start coroutines, and resets the animation flag.
+        /// Unblocks input handlers when skipping or restarting levels rapidly.
+        /// </summary>
+        public void CancelLevelStartAnimation()
+        {
+            StopAllCoroutines();
+            activeStartSequence = null;
+            isLevelStartAnimating = false;
+            isLevelCompleted = false;
+        }
+
+        /// <summary>
         /// Instant in-place restart without reloading the whole scene.
         /// Clears existing buses on the grid and respawns crowd and vehicles.
         /// </summary>
@@ -718,6 +786,7 @@ namespace SandBlocks.Gameplay
             StopAllCoroutines();
             activeStartSequence = null;
             isLevelStartAnimating = false;
+            isLevelCompleted = false;
 
             // Stop any active passenger flight routines
             var transfer = FindAnyObjectByType<CrowdTransferController>();
@@ -774,5 +843,63 @@ namespace SandBlocks.Gameplay
                 framer.FrameView();
             }
         }
+
+        #region Victory & Level Advancement
+        /// <summary>
+        /// Checks whether the Classic Two Area level has been completed (all crowd particles transferred).
+        /// When completed, plays victory audio/haptics, locks input, and advances to the next level.
+        /// </summary>
+        private void CheckLevelCompletion()
+        {
+            if (isLevelCompleted) return;
+
+            // Only check for ClassicTwoArea mode
+            if (currentLevel != null && currentLevel.gameplayMode != GameplayMode.ClassicTwoArea)
+            {
+                return;
+            }
+
+            // Must have active simulation with particles that were spawned
+            if (simulation == null || !simulation.IsInitialized || simulation.ActiveCount == 0)
+            {
+                return;
+            }
+
+            // Check if any crowd particles are still waiting in the container
+            if (simulation.RemainingActiveCount > 0)
+            {
+                return;
+            }
+
+            // Check if any commuters are still in flight towards the buses
+            if (crowdTransfer != null && crowdTransfer.InFlightCount > 0)
+            {
+                return;
+            }
+
+            isLevelCompleted = true;
+            Debug.Log("<color=gold>[GameManager]</color> CLASSIC LEVEL COMPLETED! Advancing to next level.");
+
+            if (dragHandler != null)
+            {
+                dragHandler.ResetDragState();
+            }
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.Success();
+
+            StartCoroutine(VictorySequenceRoutine());
+        }
+
+        private IEnumerator VictorySequenceRoutine()
+        {
+            yield return new WaitForSeconds(1.5f);
+            if (levelManager == null) levelManager = LevelManager.Instance ?? FindAnyObjectByType<LevelManager>();
+            if (levelManager != null && levelManager.HasNextLevel)
+            {
+                levelManager.NextLevel();
+            }
+        }
+        #endregion
     }
 }

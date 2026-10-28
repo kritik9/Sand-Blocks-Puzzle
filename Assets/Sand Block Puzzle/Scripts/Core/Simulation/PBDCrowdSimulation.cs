@@ -26,11 +26,13 @@ namespace SandBlocks.Core.Simulation
 
         private NativeArray<CrowdParticle> particles;
         private int activeCount;
+        private int remainingActiveCount;
         private int capacity;
         private IContainerBoundary boundary;
         private bool isInitialized;
 
         public int ActiveCount => activeCount;
+        public int RemainingActiveCount => (!isInitialized || activeCount == 0) ? 0 : remainingActiveCount;
         public int Capacity => capacity;
         public bool IsInitialized => isInitialized;
         public NativeArray<CrowdParticle> Particles => particles;
@@ -43,6 +45,7 @@ namespace SandBlocks.Core.Simulation
             this.boundary = boundary;
             particles = new NativeArray<CrowdParticle>(capacity, Allocator.Persistent);
             activeCount = 0;
+            remainingActiveCount = 0;
             isInitialized = true;
         }
 
@@ -63,6 +66,7 @@ namespace SandBlocks.Core.Simulation
 
             particles[activeCount] = p;
             activeCount++;
+            remainingActiveCount++;
         }
 
         public void StepSimulation(float deltaTime)
@@ -305,6 +309,7 @@ namespace SandBlocks.Core.Simulation
                 worldPos = new Vector3(target.position.x, target.position.y, 0f);
                 target.isActive = false;
                 particles[targetIdx] = target;
+                if (remainingActiveCount > 0) remainingActiveCount--;
 
                 // Wake up nearby particles to trigger cascade
                 WakeNeighbors(target.position, target.radius * 3.5f);
@@ -372,6 +377,7 @@ namespace SandBlocks.Core.Simulation
                 worldPos = new Vector3(target.position.x, safeY, 0f);
                 target.isActive = false;
                 particles[targetIdx] = target;
+                if (remainingActiveCount > 0) remainingActiveCount--;
 
                 WakeNeighbors(target.position, target.radius * 3.5f);
                 return true;
@@ -404,6 +410,20 @@ namespace SandBlocks.Core.Simulation
             }
         }
 
+                /// <summary>
+        /// Explicit count of particles with isActive == true.
+        /// </summary>
+        public int CountActiveParticles()
+        {
+            if (!isInitialized || activeCount == 0) return 0;
+            int count = 0;
+            for (int i = 0; i < activeCount; i++)
+            {
+                if (particles[i].isActive) count++;
+            }
+            return count;
+        }
+
         public void Dispose()
         {
             if (isInitialized && particles.IsCreated)
@@ -412,6 +432,7 @@ namespace SandBlocks.Core.Simulation
             }
             isInitialized = false;
             activeCount = 0;
+            remainingActiveCount = 0;
         }
 
         private void OnDestroy()

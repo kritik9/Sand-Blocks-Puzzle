@@ -45,9 +45,31 @@ namespace SandBlocks.Puzzle.Input
         private void Update()
         {
             if (gameManager == null) gameManager = FindAnyObjectByType<SandBlocks.Gameplay.GameManager>();
-            if (gameManager != null && (!gameManager.IsGameStarted || gameManager.IsLevelStartAnimating))
+
+            // In Unified Grid mode, GameManager's classic container/crowd start animations do not apply
+            bool isUnified = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                             SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive;
+
+            if (!isUnified)
             {
-                return;
+                if (gameManager != null && (!gameManager.IsGameStarted || gameManager.IsLevelStartAnimating || gameManager.IsLevelCompleted))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsLevelStartAnimating ||
+                    SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsLevelCompleted)
+                {
+                    return;
+                }
+            }
+
+            // If selected vehicle was destroyed or lost while dragging (e.g. rapid level change), reset drag state cleanly
+            if (selectedVehicle == null && activePath.Count > 0)
+            {
+                ResetDragState();
             }
 
             HandleInput();
@@ -97,6 +119,7 @@ namespace SandBlocks.Puzzle.Input
                 if (vehicle != null && (!vehicle.IsFull || SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null))
                 {
                     selectedVehicle = vehicle;
+                    selectedVehicle.SetSelected(true);
                     initialWorldPos = vehicle.transform.position;
                     initialGridPos = vehicle.GridPosition;
                     currentHoveredGrid = initialGridPos;
@@ -104,6 +127,9 @@ namespace SandBlocks.Puzzle.Input
                     activePath.Clear();
                     currentWaypointIndex = 0;
                     lastTargetDestination = new Vector2Int(-999, -999);
+
+                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.Selection();
 
                     // Temporarily remove vehicle from grid while dragging so its own cells are considered free
                     puzzleGrid.RemoveVehicle(selectedVehicle);
@@ -138,6 +164,7 @@ namespace SandBlocks.Puzzle.Input
                 if (selectedVehicle.IsFull && !shouldStayForDropOff)
                 {
                     // Bus became full while dragging and is driving away: release gracefully
+                    selectedVehicle.SetSelected(false);
                     activePath.Clear();
                     selectedVehicle = null;
                     return;
@@ -222,6 +249,9 @@ namespace SandBlocks.Puzzle.Input
                             currentHoveredGrid = nextWaypoint;
                             selectedVehicle.GridPosition = currentHoveredGrid;
                             currentWaypointIndex++;
+
+                            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
+                            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
                         }
                         else
                         {
@@ -245,6 +275,7 @@ namespace SandBlocks.Puzzle.Input
             {
                 if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
                 {
+                    selectedVehicle.SetSelected(false);
                     activePath.Clear();
                     selectedVehicle = null;
                     return;
@@ -268,6 +299,8 @@ namespace SandBlocks.Puzzle.Input
                 if (reachablePositions.Contains(finalGridPos) && puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
                 {
                     puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
+                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
                 }
                 else
                 {
@@ -277,11 +310,29 @@ namespace SandBlocks.Puzzle.Input
                     {
                         bus.PlayBlockedShake(Vector3.up);
                     }
+                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.HeavyImpact();
                 }
 
+                selectedVehicle.SetSelected(false);
                 activePath.Clear();
                 selectedVehicle = null;
             }
+        }
+
+        /// <summary>
+        /// Cancels any active drag operation and resets all path/hover states.
+        /// Safely called on level transitions or rapid UI clicks to prevent stuck drags or ghost waypoints.
+        /// </summary>
+        public void ResetDragState()
+        {
+            if (selectedVehicle != null) selectedVehicle.SetSelected(false);
+            selectedVehicle = null;
+            activePath.Clear();
+            currentWaypointIndex = 0;
+            reachablePositions.Clear();
+            lastTargetDestination = new Vector2Int(-999, -999);
+            currentHoveredGrid = new Vector2Int(-999, -999);
         }
 
         public void RefreshReachablePositions()
@@ -305,10 +356,10 @@ namespace SandBlocks.Puzzle.Input
             for (int i = 0; i < hits.Length; i++)
             {
                 var v = hits[i].collider.GetComponentInParent<VehicleBase>();
-                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
-
+                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
+                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
+
                 if (v != null && (!v.IsFull || shouldStayForDropOff))
                 {
                     if (hits[i].distance < closestDist)

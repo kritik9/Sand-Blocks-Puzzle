@@ -51,6 +51,7 @@ namespace SandBlocks.Gameplay
         [SerializeField] private AdaptiveCameraFramer cameraFramer;
         [SerializeField] private SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager unifiedGridManager;
         [SerializeField] private CrowdTransferController crowdTransfer;
+        [SerializeField] private SandBlocks.Puzzle.Input.VehicleDragHandler dragHandler;
         [SerializeField] private CrowdColorPalette palette;
 
         /// <summary>
@@ -118,6 +119,7 @@ namespace SandBlocks.Gameplay
             if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
             if (cameraFramer == null) cameraFramer = FindAnyObjectByType<AdaptiveCameraFramer>();
             if (unifiedGridManager == null) unifiedGridManager = FindAnyObjectByType<SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager>(FindObjectsInactive.Include);
+            if (dragHandler == null) dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>(FindObjectsInactive.Include);
             if (crowdTransfer == null) crowdTransfer = FindAnyObjectByType<CrowdTransferController>(FindObjectsInactive.Include);
             if (palette == null && gameManager != null && gameManager.Palette != null) palette = gameManager.Palette;
             if (palette == null) palette = Resources.Load<CrowdColorPalette>("CrowdColorPalette");
@@ -190,6 +192,9 @@ namespace SandBlocks.Gameplay
         /// </summary>
         public void NextLevel()
         {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+
             if (levels.Count == 0)
             {
                 Debug.LogWarning("[LevelManager] No levels configured in LevelManager.");
@@ -218,6 +223,9 @@ namespace SandBlocks.Gameplay
         /// </summary>
         public void PreviousLevel()
         {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+
             if (levels.Count == 0)
             {
                 Debug.LogWarning("[LevelManager] No levels configured in LevelManager.");
@@ -247,6 +255,8 @@ namespace SandBlocks.Gameplay
         public void RestartCurrentLevel()
         {
             if (CurrentLevel == null) return;
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
             Debug.Log($"<color=cyan>[LevelManager]</color> Restarting Level {currentLevelIndex + 1} ({CurrentLevel.name})");
             SetupScreenForLevel(CurrentLevel);
         }
@@ -312,6 +322,22 @@ namespace SandBlocks.Gameplay
 
             FindDependencies();
 
+            // Cancel any in-flight level start animations and reset drag state immediately
+            if (gameManager != null)
+            {
+                gameManager.CancelLevelStartAnimation();
+            }
+
+            if (unifiedGridManager != null)
+            {
+                unifiedGridManager.CancelLevelStartAnimation();
+            }
+
+            if (dragHandler != null)
+            {
+                dragHandler.ResetDragState();
+            }
+
             if (level.gameplayMode == GameplayMode.UnifiedGrid)
             {
                 // Deactivate Classic Container System
@@ -329,7 +355,7 @@ namespace SandBlocks.Gameplay
                 // Clear GameManager classic state and buses
                 if (gameManager != null)
                 {
-                    gameManager.StopAllCoroutines();
+                    gameManager.CancelLevelStartAnimation();
                     if (puzzleGrid != null) puzzleGrid.Clear();
                 }
 
@@ -354,6 +380,7 @@ namespace SandBlocks.Gameplay
                 // Deactivate Unified Grid
                 if (unifiedGridManager != null)
                 {
+                    unifiedGridManager.CancelLevelStartAnimation();
                     unifiedGridManager.Cleanup();
                     unifiedGridManager.gameObject.SetActive(false);
                 }

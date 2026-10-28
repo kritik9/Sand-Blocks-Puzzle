@@ -595,6 +595,20 @@ namespace SandBlocks.Puzzle.Vehicles
             activeSpawnRoutine = null;
         }
 
+        /// <summary>
+        /// Cancels any active spawn bounce animation and immediately restores the bus to full scale.
+        /// </summary>
+        public void CancelSpawnAnimation()
+        {
+            InitScaleIfNeeded();
+            if (activeSpawnRoutine != null)
+            {
+                StopCoroutine(activeSpawnRoutine);
+                activeSpawnRoutine = null;
+            }
+            transform.localScale = originalLocalScale;
+        }
+
         public void PlayPassengerBoardPop()
         {
             InitScaleIfNeeded();
@@ -629,6 +643,9 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             if (Time.time - lastShakeTime < 0.2f) return;
             lastShakeTime = Time.time;
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.HeavyImpact();
 
             if (activeShakeRoutine != null) StopCoroutine(activeShakeRoutine);
             activeShakeRoutine = StartCoroutine(BlockedShakeRoutine(dragDirection));
@@ -717,6 +734,9 @@ namespace SandBlocks.Puzzle.Vehicles
             boardedPassengerCount++;
             UpdatePassengerVisuals();
             PlayPassengerBoardPop();
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayPassengerBoard();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
 
             if (boardedPassengerCount >= capacity)
             {
@@ -859,6 +879,9 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public override void OnFull()
         {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusFull();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
+
             if (OnBusFullOverride != null)
             {
                 OnBusFullOverride.Invoke(this);
@@ -893,6 +916,9 @@ namespace SandBlocks.Puzzle.Vehicles
         private IEnumerator DriveAwayRoutine()
         {
             yield return new WaitForSeconds(0.4f);
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
 
             Vector3 driveDir;
             switch (rotationDegrees)

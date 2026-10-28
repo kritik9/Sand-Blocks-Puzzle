@@ -27,7 +27,7 @@ namespace SandBlocks.Gameplay
         [SerializeField] private float transferInterval = 0.08f;
         [SerializeField] private float flightDuration = 0.35f;
         [SerializeField] private float boundaryLayerTolerance = 0.7f;
-        [SerializeField] private float commuterScale = 0.1f;
+        [SerializeField] private float commuterScale = 0.08f;
 
         [Header("Gizmos & Debug")]
         [Tooltip("Draw gizmo lines in the Scene View showing container floor and tolerance threshold line")]
@@ -37,6 +37,11 @@ namespace SandBlocks.Gameplay
 
         private float transferTimer;
         private readonly List<GameObject> inFlightCommuters = new List<GameObject>();
+
+        /// <summary>
+        /// The number of commuters currently flying from the container crowd to the buses.
+        /// </summary>
+        public int InFlightCount => inFlightCommuters.Count;
 
         public void SetCharacterScale(float scale)
         {
@@ -267,7 +272,7 @@ namespace SandBlocks.Gameplay
         private IEnumerator AnimateCommuterFlight(Vector3 start, BusVehicle targetBus, Vector3 targetSeatPos, int colorId)
         {
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
-            Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : new Vector3(90f, 0f, 0f);
+            Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
 
             GameObject commuter;
             GameObject prefabToUse = commuterStreamPrefab != null ? commuterStreamPrefab : (targetBus != null ? targetBus.PassengerPrefab : null);
@@ -346,7 +351,7 @@ namespace SandBlocks.Gameplay
         private IEnumerator AnimateCommuterFlightLegacy(Vector3 start, VehicleBase targetBus, Vector3 localSeat, int colorId)
         {
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
-            Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : new Vector3(90f, 0f, 0f);
+            Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
 
             GameObject commuter;
             if (commuterStreamPrefab != null)

@@ -1,16 +1,31 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace SandBlocks.Gameplay
 {
+    public enum DollVariation
+    {
+        Random = -1,
+        Doll1 = 0,
+        Doll2 = 1,
+        Doll3 = 2
+    }
+
     /// <summary>
     /// Controls a 3D character passenger with Idle, Running, and Sitting animations,
     /// dynamic palette coloring, scale adjustments, and visibility management.
+    /// Supports multi-variation character models (e.g. Doll1, Doll2, Doll3).
     /// </summary>
     public class CharacterPassenger : MonoBehaviour
     {
         [Header("Animator Components")]
         [SerializeField] private Animator animator;
         [SerializeField] private Renderer[] renderers;
+
+        [Header("Doll Variations")]
+        [Tooltip("Selected doll variation, or Random for crowd diversity")]
+        [SerializeField] private DollVariation variation = DollVariation.Random;
+        [SerializeField] private GameObject[] variationObjects;
 
         private static readonly int IsRunningHash = Animator.StringToHash("isRunning");
         private static readonly int IsSittingHash = Animator.StringToHash("IsSitting");
@@ -20,23 +35,131 @@ namespace SandBlocks.Gameplay
         private MaterialPropertyBlock propBlock;
 
         public Animator Animator => animator;
+        public DollVariation Variation => variation;
+        public GameObject[] VariationObjects => variationObjects;
+
+        private static Material fallbackSharedMaterial;
 
         private void Awake()
         {
+            ApplyVariation();
             FindComponents();
+            EnsureValidMaterials();
             DisableColliders();
+        }
+
+        /// <summary>
+        /// Selects and activates the designated variation object, deactivating the others.
+        /// </summary>
+        public void ApplyVariation()
+        {
+            if (variationObjects == null || variationObjects.Length == 0)
+            {
+                var childCount = transform.childCount;
+                if (childCount > 1)
+                {
+                    var list = new List<GameObject>();
+                    for (int i = 0; i < childCount; i++) list.Add(transform.GetChild(i).gameObject);
+                    variationObjects = list.ToArray();
+                }
+            }
+
+            if (variationObjects != null && variationObjects.Length > 0)
+            {
+                int selectedIndex = (variation == DollVariation.Random)
+                    ? UnityEngine.Random.Range(0, variationObjects.Length)
+                    : Mathf.Clamp((int)variation, 0, variationObjects.Length - 1);
+
+                for (int i = 0; i < variationObjects.Length; i++)
+                {
+                    if (variationObjects[i] != null)
+                    {
+                        variationObjects[i].SetActive(i == selectedIndex);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Explicitly sets the variation mode (e.g. Doll1, Doll2, Doll3, or Random).
+        /// </summary>
+        public void SetVariation(DollVariation v)
+        {
+            variation = v;
+            ApplyVariation();
+            FindComponents();
+        }
+
+        /// <summary>
+        /// Sets a specific variation index (e.g. 0 for Doll1, 1 for Doll2, 2 for Doll3).
+        /// </summary>
+        public void SetVariationIndex(int index)
+        {
+            if (variationObjects == null || variationObjects.Length == 0) ApplyVariation();
+            if (variationObjects != null && variationObjects.Length > 0)
+            {
+                int selectedIndex = Mathf.Clamp(index % variationObjects.Length, 0, variationObjects.Length - 1);
+                for (int i = 0; i < variationObjects.Length; i++)
+                {
+                    if (variationObjects[i] != null)
+                    {
+                        variationObjects[i].SetActive(i == selectedIndex);
+                    }
+                }
+                FindComponents();
+            }
         }
 
         private void FindComponents()
         {
             if (animator == null)
             {
-                animator = GetComponentInChildren<Animator>(true);
+                animator = GetComponentInChildren<Animator>(false);
             }
 
-            if (renderers == null || renderers.Length == 0)
+            // Find all renderers in children (include inactive so SetColor caches all variations)
+            renderers = GetComponentsInChildren<Renderer>(true);
+        }
+
+        /// <summary>
+        /// Validates that all renderers have a functional material assigned.
+        /// If a material is missing or invalid, assigns a shared URP Lit instanced material.
+        /// </summary>
+        public void EnsureValidMaterials()
+        {
+            if (renderers == null || renderers.Length == 0) return;
+
+            for (int i = 0; i < renderers.Length; i++)
             {
-                renderers = GetComponentsInChildren<Renderer>(true);
+                var r = renderers[i];
+                if (r == null) continue;
+
+                var mat = r.sharedMaterial;
+                bool isMissing = (mat == null) || (mat.shader == null) || (mat.shader.name == "Hidden/InternalErrorShader");
+
+                if (isMissing)
+                {
+                    if (fallbackSharedMaterial == null)
+                    {
+                        Shader shader = Shader.Find("Universal Render Pipeline/Lit")
+                                     ?? Shader.Find("SandBlocks/CrowdInstancedURP")
+                                     ?? Shader.Find("Standard");
+                        if (shader != null)
+                        {
+                            fallbackSharedMaterial = new Material(shader)
+                            {
+                                name = "Runtime_Doll_LitFallback",
+                                enableInstancing = true
+                            };
+                            fallbackSharedMaterial.SetColor(BaseColorProp, Color.white);
+                        }
+                    }
+
+                    if (fallbackSharedMaterial != null)
+                    {
+                        r.sharedMaterial = fallbackSharedMaterial;
+                    }
+                }
             }
         }
 
@@ -95,6 +218,7 @@ namespace SandBlocks.Gameplay
         public void SetColor(Color color)
         {
             FindComponents();
+            EnsureValidMaterials();
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
             propBlock.SetColor(BaseColorProp, color);
             propBlock.SetColor(ColorProp, color);

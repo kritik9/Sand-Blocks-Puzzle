@@ -85,8 +85,8 @@ namespace SandBlocks.Editor
             {
                 var soRend = new SerializedObject(crowdRenderer);
                 soRend.FindProperty("characterPrefab").objectReferenceValue = characterPrefab;
-                soRend.FindProperty("prefabScale").floatValue = 0.1f;
-                soRend.FindProperty("characterRotationEuler").vector3Value = new Vector3(90f, 0f, 0f);
+                soRend.FindProperty("prefabScale").floatValue = 0.08f;
+                soRend.FindProperty("characterRotationEuler").vector3Value = Vector3.zero;
                 soRend.ApplyModifiedProperties();
             }
 
@@ -108,7 +108,7 @@ namespace SandBlocks.Editor
                 var soTransfer = new SerializedObject(transferCtrl);
                 soTransfer.FindProperty("commuterStreamPrefab").objectReferenceValue = characterPrefab;
                 soTransfer.FindProperty("palette").objectReferenceValue = palette;
-                soTransfer.FindProperty("commuterScale").floatValue = 0.1f;
+                soTransfer.FindProperty("commuterScale").floatValue = 0.08f;
                 soTransfer.ApplyModifiedProperties();
             }
 
