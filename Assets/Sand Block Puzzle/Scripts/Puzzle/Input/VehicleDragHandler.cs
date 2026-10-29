@@ -113,6 +113,8 @@ namespace SandBlocks.Puzzle.Input
                 screenPos = touch.position.ReadValue();
             }
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
             if (isDown)
             {
                 var vehicle = RaycastVehicle(screenPos);
@@ -137,7 +139,9 @@ namespace SandBlocks.Puzzle.Input
                     // Compute all reachable cells for this vehicle from initialGridPos using BFS
                     reachablePositions = puzzleGrid.GetReachablePositions(selectedVehicle, initialGridPos);
 
-                    dragPlane = new Plane(Vector3.back, new Vector3(0f, 0f, vehicle.transform.position.z));
+                    Vector3 planeNormal = isHorizontal ? Vector3.up : Vector3.back;
+                    Vector3 planePoint = isHorizontal ? new Vector3(0f, vehicle.transform.position.y, 0f) : new Vector3(0f, 0f, vehicle.transform.position.z);
+                    dragPlane = new Plane(planeNormal, planePoint);
                     Ray ray = gameCamera.ScreenPointToRay(screenPos);
                     if (dragPlane.Raycast(ray, out float enter))
                     {
@@ -235,8 +239,8 @@ namespace SandBlocks.Puzzle.Input
                         Vector3 targetWorld = puzzleGrid.GridToWorld(nextWaypoint, selectedVehicle.Length, selectedVehicle.IsVertical);
 
                         Vector3 curPos = selectedVehicle.transform.position;
-                        Vector2 curFlat = new Vector2(curPos.x, curPos.y);
-                        Vector2 targetFlat = new Vector2(targetWorld.x, targetWorld.y);
+                        Vector2 curFlat = isHorizontal ? new Vector2(curPos.x, curPos.z) : new Vector2(curPos.x, curPos.y);
+                        Vector2 targetFlat = isHorizontal ? new Vector2(targetWorld.x, targetWorld.z) : new Vector2(targetWorld.x, targetWorld.y);
 
                         float remainingWaypoints = activePath.Count - currentWaypointIndex;
                         float dynamicSpeed = Mathf.Max(pathFollowSpeed, remainingWaypoints * 12f);
@@ -259,14 +263,23 @@ namespace SandBlocks.Puzzle.Input
                         }
 
                         Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
-                        selectedVehicle.transform.position = new Vector3(curFlat.x + shakeOffset.x, curFlat.y + shakeOffset.y, initialWorldPos.z - 0.25f);
+                        if (isHorizontal)
+                        {
+                            selectedVehicle.transform.position = new Vector3(curFlat.x + shakeOffset.x, initialWorldPos.y + 0.25f, curFlat.y + shakeOffset.z);
+                        }
+                        else
+                        {
+                            selectedVehicle.transform.position = new Vector3(curFlat.x + shakeOffset.x, curFlat.y + shakeOffset.y, initialWorldPos.z - 0.25f);
+                        }
                     }
                     else
                     {
                         // Holding position smoothly at currentHoveredGrid
                         Vector3 basePos = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
                         Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
-                        Vector3 targetPos = new Vector3(basePos.x + shakeOffset.x, basePos.y + shakeOffset.y, initialWorldPos.z - 0.25f);
+                        Vector3 targetPos = isHorizontal
+                            ? new Vector3(basePos.x + shakeOffset.x, initialWorldPos.y + 0.25f, basePos.z + shakeOffset.z)
+                            : new Vector3(basePos.x + shakeOffset.x, basePos.y + shakeOffset.y, initialWorldPos.z - 0.25f);
                         selectedVehicle.transform.position = Vector3.Lerp(selectedVehicle.transform.position, targetPos, Time.deltaTime * 32f);
                     }
                 }
@@ -308,7 +321,7 @@ namespace SandBlocks.Puzzle.Input
                     puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
                     if (selectedVehicle is BusVehicle bus)
                     {
-                        bus.PlayBlockedShake(Vector3.up);
+                        bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up);
                     }
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.HeavyImpact();

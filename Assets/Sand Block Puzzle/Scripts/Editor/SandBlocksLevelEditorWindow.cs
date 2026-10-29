@@ -397,6 +397,7 @@ namespace SandBlocks.Editor
             selectedLevel.containerHeight = EditorGUILayout.Slider("Height:", selectedLevel.containerHeight, 2.5f, 12f);
             selectedLevel.containerCenter = EditorGUILayout.Vector2Field("Center Offset:", selectedLevel.containerCenter);
             selectedLevel.particleRadius = EditorGUILayout.Slider("Particle Radius:", selectedLevel.particleRadius, 0.15f, 0.45f);
+            selectedLevel.characterScale = EditorGUILayout.FloatField("Character Scale (0=Default):", selectedLevel.characterScale);
 
             int calculatedCap = selectedLevel.CalculateFixedCrowdCapacity();
 

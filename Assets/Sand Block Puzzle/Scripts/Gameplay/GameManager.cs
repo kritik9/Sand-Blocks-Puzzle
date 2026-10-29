@@ -49,6 +49,24 @@ namespace SandBlocks.Gameplay
         [SerializeField] private int maxParticles = 800;
         [SerializeField] private float particleRadius = 0.28f;
 
+        [Header("Board Plane Orientation")]
+        [Tooltip("Horizontal_XZ: lays the entire board flat on the ground plane (tabletop) with top-view camera. Vertical_XY: legacy vertical wall.")]
+        [SerializeField] private SandBlocks.Core.Data.BoardOrientation boardOrientation = SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ;
+
+        private static SandBlocks.Core.Data.BoardOrientation currentOrientation = SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ;
+        public static SandBlocks.Core.Data.BoardOrientation CurrentOrientation
+        {
+            get
+            {
+                if (Application.isPlaying) return currentOrientation;
+                var gm = UnityEngine.Object.FindAnyObjectByType<GameManager>();
+                if (gm != null) return gm.boardOrientation;
+                return currentOrientation;
+            }
+            set => currentOrientation = value;
+        }
+        public SandBlocks.Core.Data.BoardOrientation Orientation => boardOrientation;
+
         [Header("Container Configuration")]
         [Tooltip("If true, overrides scene ContainerBoundary with LevelData container settings. If false, respects whatever width, height, center you set on ContainerBoundary in the scene.")]
         [SerializeField] private bool overrideBoundaryFromLevel = false;
@@ -170,6 +188,7 @@ namespace SandBlocks.Gameplay
 
         private void Awake()
         {
+            CurrentOrientation = boardOrientation;
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (simulation == null) simulation = FindAnyObjectByType<PBDCrowdSimulation>();
             if (crowdRenderer == null) crowdRenderer = FindAnyObjectByType<InstancedCrowdRenderer>();
@@ -823,6 +842,20 @@ namespace SandBlocks.Gameplay
 
             // Re-initialize simulation with guaranteed capacity so no particles are ever dropped
             simulation.Initialize(requiredCapacity, boundary);
+
+            // Apply per-level character scale if specified in LevelData
+            if (crowdRenderer is SandBlocks.Core.Rendering.InstancedCrowdRenderer instRend)
+            {
+                if (currentLevel != null && currentLevel.characterScale > 0f)
+                {
+                    instRend.SetCharacterScale(currentLevel.characterScale);
+                }
+                else
+                {
+                    instRend.ResetCharacterScale();
+                }
+            }
+
             crowdRenderer.Initialize(palette);
 
             // 3. Respawn crowd particles and buses (animated or instant)

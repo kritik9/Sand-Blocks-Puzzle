@@ -51,6 +51,23 @@ namespace SandBlocks.Core.Boundary
         [Tooltip("If true, creates the interior backplate")]
         [SerializeField] protected bool showBackPlate = true;
 
+        [Header("Horizontal XZ Orientation Heights")]
+        [Tooltip("Elevation Y offset for the back plate in Horizontal_XZ mode so it lies on the tabletop")]
+        [SerializeField] protected float backPlateElevationY = 0.02f;
+        [Tooltip("Height / thickness of the back plate in Horizontal_XZ mode")]
+        [SerializeField] protected float backPlateThickness = 0.05f;
+        [Tooltip("Elevation Y offset for the border beams in Horizontal_XZ mode")]
+        [SerializeField] protected float borderBeamElevationY = 0.25f;
+        [Tooltip("Height / vertical thickness of border beams in Horizontal_XZ mode")]
+        [SerializeField] protected float borderBeamHeight = 0.5f;
+
+        public float BackPlateElevationY { get => backPlateElevationY; set => backPlateElevationY = value; }
+        public float BackPlateThickness { get => backPlateThickness; set => backPlateThickness = value; }
+        public float BorderBeamElevationY { get => borderBeamElevationY; set => borderBeamElevationY = value; }
+        public float BorderBeamHeight { get => borderBeamHeight; set => borderBeamHeight = value; }
+        public bool ShowBackPlate => showBackPlate;
+        public float SurfaceElevationY => backPlateElevationY + (showBackPlate ? backPlateThickness * 0.5f : 0f);
+
         protected List<LineSegment> segments = new List<LineSegment>();
         protected GameObject visualRoot;
 
@@ -179,11 +196,27 @@ namespace SandBlocks.Core.Boundary
             {
                 UnityEditor.EditorApplication.delayCall += () =>
                 {
-                    if (this != null && autoBuildVisuals && !Application.isPlaying)
+                    if (this != null)
                     {
-                        BuildVisualContainer();
+                        if (autoBuildVisuals && !Application.isPlaying)
+                        {
+                            BuildVisualContainer();
+                        }
+                        var crowdRenderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+                        if (crowdRenderer != null)
+                        {
+                            crowdRenderer.SyncLiveCharacterPositions();
+                        }
                     }
                 };
+            }
+            else
+            {
+                var crowdRenderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+                if (crowdRenderer != null)
+                {
+                    crowdRenderer.SyncLiveCharacterPositions();
+                }
             }
 #endif
         }
@@ -394,11 +427,13 @@ namespace SandBlocks.Core.Boundary
             var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
             mat.color = borderColor;
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
             for (int i = 0; i < segments.Count; i++)
             {
                 var seg = segments[i];
-                Vector3 start = new Vector3(seg.a.x, seg.a.y, 0f);
-                Vector3 end = new Vector3(seg.b.x, seg.b.y, 0f);
+                Vector3 start = isHorizontal ? new Vector3(seg.a.x, borderBeamElevationY, seg.a.y) : new Vector3(seg.a.x, seg.a.y, 0f);
+                Vector3 end = isHorizontal ? new Vector3(seg.b.x, borderBeamElevationY, seg.b.y) : new Vector3(seg.b.x, seg.b.y, 0f);
                 Vector3 mid = (start + end) * 0.5f;
                 float length = Vector3.Distance(start, end);
 
@@ -407,7 +442,9 @@ namespace SandBlocks.Core.Boundary
                 beam.transform.SetParent(visualRoot.transform);
                 beam.transform.position = mid;
                 beam.transform.rotation = Quaternion.FromToRotation(Vector3.right, (end - start).normalized);
-                beam.transform.localScale = new Vector3(length + borderBeamThickness, borderBeamThickness, borderBeamDepth);
+                beam.transform.localScale = isHorizontal 
+                    ? new Vector3(length + borderBeamThickness, borderBeamHeight, borderBeamThickness)
+                    : new Vector3(length + borderBeamThickness, borderBeamThickness, borderBeamDepth);
 
                 var col = beam.GetComponent<Collider>();
                 if (col != null) DestroyImmediate(col);
@@ -425,8 +462,12 @@ namespace SandBlocks.Core.Boundary
                 backPlane.name = "BackPlate";
                 backPlane.transform.SetParent(visualRoot.transform);
                 Rect b = Bounds;
-                backPlane.transform.position = new Vector3(b.center.x, b.center.y, 0.28f);
-                backPlane.transform.localScale = new Vector3(b.width, b.height, 0.05f);
+                backPlane.transform.position = isHorizontal 
+                    ? new Vector3(b.center.x, backPlateElevationY, b.center.y) 
+                    : new Vector3(b.center.x, b.center.y, 0.28f);
+                backPlane.transform.localScale = isHorizontal
+                    ? new Vector3(b.width, backPlateThickness, b.height)
+                    : new Vector3(b.width, b.height, 0.05f);
 
                 var bCol = backPlane.GetComponent<Collider>();
                 if (bCol != null) DestroyImmediate(bCol);
@@ -436,10 +477,18 @@ namespace SandBlocks.Core.Boundary
 
         private void OnDrawGizmos()
         {
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             Gizmos.color = Color.cyan;
             for (int i = 0; i < segments.Count; i++)
             {
-                Gizmos.DrawLine(new Vector3(segments[i].a.x, segments[i].a.y, 0f), new Vector3(segments[i].b.x, segments[i].b.y, 0f));
+                if (isHorizontal)
+                {
+                    Gizmos.DrawLine(new Vector3(segments[i].a.x, 0.05f, segments[i].a.y), new Vector3(segments[i].b.x, 0.05f, segments[i].b.y));
+                }
+                else
+                {
+                    Gizmos.DrawLine(new Vector3(segments[i].a.x, segments[i].a.y, 0f), new Vector3(segments[i].b.x, segments[i].b.y, 0f));
+                }
             }
 
             if (shapeType == ContainerShapeType.CustomPolygon && customPolygonPoints != null)
@@ -448,7 +497,14 @@ namespace SandBlocks.Core.Boundary
                 Vector3 originPos = transform.position;
                 for (int i = 0; i < customPolygonPoints.Count; i++)
                 {
-                    Gizmos.DrawWireSphere(originPos + (Vector3)customPolygonPoints[i], 0.12f);
+                    if (isHorizontal)
+                    {
+                        Gizmos.DrawWireSphere(originPos + new Vector3(customPolygonPoints[i].x, 0.05f, customPolygonPoints[i].y), 0.12f);
+                    }
+                    else
+                    {
+                        Gizmos.DrawWireSphere(originPos + (Vector3)customPolygonPoints[i], 0.12f);
+                    }
                 }
             }
         }

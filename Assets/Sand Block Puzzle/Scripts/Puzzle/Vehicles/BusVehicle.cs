@@ -178,17 +178,34 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             isVertical = (rotationDegrees == 90 || rotationDegrees == 270);
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             Vector3 forwardDir;
-            switch (rotationDegrees)
+            Vector3 upDir = isHorizontal ? Vector3.up : Vector3.back;
+
+            if (isHorizontal)
             {
-                case 90:  forwardDir = Vector3.up;    break;
-                case 180: forwardDir = Vector3.left;  break;
-                case 270: forwardDir = Vector3.down;  break;
-                case 0:
-                default:  forwardDir = Vector3.right; break;
+                switch (rotationDegrees)
+                {
+                    case 90:  forwardDir = Vector3.forward; break;
+                    case 180: forwardDir = Vector3.left;    break;
+                    case 270: forwardDir = Vector3.back;    break;
+                    case 0:
+                    default:  forwardDir = Vector3.right;   break;
+                }
+            }
+            else
+            {
+                switch (rotationDegrees)
+                {
+                    case 90:  forwardDir = Vector3.up;    break;
+                    case 180: forwardDir = Vector3.left;  break;
+                    case 270: forwardDir = Vector3.down;  break;
+                    case 0:
+                    default:  forwardDir = Vector3.right; break;
+                }
             }
 
-            Quaternion lookRot = Quaternion.LookRotation(forwardDir, Vector3.back);
+            Quaternion lookRot = Quaternion.LookRotation(forwardDir, upDir);
             transform.rotation = lookRot * Quaternion.Euler(visualRotationOffset);
         }
 
@@ -660,7 +677,15 @@ namespace SandBlocks.Puzzle.Vehicles
             }
             else
             {
-                shakeAxis = isVertical ? Vector3.up : Vector3.right;
+                bool isHoriz = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                if (isHoriz)
+                {
+                    shakeAxis = isVertical ? Vector3.forward : Vector3.right;
+                }
+                else
+                {
+                    shakeAxis = isVertical ? Vector3.up : Vector3.right;
+                }
             }
 
             float duration = 0.22f;
@@ -920,13 +945,27 @@ namespace SandBlocks.Puzzle.Vehicles
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
             SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             Vector3 driveDir;
-            switch (rotationDegrees)
+            if (isHorizontal)
             {
-                case 90: driveDir = Vector3.up; break;
-                case 180: driveDir = Vector3.left; break;
-                case 270: driveDir = Vector3.down; break;
-                default: driveDir = Vector3.right; break;
+                switch (rotationDegrees)
+                {
+                    case 90: driveDir = Vector3.forward; break;
+                    case 180: driveDir = Vector3.left; break;
+                    case 270: driveDir = Vector3.back; break;
+                    default: driveDir = Vector3.right; break;
+                }
+            }
+            else
+            {
+                switch (rotationDegrees)
+                {
+                    case 90: driveDir = Vector3.up; break;
+                    case 180: driveDir = Vector3.left; break;
+                    case 270: driveDir = Vector3.down; break;
+                    default: driveDir = Vector3.right; break;
+                }
             }
 
             var grid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();

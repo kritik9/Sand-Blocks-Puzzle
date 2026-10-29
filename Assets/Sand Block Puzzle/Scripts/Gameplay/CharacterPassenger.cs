@@ -22,6 +22,10 @@ namespace SandBlocks.Gameplay
         [SerializeField] private Animator animator;
         [SerializeField] private Renderer[] renderers;
 
+        [Header("Rotation Jitter Target")]
+        [Tooltip("Child object in this character prefab to which rotation jitter (yaw & tilt) is applied. If unassigned, jitter is applied to this character's root transform.")]
+        [SerializeField] private GameObject rotationTarget;
+
         [Header("Doll Variations")]
         [Tooltip("Selected doll variation, or Random for crowd diversity")]
         [SerializeField] private DollVariation variation = DollVariation.Random;
@@ -37,15 +41,31 @@ namespace SandBlocks.Gameplay
         public Animator Animator => animator;
         public DollVariation Variation => variation;
         public GameObject[] VariationObjects => variationObjects;
+        public GameObject RotationTarget { get => rotationTarget; set => rotationTarget = value; }
+        public Transform EffectiveRotationTarget => (rotationTarget != null) ? rotationTarget.transform : transform;
 
         private static Material fallbackSharedMaterial;
 
+        private Quaternion initialTargetLocalRotation = Quaternion.identity;
+        private bool hasCachedInitialRotation = false;
+
         private void Awake()
         {
+            CacheInitialTargetRotation();
             ApplyVariation();
             FindComponents();
             EnsureValidMaterials();
             DisableColliders();
+        }
+
+        private void CacheInitialTargetRotation()
+        {
+            if (!hasCachedInitialRotation)
+            {
+                Transform target = (rotationTarget != null) ? rotationTarget.transform : transform;
+                initialTargetLocalRotation = target.localRotation;
+                hasCachedInitialRotation = true;
+            }
         }
 
         /// <summary>
@@ -193,6 +213,7 @@ namespace SandBlocks.Gameplay
         public void PlayRunning()
         {
             FindComponents();
+            ResetRotationJitter();
             if (animator != null)
             {
                 animator.enabled = true;
@@ -207,10 +228,42 @@ namespace SandBlocks.Gameplay
         public void PlaySitting()
         {
             FindComponents();
+            ResetRotationJitter();
             if (animator != null)
             {
                 animator.SetBool(IsRunningHash, false);
                 animator.SetBool(IsSittingHash, true);
+            }
+        }
+
+        /// <summary>
+        /// Applies base rotation to root, and organic jitter (yaw & tilt) to the designated rotation target object.
+        /// </summary>
+        public void ApplyRotationJitter(Vector3 baseEuler, float jitterY, float jitterZ)
+        {
+            CacheInitialTargetRotation();
+            Transform target = (rotationTarget != null) ? rotationTarget.transform : null;
+
+            if (target != null && target != transform)
+            {
+                transform.rotation = Quaternion.Euler(baseEuler);
+                target.localRotation = initialTargetLocalRotation * Quaternion.Euler(0f, jitterY, jitterZ);
+            }
+            else
+            {
+                transform.rotation = Quaternion.Euler(baseEuler.x, baseEuler.y + jitterY, baseEuler.z + jitterZ);
+            }
+        }
+
+        /// <summary>
+        /// Resets the rotation target object back to its initial local rotation (e.g. when flying or seated).
+        /// </summary>
+        public void ResetRotationJitter()
+        {
+            Transform target = (rotationTarget != null) ? rotationTarget.transform : null;
+            if (target != null && target != transform && hasCachedInitialRotation)
+            {
+                target.localRotation = initialTargetLocalRotation;
             }
         }
 

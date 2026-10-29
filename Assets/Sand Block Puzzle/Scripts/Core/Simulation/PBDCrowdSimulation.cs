@@ -306,7 +306,9 @@ namespace SandBlocks.Core.Simulation
             if (targetIdx >= 0)
             {
                 var target = particles[targetIdx];
-                worldPos = new Vector3(target.position.x, target.position.y, 0f);
+                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
+                worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, target.position.y) : new Vector3(target.position.x, target.position.y, 0f);
                 target.isActive = false;
                 particles[targetIdx] = target;
                 if (remainingActiveCount > 0) remainingActiveCount--;
@@ -374,7 +376,9 @@ namespace SandBlocks.Core.Simulation
             {
                 var target = particles[targetIdx];
                 float safeY = math.max(target.position.y, bottomY + target.radius);
-                worldPos = new Vector3(target.position.x, safeY, 0f);
+                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
+                worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, safeY) : new Vector3(target.position.x, safeY, 0f);
                 target.isActive = false;
                 particles[targetIdx] = target;
                 if (remainingActiveCount > 0) remainingActiveCount--;

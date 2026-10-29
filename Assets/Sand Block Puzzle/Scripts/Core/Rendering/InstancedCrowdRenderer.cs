@@ -13,10 +13,50 @@ namespace SandBlocks.Core.Rendering
         [SerializeField] private float prefabScale = 0.08f;
 
         [Header("Crowd Elevation & Height (Visibly Above)")]
-        [Tooltip("Z elevation offset toward camera (negative Z moves characters forward/above the ground plane)")]
-        [SerializeField] private float crowdZOffset = -0.25f;
-        [Tooltip("Vertical Y offset for crowd characters")]
+        [Tooltip("Direct reference to ContainerBoundary. If unassigned, will auto-locate in scene.")]
+        [SerializeField] private SandBlocks.Core.Boundary.ContainerBoundary containerBoundary;
+
+        [Tooltip("If true, automatically syncs character elevation with ContainerBoundary so characters stand on top of the elevated back plate")]
+        [SerializeField] private bool syncWithBoundaryElevation = true;
+
+        [Tooltip("If true, places characters on top of the back plate surface (BackPlateElevationY + thickness * 0.5). If false, aligns directly with BackPlateElevationY.")]
+        [SerializeField] private bool alignToPlateSurface = true;
+
+        [Tooltip("Fine-tuning offset added on top of the back plate elevation (e.g. 0.0f)")]
+        [SerializeField] private float crowdElevationOffset = 0f;
+
+        [Tooltip("Fallback elevation height on the Y axis above ground plane in Horizontal_XZ mode if boundary sync is disabled or boundary is missing")]
+        [SerializeField] private float crowdElevationY = 0.08f;
+        [Tooltip("Z offset for crowd characters")]
+        [SerializeField] private float crowdZOffset = 0f;
+        [Tooltip("Vertical Y offset for crowd characters in legacy Vertical_XY mode")]
         [SerializeField] private float crowdYOffset = 0f;
+
+        public float EffectiveElevationY
+        {
+            get
+            {
+                if (syncWithBoundaryElevation)
+                {
+                    if (containerBoundary == null)
+                    {
+                        containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+                    }
+                    if (containerBoundary != null)
+                    {
+                        float baseElev = alignToPlateSurface ? containerBoundary.SurfaceElevationY : containerBoundary.BackPlateElevationY;
+                        return baseElev + crowdElevationOffset;
+                    }
+                }
+                return crowdElevationY;
+            }
+        }
+
+        public float CrowdElevationY => EffectiveElevationY;
+        public SandBlocks.Core.Boundary.ContainerBoundary Boundary { get => containerBoundary; set => containerBoundary = value; }
+        public bool SyncWithBoundaryElevation { get => syncWithBoundaryElevation; set => syncWithBoundaryElevation = value; }
+        public bool AlignToPlateSurface { get => alignToPlateSurface; set => alignToPlateSurface = value; }
+        public float CrowdElevationOffset { get => crowdElevationOffset; set => crowdElevationOffset = value; }
 
         [Header("Crowd Scale Variation")]
         [Tooltip("Random scale variation range applied to crowd characters (multiplier on prefabScale, e.g. 0.92 to 1.08) so they don't look identical")]
@@ -58,6 +98,29 @@ namespace SandBlocks.Core.Rendering
         private List<GameObject> pooledCharacters = new List<GameObject>();
         private List<Renderer[]> pooledRenderers = new List<Renderer[]>();
         private List<float> pooledSpawnTimes = new List<float>();
+        private List<SandBlocks.Gameplay.CharacterPassenger> pooledPassengers = new List<SandBlocks.Gameplay.CharacterPassenger>();
+        private float defaultPrefabScale = -1f;
+
+        public void SetCharacterScale(float scale)
+        {
+            if (defaultPrefabScale < 0f) defaultPrefabScale = prefabScale;
+            if (scale > 0f)
+            {
+                prefabScale = scale;
+            }
+            else
+            {
+                prefabScale = defaultPrefabScale;
+            }
+        }
+
+        public void ResetCharacterScale()
+        {
+            if (defaultPrefabScale > 0f)
+            {
+                prefabScale = defaultPrefabScale;
+            }
+        }
         private MaterialPropertyBlock propertyBlock;
         private readonly Matrix4x4[] batchMatrices = new Matrix4x4[1023];
         private readonly Vector4[] batchColors = new Vector4[1023];
@@ -94,6 +157,8 @@ namespace SandBlocks.Core.Rendering
             pooledCharacters.Clear();
             pooledRenderers.Clear();
             pooledSpawnTimes.Clear();
+            pooledPassengers.Clear();
+            if (defaultPrefabScale < 0f) defaultPrefabScale = prefabScale;
 
             // Setup fallback mesh and material
             if (characterMesh == null && characterPrefab == null)
@@ -163,6 +228,7 @@ namespace SandBlocks.Core.Rendering
                 pooledCharacters.Add(instance);
                 pooledRenderers.Add(instRends);
                 pooledSpawnTimes.Add(Time.time);
+                pooledPassengers.Add(instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>());
             }
 
             float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
@@ -201,8 +267,14 @@ namespace SandBlocks.Core.Rendering
                     }
                 }
 
-                // 1. Position: apply elevation (crowdZOffset) and vertical offset
-                instance.transform.position = new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
+                // 1. Position: apply elevation (EffectiveElevationY in Horizontal_XZ)
+                instance.transform.position = isHorizontal
+                    ? new Vector3(p.position.x, EffectiveElevationY, p.position.y + crowdZOffset)
+                    : new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+
+                var pass = (i < pooledPassengers.Count) ? pooledPassengers[i] : instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
 
                 // 2. Rotation: base rotation + back-side flip + slight random organic jitter (yaw & tilt)
                 float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
@@ -211,7 +283,19 @@ namespace SandBlocks.Core.Rendering
                 float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
                     ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
                     : 0f;
-                instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                float curBaseRotY = isHorizontal
+                    ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
+                    : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+                Vector3 baseEuler = new Vector3(characterRotationEuler.x, curBaseRotY, characterRotationEuler.z);
+
+                if (pass != null)
+                {
+                    pass.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
+                }
+                else
+                {
+                    instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                }
 
                 // 3. Scale: uniform base * spawn pop * stable random scale variation
                 float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
@@ -223,7 +307,6 @@ namespace SandBlocks.Core.Rendering
                 if (palette != null)
                 {
                     Color c = palette.GetColor(p.colorId);
-                    var pass = instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
                     if (pass != null)
                     {
                         pass.SetColor(c);
@@ -261,7 +344,10 @@ namespace SandBlocks.Core.Rendering
                 var p = particles[i];
                 if (!p.isActive) continue;
 
-                Vector3 pos = new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                Vector3 pos = isHorizontal
+                    ? new Vector3(p.position.x, EffectiveElevationY, p.position.y + crowdZOffset)
+                    : new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
 
                 float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
                     ? GetStableRandom(i * 11 + 3, rotationJitterYRange.x, rotationJitterYRange.y)
@@ -269,7 +355,10 @@ namespace SandBlocks.Core.Rendering
                 float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
                     ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
                     : 0f;
-                Quaternion rot = Quaternion.Euler(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                float curBaseRotY = isHorizontal
+                    ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
+                    : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+                Quaternion rot = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
 
                 float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
                     ? GetStableRandom(i * 7 + 1, scaleVariationRange.x, scaleVariationRange.y)
@@ -309,5 +398,35 @@ namespace SandBlocks.Core.Rendering
                 true
             );
         }
-    }
+    
+        public void SyncLiveCharacterPositions()
+        {
+            if (pooledCharacters == null || pooledCharacters.Count == 0) return;
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            float targetY = EffectiveElevationY;
+            for (int i = 0; i < pooledCharacters.Count; i++)
+            {
+                if (pooledCharacters[i] != null)
+                {
+                    Vector3 pos = pooledCharacters[i].transform.position;
+                    if (isHorizontal)
+                    {
+                        pos.y = targetY;
+                    }
+                    else
+                    {
+                        pos.z = crowdZOffset;
+                    }
+                    pooledCharacters[i].transform.position = pos;
+                }
+            }
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            SyncLiveCharacterPositions();
+        }
+#endif
+}
 }

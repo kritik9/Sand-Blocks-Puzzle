@@ -262,14 +262,15 @@ namespace SandBlocks.Gameplay
                 }
             }
 
-            // 3. World proximity fallback: within half a cell of the top row world Y
-            float topRowWorldY = puzzleGrid != null 
+            // 3. World proximity fallback: within half a cell of the top row
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            float topRowWorldCoord = puzzleGrid != null 
                 ? (puzzleGrid.Origin.y + topRow * cellSize) 
                 : -3.8f;
-            float halfSpanY = vehicle.IsVertical ? (vehicle.Length - 1) * 0.5f * cellSize : 0f;
-            float busTopWorldY = vehicle.transform.position.y + halfSpanY;
+            float halfSpan = vehicle.IsVertical ? (vehicle.Length - 1) * 0.5f * cellSize : 0f;
+            float busTopWorldCoord = (isHorizontal ? vehicle.transform.position.z : vehicle.transform.position.y) + halfSpan;
 
-            if (Mathf.Abs(busTopWorldY - topRowWorldY) <= cellSize * 0.65f)
+            if (Mathf.Abs(busTopWorldCoord - topRowWorldCoord) <= cellSize * 0.65f)
             {
                 return true;
             }
@@ -279,6 +280,7 @@ namespace SandBlocks.Gameplay
 
         private IEnumerator AnimateCommuterFlight(Vector3 start, BusVehicle targetBus, Vector3 targetSeatPos, int colorId)
         {
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
             Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
 
@@ -331,7 +333,9 @@ namespace SandBlocks.Gameplay
                         endPos = targetBus.transform.TransformPoint(localSeatOffset);
                     }
 
-                    Vector3 midPoint = (start + endPos) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
+                    Vector3 midPoint = isHorizontal
+                        ? (start + endPos) * 0.5f + Vector3.up * jumpArcHeight
+                        : (start + endPos) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
                     float oneMinusT = 1f - t;
                     Vector3 currentPos = oneMinusT * oneMinusT * start + 2f * oneMinusT * t * midPoint + t * t * endPos;
                     commuter.transform.position = currentPos;
@@ -393,7 +397,10 @@ namespace SandBlocks.Gameplay
             }
 
             Vector3 endPos = targetBus != null ? targetBus.transform.TransformPoint(localSeat) : start;
-            Vector3 midPoint = (start + endPos) * 0.5f + Vector3.up * 1.4f - Vector3.forward * 0.5f;
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            Vector3 midPoint = isHorizontal
+                ? (start + endPos) * 0.5f + Vector3.up * 1.4f
+                : (start + endPos) * 0.5f + Vector3.up * 1.4f - Vector3.forward * 0.5f;
             float elapsed = 0f;
 
             while (elapsed < flightDuration)
@@ -438,6 +445,7 @@ namespace SandBlocks.Gameplay
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (boundary == null) return;
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             float bottomY = boundary.BottomY;
             float thresholdY = bottomY + boundaryLayerTolerance;
             Rect bounds = boundary.Bounds;
@@ -445,84 +453,162 @@ namespace SandBlocks.Gameplay
             float rightX = bounds.xMax;
             float width = bounds.width;
 
-            // 1. Draw Container Floor Line (Solid Red)
-            Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.9f);
-            Gizmos.DrawLine(new Vector3(leftX, bottomY, 0f), new Vector3(rightX, bottomY, 0f));
-
-            // 2. Draw Tolerance Threshold Line (Vibrant Yellow)
-            Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.95f);
-            Gizmos.DrawLine(new Vector3(leftX, thresholdY, 0f), new Vector3(rightX, thresholdY, 0f));
-
-            // 3. Draw Semi-transparent Tolerance Band Area (Collectable Zone)
-            Vector3 bandCenter = new Vector3((leftX + rightX) * 0.5f, bottomY + boundaryLayerTolerance * 0.5f, 0f);
-            Vector3 bandSize = new Vector3(width, boundaryLayerTolerance, 0.05f);
-
-            Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
-            Gizmos.DrawCube(bandCenter, bandSize);
-
-            Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.45f);
-            Gizmos.DrawWireCube(bandCenter, bandSize);
-
-            // 3.5 Draw Floor Exception Margin Safety Catch Zone (Below Floor)
-            float exceptionMargin = boundary.FloorExceptionMargin;
-            float exceptionMarginY = bottomY - exceptionMargin;
-
-            Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.95f);
-            Gizmos.DrawLine(new Vector3(leftX, exceptionMarginY, 0f), new Vector3(rightX, exceptionMarginY, 0f));
-
-            Vector3 exceptionCenter = new Vector3((leftX + rightX) * 0.5f, bottomY - exceptionMargin * 0.5f, 0f);
-            Vector3 exceptionSize = new Vector3(width, exceptionMargin, 0.05f);
-
-            Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.12f);
-            Gizmos.DrawCube(exceptionCenter, exceptionSize);
-
-            Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.45f);
-            Gizmos.DrawWireCube(exceptionCenter, exceptionSize);
-
-            // 4. Draw Active Bus Column Slices on the Tolerance Band
-            var candidates = GetActiveBusesAtTopOfGrid();
-            if (candidates != null)
+            if (isHorizontal)
             {
-                for (int i = 0; i < candidates.Count; i++)
+                float elevation = 0.05f;
+
+                // 1. Container Floor Line
+                Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.9f);
+                Gizmos.DrawLine(new Vector3(leftX, elevation, bottomY), new Vector3(rightX, elevation, bottomY));
+
+                // 2. Tolerance Threshold Line
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.95f);
+                Gizmos.DrawLine(new Vector3(leftX, elevation, thresholdY), new Vector3(rightX, elevation, thresholdY));
+
+                // 3. Semi-transparent Tolerance Band Area
+                Vector3 bandCenter = new Vector3((leftX + rightX) * 0.5f, elevation, bottomY + boundaryLayerTolerance * 0.5f);
+                Vector3 bandSize = new Vector3(width, 0.02f, boundaryLayerTolerance);
+
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
+                Gizmos.DrawCube(bandCenter, bandSize);
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.45f);
+                Gizmos.DrawWireCube(bandCenter, bandSize);
+
+                // 3.5 Floor Exception Margin Safety Catch Zone
+                float exceptionMargin = boundary.FloorExceptionMargin;
+                float exceptionMarginZ = bottomY - exceptionMargin;
+
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.95f);
+                Gizmos.DrawLine(new Vector3(leftX, elevation, exceptionMarginZ), new Vector3(rightX, elevation, exceptionMarginZ));
+
+                Vector3 exceptionCenter = new Vector3((leftX + rightX) * 0.5f, elevation, bottomY - exceptionMargin * 0.5f);
+                Vector3 exceptionSize = new Vector3(width, 0.02f, exceptionMargin);
+
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.12f);
+                Gizmos.DrawCube(exceptionCenter, exceptionSize);
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.45f);
+                Gizmos.DrawWireCube(exceptionCenter, exceptionSize);
+
+                // 4. Draw Active Bus Column Slices
+                var candidates = GetActiveBusesAtTopOfGrid();
+                if (candidates != null)
                 {
-                    var bus = candidates[i];
-                    if (bus == null) continue;
-
-                    if (TryGetBusCollectionRange(bus, out float minX, out float maxX))
+                    for (int i = 0; i < candidates.Count; i++)
                     {
-                        Color busColor = (palette != null) ? palette.GetColor(bus.ColorId) : Color.cyan;
-                        Vector3 busSliceCenter = new Vector3((minX + maxX) * 0.5f, bottomY + boundaryLayerTolerance * 0.5f, 0f);
-                        Vector3 busSliceSize = new Vector3(maxX - minX, boundaryLayerTolerance, 0.15f);
+                        var bus = candidates[i];
+                        if (bus == null) continue;
 
-                        // Highlight slice in bus color
-                        Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 0.35f);
-                        Gizmos.DrawCube(busSliceCenter, busSliceSize);
+                        if (TryGetBusCollectionRange(bus, out float minX, out float maxX))
+                        {
+                            Color busColor = (palette != null) ? palette.GetColor(bus.ColorId) : Color.cyan;
+                            Vector3 busSliceCenter = new Vector3((minX + maxX) * 0.5f, elevation, bottomY + boundaryLayerTolerance * 0.5f);
+                            Vector3 busSliceSize = new Vector3(maxX - minX, 0.03f, boundaryLayerTolerance);
 
-                        Gizmos.color = busColor;
-                        Gizmos.DrawWireCube(busSliceCenter, busSliceSize);
+                            Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 0.35f);
+                            Gizmos.DrawCube(busSliceCenter, busSliceSize);
+                            Gizmos.color = busColor;
+                            Gizmos.DrawWireCube(busSliceCenter, busSliceSize);
 
-                        // Handles label for slice
-                        UnityEditor.Handles.Label(new Vector3(busSliceCenter.x - 0.4f, thresholdY + 0.15f, 0f),
-                            $"[{bus.name}] {minX:F1} to {maxX:F1}");
+#if UNITY_EDITOR
+                            UnityEditor.Handles.Label(new Vector3(busSliceCenter.x - 0.4f, elevation + 0.1f, thresholdY),
+                                $"[{bus.name}] {minX:F1} to {maxX:F1}");
+#endif
+                        }
                     }
                 }
+
+#if UNITY_EDITOR
+                GUIStyle labelStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = Color.yellow } };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, thresholdY),
+                    $"Tolerance Line (+{boundaryLayerTolerance:F2})", labelStyle);
+
+                GUIStyle floorStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(1f, 0.35f, 0.35f, 1f) } };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, bottomY),
+                    $"Floor (Z: {bottomY:F2})", floorStyle);
+
+                GUIStyle exceptionStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(0.96f, 0.25f, 0.55f, 1f) } };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, exceptionMarginZ),
+                    $"Exception Margin (-{exceptionMargin:F2})", exceptionStyle);
+#endif
             }
+            else
+            {
+                // Legacy Vertical_XY drawing
+                Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.9f);
+                Gizmos.DrawLine(new Vector3(leftX, bottomY, 0f), new Vector3(rightX, bottomY, 0f));
 
-            // 5. Handles text labels for the lines
-            GUIStyle labelStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
-            labelStyle.normal.textColor = Color.yellow;
-            UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, thresholdY, 0f),
-                $"Tolerance Line (+{boundaryLayerTolerance:F2})", labelStyle);
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.95f);
+                Gizmos.DrawLine(new Vector3(leftX, thresholdY, 0f), new Vector3(rightX, thresholdY, 0f));
 
-            GUIStyle floorStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
-            floorStyle.normal.textColor = new Color(1f, 0.35f, 0.35f, 1f);
-            UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, bottomY, 0f),
-                $"Floor (Y: {bottomY:F2})", floorStyle);
+                Vector3 bandCenter = new Vector3((leftX + rightX) * 0.5f, bottomY + boundaryLayerTolerance * 0.5f, 0f);
+                Vector3 bandSize = new Vector3(width, boundaryLayerTolerance, 0.05f);
 
-            GUIStyle exceptionStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
-            exceptionStyle.normal.textColor = new Color(0.96f, 0.25f, 0.55f, 1f);
-            UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, exceptionMarginY, 0f),
-                $"Floor Exception Margin (-{exceptionMargin:F2})", exceptionStyle);
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
+                Gizmos.DrawCube(bandCenter, bandSize);
+
+                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.45f);
+                Gizmos.DrawWireCube(bandCenter, bandSize);
+
+                float exceptionMargin = boundary.FloorExceptionMargin;
+                float exceptionMarginY = bottomY - exceptionMargin;
+
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.95f);
+                Gizmos.DrawLine(new Vector3(leftX, exceptionMarginY, 0f), new Vector3(rightX, exceptionMarginY, 0f));
+
+                Vector3 exceptionCenter = new Vector3((leftX + rightX) * 0.5f, bottomY - exceptionMargin * 0.5f, 0f);
+                Vector3 exceptionSize = new Vector3(width, exceptionMargin, 0.05f);
+
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.12f);
+                Gizmos.DrawCube(exceptionCenter, exceptionSize);
+
+                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.45f);
+                Gizmos.DrawWireCube(exceptionCenter, exceptionSize);
+
+                var candidates = GetActiveBusesAtTopOfGrid();
+                if (candidates != null)
+                {
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        var bus = candidates[i];
+                        if (bus == null) continue;
+
+                        if (TryGetBusCollectionRange(bus, out float minX, out float maxX))
+                        {
+                            Color busColor = (palette != null) ? palette.GetColor(bus.ColorId) : Color.cyan;
+                            Vector3 busSliceCenter = new Vector3((minX + maxX) * 0.5f, bottomY + boundaryLayerTolerance * 0.5f, 0f);
+                            Vector3 busSliceSize = new Vector3(maxX - minX, boundaryLayerTolerance, 0.15f);
+
+                            Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 0.35f);
+                            Gizmos.DrawCube(busSliceCenter, busSliceSize);
+
+                            Gizmos.color = busColor;
+                            Gizmos.DrawWireCube(busSliceCenter, busSliceSize);
+
+#if UNITY_EDITOR
+                            UnityEditor.Handles.Label(new Vector3(busSliceCenter.x - 0.4f, thresholdY + 0.15f, 0f),
+                                $"[{bus.name}] {minX:F1} to {maxX:F1}");
+#endif
+                        }
+                    }
+                }
+
+#if UNITY_EDITOR
+                GUIStyle labelStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
+                labelStyle.normal.textColor = Color.yellow;
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, thresholdY, 0f),
+                    $"Tolerance Line (+{boundaryLayerTolerance:F2})", labelStyle);
+
+                GUIStyle floorStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
+                floorStyle.normal.textColor = new Color(1f, 0.35f, 0.35f, 1f);
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, bottomY, 0f),
+                    $"Floor (Y: {bottomY:F2})", floorStyle);
+
+                GUIStyle exceptionStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel);
+                exceptionStyle.normal.textColor = new Color(0.96f, 0.25f, 0.55f, 1f);
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, exceptionMarginY, 0f),
+                    $"Floor Exception Margin (-{exceptionMargin:F2})", exceptionStyle);
+#endif
+            }
         }
 #endif
     }

@@ -293,19 +293,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       propertyPath: m_LocalRotation.w
-      value: -0.5
+      value: 0.7071068
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0.5
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0.5
+      value: 0.7071068
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.5
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -446,12 +446,16 @@ MonoBehaviour:
   capacity: 4
   length: 2
   isVertical: 0
+  selectionOutline: {fileID: 0}
   rotationDegrees: 0
   visualRotationOffset: {x: 0, y: 0, z: 0}
+  passengerParent: {fileID: 0}
+  charactersParent: {fileID: 7608802820881767737}
+  passengerList: []
+  seatPassengers: []
   bodyRenderer: {fileID: 2532267996206923975}
   seatsParent: {fileID: 645466580224900917}
   passengerPrefab: {fileID: 293946332538391629, guid: 7a16dab9e2a944c8d9b9adbb6ed29c5e, type: 3}
-  charactersParent: {fileID: 7608802820881767737}
   seatTransforms:
   - {fileID: 4906322463400545682}
   - {fileID: 7552082680128738279}
@@ -462,6 +466,8 @@ MonoBehaviour:
   passengerScale: 0.1
   popScaleMultiplier: 1.14
   blockedShakeMagnitude: 0.16
+  spawnBounceDuration: 0.35
+  spawnOvershoot: 1.70158
 --- !u!4 &645466580224900917 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}

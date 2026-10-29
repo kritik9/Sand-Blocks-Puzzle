@@ -9,5 +9,7 @@ namespace SandBlocks.Core.Boundary
         Rect Bounds { get; }
         float BottomY => Bounds.yMin;
         float FloorExceptionMargin => 0.8f;
+        float SurfaceElevationY => 0.05f;
+        float BackPlateElevationY => 0.02f;
     }
 }
