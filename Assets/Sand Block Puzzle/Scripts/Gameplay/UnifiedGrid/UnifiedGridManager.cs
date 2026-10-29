@@ -34,11 +34,19 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [SerializeField] private GameObject busPrefab;
         [SerializeField] private GameObject characterPrefab;
 
-        [Header("Character Tuning")]
+        [Header("Character Tuning & Diversity")]
         [Tooltip("Uniform scale applied to passenger figures on grid stops and destination pads")]
         [SerializeField] private float characterScale = 0.08f;
-        [Tooltip("Local rotation applied to passenger figures (0,0,0 faces camera)")]
+        [Tooltip("Random scale variation range applied to characters (multiplier on base scale)")]
+        [SerializeField] private Vector2 scaleVariationRange = new Vector2(0.92f, 1.08f);
+        [Tooltip("If true, rotates characters 180 degrees so their back side faces the camera, revealing their full body")]
+        [SerializeField] private bool faceBackSide = true;
+        [Tooltip("Local rotation applied to passenger figures")]
         [SerializeField] private Vector3 characterRotationEuler = Vector3.zero;
+        [Tooltip("Random Y-axis yaw rotation jitter range (degrees)")]
+        [SerializeField] private Vector2 rotationJitterYRange = new Vector2(-12f, 12f);
+        [Tooltip("Z elevation offset toward camera (height up)")]
+        [SerializeField] private float characterZOffset = -0.15f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color destinationColor = new Color(1f, 0.82f, 0.2f, 1f);
@@ -908,8 +916,16 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             if (characterPrefab != null)
             {
                 fig = Instantiate(characterPrefab);
-                fig.transform.localScale = Vector3.one * characterScale;
-                fig.transform.localEulerAngles = characterRotationEuler;
+                float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
+                    ? UnityEngine.Random.Range(scaleVariationRange.x, scaleVariationRange.y)
+                    : 1f;
+                fig.transform.localScale = Vector3.one * (characterScale * randScaleMult);
+                float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+                float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                    ? UnityEngine.Random.Range(rotationJitterYRange.x, rotationJitterYRange.y)
+                    : 0f;
+                fig.transform.localEulerAngles = new Vector3(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z);
+                fig.transform.localPosition = new Vector3(0f, 0f, characterZOffset);
                 var col = fig.GetComponent<Collider>();
                 if (col != null) Destroy(col);
                 var cp = fig.GetComponent<CharacterPassenger>() ?? fig.AddComponent<CharacterPassenger>();

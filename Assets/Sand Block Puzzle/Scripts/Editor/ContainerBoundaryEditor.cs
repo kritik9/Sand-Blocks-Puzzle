@@ -21,7 +21,12 @@ namespace SandBlocks.Editor
         private SerializedProperty interiorColorProp;
         private SerializedProperty beamThicknessProp;
         private SerializedProperty beamDepthProp;
+        private SerializedProperty beamZOffsetProp;
         private SerializedProperty showBackPlateProp;
+        private SerializedProperty backPlateZOffsetProp;
+        private SerializedProperty backPlateThicknessProp;
+        private SerializedProperty backPlateYOffsetProp;
+        private SerializedProperty backPlatePaddingProp;
 
         private void OnEnable()
         {
@@ -38,7 +43,12 @@ namespace SandBlocks.Editor
             interiorColorProp = serializedObject.FindProperty("interiorColor");
             beamThicknessProp = serializedObject.FindProperty("borderBeamThickness");
             beamDepthProp = serializedObject.FindProperty("borderBeamDepth");
+            beamZOffsetProp = serializedObject.FindProperty("borderBeamZOffset");
             showBackPlateProp = serializedObject.FindProperty("showBackPlate");
+            backPlateZOffsetProp = serializedObject.FindProperty("backPlateZOffset");
+            backPlateThicknessProp = serializedObject.FindProperty("backPlateThickness");
+            backPlateYOffsetProp = serializedObject.FindProperty("backPlateYOffset");
+            backPlatePaddingProp = serializedObject.FindProperty("backPlatePadding");
         }
 
         public override void OnInspectorGUI()
@@ -99,12 +109,23 @@ namespace SandBlocks.Editor
             }
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Visual Styling", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Visual Styling & Elevation", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(borderColorProp);
             EditorGUILayout.PropertyField(interiorColorProp);
             EditorGUILayout.PropertyField(beamThicknessProp);
             EditorGUILayout.PropertyField(beamDepthProp);
+            EditorGUILayout.PropertyField(beamZOffsetProp);
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Back Plate Elevation", EditorStyles.miniBoldLabel);
             EditorGUILayout.PropertyField(showBackPlateProp);
+            if (showBackPlateProp.boolValue)
+            {
+                EditorGUILayout.PropertyField(backPlateZOffsetProp);
+                EditorGUILayout.PropertyField(backPlateThicknessProp);
+                EditorGUILayout.PropertyField(backPlateYOffsetProp);
+                EditorGUILayout.PropertyField(backPlatePaddingProp);
+            }
 
             EditorGUILayout.Space(6);
             if (GUILayout.Button("Rebuild Visual Container", GUILayout.Height(28)))

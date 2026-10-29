@@ -12,12 +12,37 @@ namespace SandBlocks.Core.Rendering
         [SerializeField] private GameObject characterPrefab;
         [SerializeField] private float prefabScale = 0.08f;
 
-        [Header("Character Orientation")]
-        [Tooltip("Character rotation in degrees (e.g. 0,0,0 for upright Y-up character)")]
+        [Header("Crowd Elevation & Height (Visibly Above)")]
+        [Tooltip("Z elevation offset toward camera (negative Z moves characters forward/above the ground plane)")]
+        [SerializeField] private float crowdZOffset = -0.25f;
+        [Tooltip("Vertical Y offset for crowd characters")]
+        [SerializeField] private float crowdYOffset = 0f;
+
+        [Header("Crowd Scale Variation")]
+        [Tooltip("Random scale variation range applied to crowd characters (multiplier on prefabScale, e.g. 0.92 to 1.08) so they don't look identical")]
+        [SerializeField] private Vector2 scaleVariationRange = new Vector2(0.92f, 1.08f);
+
+        [Header("Crowd Orientation & Rotation")]
+        [Tooltip("If true, rotates characters by 180 degrees so their back side faces the camera, revealing their full body as in the reference image")]
+        [SerializeField] private bool faceBackSide = true;
+
+        [Tooltip("Base Euler rotation for characters (default: 0, 0, 0)")]
         [SerializeField] private Vector3 characterRotationEuler = Vector3.zero;
+
+        [Tooltip("Random Y-axis yaw rotation jitter range (degrees, e.g. -14 to +14) so characters stand organically tilted")]
+        [SerializeField] private Vector2 rotationJitterYRange = new Vector2(-12f, 12f);
+
+        [Tooltip("Random Z-axis lean tilt range (degrees, e.g. -3 to +3)")]
+        [SerializeField] private Vector2 rotationJitterZRange = new Vector2(-3f, 3f);
 
         public float CharacterScale => prefabScale;
         public Vector3 CharacterRotationEuler => characterRotationEuler;
+        public float CrowdZOffset => crowdZOffset;
+        public float CrowdYOffset => crowdYOffset;
+        public Vector2 ScaleVariationRange => scaleVariationRange;
+        public bool FaceBackSide => faceBackSide;
+        public Vector2 RotationJitterYRange => rotationJitterYRange;
+        public Vector2 RotationJitterZRange => rotationJitterZRange;
 
         [Header("Fallback Instanced Mesh Settings")]
         [SerializeField] private Mesh characterMesh;
@@ -38,6 +63,23 @@ namespace SandBlocks.Core.Rendering
         private readonly Vector4[] batchColors = new Vector4[1023];
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId_Prop = Shader.PropertyToID("_Color");
+
+        public Vector3 GetEffectiveBaseRotation()
+        {
+            float rotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+            return new Vector3(characterRotationEuler.x, rotY, characterRotationEuler.z);
+        }
+
+        private float GetStableRandom(int index, float min, float max)
+        {
+            if (Mathf.Approximately(min, max)) return min;
+            uint hash = (uint)index * 2654435761u ^ 0x9e3779b9u;
+            hash = (hash ^ (hash >> 16)) * 0x85ebca6bu;
+            hash = (hash ^ (hash >> 13)) * 0xc2b2ae35u;
+            hash ^= (hash >> 16);
+            float t = (hash & 0xFFFF) / 65535f;
+            return Mathf.Lerp(min, max, t);
+        }
 
         public void Initialize(CrowdColorPalette colorPalette)
         {
@@ -123,6 +165,8 @@ namespace SandBlocks.Core.Rendering
                 pooledSpawnTimes.Add(Time.time);
             }
 
+            float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+
             for (int i = 0; i < count; i++)
             {
                 var p = particles[i];
@@ -157,11 +201,25 @@ namespace SandBlocks.Core.Rendering
                     }
                 }
 
-                instance.transform.position = new Vector3(p.position.x, p.position.y, 0f);
-                instance.transform.rotation = Quaternion.Euler(characterRotationEuler);
-                instance.transform.localScale = Vector3.one * (prefabScale * scaleMult);
+                // 1. Position: apply elevation (crowdZOffset) and vertical offset
+                instance.transform.position = new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
 
-                // Apply color
+                // 2. Rotation: base rotation + back-side flip + slight random organic jitter (yaw & tilt)
+                float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                    ? GetStableRandom(i * 11 + 3, rotationJitterYRange.x, rotationJitterYRange.y)
+                    : 0f;
+                float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                    ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
+                    : 0f;
+                instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z + jitterZ);
+
+                // 3. Scale: uniform base * spawn pop * stable random scale variation
+                float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
+                    ? GetStableRandom(i * 7 + 1, scaleVariationRange.x, scaleVariationRange.y)
+                    : 1f;
+                instance.transform.localScale = Vector3.one * (prefabScale * scaleMult * randScaleMult);
+
+                // 4. Color
                 if (palette != null)
                 {
                     Color c = palette.GetColor(p.colorId);
@@ -196,15 +254,29 @@ namespace SandBlocks.Core.Rendering
             if (characterMesh == null || characterMaterial == null) return;
 
             int batchIndex = 0;
-            Quaternion rot = Quaternion.Euler(characterRotationEuler);
+            float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
 
             for (int i = 0; i < count; i++)
             {
                 var p = particles[i];
                 if (!p.isActive) continue;
 
-                Vector3 pos = new Vector3(p.position.x, p.position.y, 0f);
-                batchMatrices[batchIndex] = Matrix4x4.TRS(pos, rot, characterScale);
+                Vector3 pos = new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+
+                float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                    ? GetStableRandom(i * 11 + 3, rotationJitterYRange.x, rotationJitterYRange.y)
+                    : 0f;
+                float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                    ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
+                    : 0f;
+                Quaternion rot = Quaternion.Euler(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z + jitterZ);
+
+                float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
+                    ? GetStableRandom(i * 7 + 1, scaleVariationRange.x, scaleVariationRange.y)
+                    : 1f;
+                Vector3 instScale = characterScale * randScaleMult;
+
+                batchMatrices[batchIndex] = Matrix4x4.TRS(pos, rot, instScale);
 
                 Color c = palette != null ? palette.GetColor(p.colorId) : Color.white;
                 batchColors[batchIndex] = c;
