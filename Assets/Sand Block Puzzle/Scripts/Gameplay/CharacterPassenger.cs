@@ -238,6 +238,20 @@ namespace SandBlocks.Gameplay
         }
 
         /// <summary>
+        /// Adjusts the character's pitch tilt during jump flight so that feet swing forward
+        /// and the entire front body is clearly visible from top-down tilted camera angles.
+        /// </summary>
+        /// <param name="tiltProgress">Normalized flight progress (0 = upright takeoff, 1 = feet fully forward on landing).</param>
+        /// <param name="maxTiltAngle">Maximum pitch angle in degrees (e.g. 35 to 40 deg).</param>
+        /// <param name="baseEuler">Base local Euler rotation (e.g. Vector3.zero).</param>
+        public void ApplyJumpFlightTilt(float tiltProgress, float maxTiltAngle, Vector3 baseEuler)
+        {
+            float eased = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(tiltProgress));
+            float tilt = eased * maxTiltAngle;
+            transform.rotation = Quaternion.Euler(baseEuler.x + tilt, baseEuler.y, baseEuler.z);
+        }
+
+        /// <summary>
         /// Adjusts the character's uniform scale.
         /// </summary>
         public void SetScale(float uniformScale)

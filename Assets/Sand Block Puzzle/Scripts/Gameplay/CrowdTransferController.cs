@@ -29,6 +29,14 @@ namespace SandBlocks.Gameplay
         [SerializeField] private float boundaryLayerTolerance = 0.7f;
         [SerializeField] private float commuterScale = 0.08f;
 
+        [Header("Jump Flight Arc & Camera Visibility")]
+        [Tooltip("Vertical height added to the jump flight trajectory curve")]
+        [SerializeField] private float jumpArcHeight = 2.4f;
+        [Tooltip("Forward offset (-Z toward camera) added to flight midpoint so character stays in prominent view")]
+        [SerializeField] private float jumpForwardBias = 0.75f;
+        [Tooltip("Maximum pitch angle (degrees) tilting feet forward toward camera during landing so whole character is visible from top-down camera")]
+        [SerializeField] private float landingFeetForwardTilt = 38f;
+
         [Header("Gizmos & Debug")]
         [Tooltip("Draw gizmo lines in the Scene View showing container floor and tolerance threshold line")]
         [SerializeField] private bool showToleranceGizmo = true;
@@ -310,7 +318,6 @@ namespace SandBlocks.Gameplay
                     : Vector3.zero;
 
                 Vector3 endPos = (targetBus != null) ? targetBus.transform.TransformPoint(localSeatOffset) : targetSeatPos;
-                Vector3 midPoint = (start + endPos) * 0.5f + Vector3.up * 1.4f - Vector3.forward * 0.5f;
                 float elapsed = 0f;
 
                 while (elapsed < flightDuration)
@@ -324,10 +331,13 @@ namespace SandBlocks.Gameplay
                         endPos = targetBus.transform.TransformPoint(localSeatOffset);
                     }
 
+                    Vector3 midPoint = (start + endPos) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
                     float oneMinusT = 1f - t;
                     Vector3 currentPos = oneMinusT * oneMinusT * start + 2f * oneMinusT * t * midPoint + t * t * endPos;
                     commuter.transform.position = currentPos;
-                    commuter.transform.rotation = Quaternion.Euler(baseRot);
+
+                    // Feet comes forward while jumping and landing so the whole character is visible to tilted camera
+                    charPassenger.ApplyJumpFlightTilt(t, landingFeetForwardTilt, baseRot);
                     yield return null;
                 }
 

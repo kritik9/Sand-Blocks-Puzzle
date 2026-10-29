@@ -48,6 +48,14 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [SerializeField] private float streamTransferInterval = 0.08f;
         [SerializeField] private float passengerFlightDuration = 0.26f;
 
+        [Header("Passenger Jump Arc & Camera Visibility")]
+        [Tooltip("Vertical height added to the jump flight trajectory curve")]
+        [SerializeField] private float jumpArcHeight = 2.4f;
+        [Tooltip("Forward offset (-Z toward camera) added to flight midpoint so character stays in prominent view")]
+        [SerializeField] private float jumpForwardBias = 0.75f;
+        [Tooltip("Maximum pitch angle (degrees) tilting feet forward toward camera during landing so whole character is visible from top-down camera")]
+        [SerializeField] private float landingFeetForwardTilt = 38f;
+
         [Header("Level Start Sequence")]
         [Tooltip("If true, plays juicy entrance animations on level start/restart")]
         [SerializeField] private bool animateLevelStart = true;
@@ -815,8 +823,6 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 : Vector3.zero;
 
             Vector3 endPos = (targetBus != null) ? targetBus.transform.TransformPoint(localSeatOffset) : targetSeatPos;
-            Vector3 midPoint = (startPos + endPos) * 0.5f + Vector3.up * 1.2f - Vector3.forward * 0.6f;
-
             float elapsed = 0f;
             while (elapsed < passengerFlightDuration)
             {
@@ -829,9 +835,15 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                     endPos = targetBus.transform.TransformPoint(localSeatOffset);
                 }
 
+                Vector3 midPoint = (startPos + endPos) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
                 float oneMinusT = 1f - t;
                 Vector3 currentPos = oneMinusT * oneMinusT * startPos + 2f * oneMinusT * t * midPoint + t * t * endPos;
                 flyer.transform.position = currentPos;
+
+                if (cpFlyer != null)
+                {
+                    cpFlyer.ApplyJumpFlightTilt(t, landingFeetForwardTilt, characterRotationEuler);
+                }
                 yield return null;
             }
 
@@ -857,8 +869,6 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             flyer.transform.position = startPos;
 
             Vector3 destWorld = puzzleGrid.GridToWorld(destCell, 1, false);
-            Vector3 midPoint = (startPos + destWorld) * 0.5f + Vector3.up * 1.2f - Vector3.forward * 0.6f;
-
             float elapsed = 0f;
             while (elapsed < passengerFlightDuration)
             {
@@ -870,9 +880,17 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                     startPos = sourceBus.transform.TransformPoint(localSeatOffset);
                 }
 
+                Vector3 midPoint = (startPos + destWorld) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
                 float oneMinusT = 1f - t;
                 Vector3 currentPos = oneMinusT * oneMinusT * startPos + 2f * oneMinusT * t * midPoint + t * t * destWorld;
                 flyer.transform.position = currentPos;
+
+                if (cpFlyer != null)
+                {
+                    // Feet forward during flight and descent; straightens upright on touchdown
+                    float tiltProg = t < 0.82f ? (t / 0.82f) : Mathf.Lerp(1f, 0f, (t - 0.82f) / 0.18f);
+                    cpFlyer.ApplyJumpFlightTilt(tiltProg, landingFeetForwardTilt, characterRotationEuler);
+                }
                 yield return null;
             }
 
