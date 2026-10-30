@@ -28,9 +28,18 @@ namespace SandBlocks.Editor
         private SerializedProperty backPlateThicknessProp;
         private SerializedProperty floorExceptionMarginProp;
         private SerializedProperty autoBuildVisualsProp;
+        private SerializedProperty autoExtendWithCrowdSpacingProp;
+        private SerializedProperty topSpacingPaddingProp;
+        private SerializedProperty sideSpacingPaddingProp;
 
         private void OnEnable()
         {
+            EnsureProperties();
+        }
+
+        private void EnsureProperties()
+        {
+            if (serializedObject == null) return;
             shapeTypeProp = serializedObject.FindProperty("shapeType");
             widthProp = serializedObject.FindProperty("width");
             heightProp = serializedObject.FindProperty("height");
@@ -51,30 +60,48 @@ namespace SandBlocks.Editor
             backPlateThicknessProp = serializedObject.FindProperty("backPlateThickness");
             floorExceptionMarginProp = serializedObject.FindProperty("floorExceptionMargin");
             autoBuildVisualsProp = serializedObject.FindProperty("autoBuildVisuals");
+            autoExtendWithCrowdSpacingProp = serializedObject.FindProperty("autoExtendWithCrowdSpacing");
+            topSpacingPaddingProp = serializedObject.FindProperty("topSpacingPadding");
+            sideSpacingPaddingProp = serializedObject.FindProperty("sideSpacingPadding");
+        }
+
+        private void SafePropertyField(SerializedProperty prop, bool includeChildren = true)
+        {
+            if (prop == null) return;
+            try
+            {
+                EditorGUILayout.PropertyField(prop, includeChildren);
+            }
+            catch (System.Exception)
+            {
+                // Silently guard against transient Unity native property pointer issues
+            }
         }
 
         public override void OnInspectorGUI()
         {
+            if (serializedObject == null || target == null) return;
             serializedObject.Update();
+            EnsureProperties();
             var boundary = (ContainerBoundary)target;
 
             EditorGUILayout.LabelField("Container Geometry & Shape", EditorStyles.boldLabel);
-            if (shapeTypeProp != null) EditorGUILayout.PropertyField(shapeTypeProp);
+            SafePropertyField(shapeTypeProp);
 
             var shape = shapeTypeProp != null ? (ContainerShapeType)shapeTypeProp.enumValueIndex : ContainerShapeType.Rectangle;
 
             if (shape == ContainerShapeType.Rectangle)
             {
-                if (widthProp != null) EditorGUILayout.PropertyField(widthProp);
-                if (heightProp != null) EditorGUILayout.PropertyField(heightProp);
-                if (centerProp != null) EditorGUILayout.PropertyField(centerProp);
+                SafePropertyField(widthProp);
+                SafePropertyField(heightProp);
+                SafePropertyField(centerProp);
 
                 EditorGUILayout.Space(4);
                 EditorGUILayout.LabelField("Independent Border Offsets", EditorStyles.miniBoldLabel);
-                if (leftOffsetProp != null) EditorGUILayout.PropertyField(leftOffsetProp);
-                if (rightOffsetProp != null) EditorGUILayout.PropertyField(rightOffsetProp);
-                if (topOffsetProp != null) EditorGUILayout.PropertyField(topOffsetProp);
-                if (bottomOffsetProp != null) EditorGUILayout.PropertyField(bottomOffsetProp);
+                SafePropertyField(leftOffsetProp);
+                SafePropertyField(rightOffsetProp);
+                SafePropertyField(topOffsetProp);
+                SafePropertyField(bottomOffsetProp);
             }
             else
             {
@@ -107,33 +134,42 @@ namespace SandBlocks.Editor
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.Space(4);
-                if (customPointsProp != null) EditorGUILayout.PropertyField(customPointsProp, true);
+                SafePropertyField(customPointsProp, true);
             }
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("Visual Styling & Elevation", EditorStyles.boldLabel);
-            if (borderColorProp != null) EditorGUILayout.PropertyField(borderColorProp);
-            if (interiorColorProp != null) EditorGUILayout.PropertyField(interiorColorProp);
-            if (beamThicknessProp != null) EditorGUILayout.PropertyField(beamThicknessProp);
-            if (beamDepthProp != null) EditorGUILayout.PropertyField(beamDepthProp);
-            if (beamElevationYProp != null) EditorGUILayout.PropertyField(beamElevationYProp);
-            if (beamHeightProp != null) EditorGUILayout.PropertyField(beamHeightProp);
+            SafePropertyField(borderColorProp);
+            SafePropertyField(interiorColorProp);
+            SafePropertyField(beamThicknessProp);
+            SafePropertyField(beamDepthProp);
+            SafePropertyField(beamElevationYProp);
+            SafePropertyField(beamHeightProp);
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("Back Plate Elevation", EditorStyles.miniBoldLabel);
             if (showBackPlateProp != null)
             {
-                EditorGUILayout.PropertyField(showBackPlateProp);
+                SafePropertyField(showBackPlateProp);
                 if (showBackPlateProp.boolValue)
                 {
-                    if (backPlateElevationYProp != null) EditorGUILayout.PropertyField(backPlateElevationYProp);
-                    if (backPlateThicknessProp != null) EditorGUILayout.PropertyField(backPlateThicknessProp);
+                    SafePropertyField(backPlateElevationYProp);
+                    SafePropertyField(backPlateThicknessProp);
                     EditorGUILayout.HelpBox($"Crowd characters dynamically stand on backplate surface at Y = {boundary.SurfaceElevationY:F3} (Center: {boundary.BackPlateElevationY:F3} + Half Thickness: {(boundary.BackPlateThickness * 0.5f):F3})", MessageType.None);
                 }
             }
 
-            if (floorExceptionMarginProp != null) EditorGUILayout.PropertyField(floorExceptionMarginProp);
-            if (autoBuildVisualsProp != null) EditorGUILayout.PropertyField(autoBuildVisualsProp);
+            SafePropertyField(floorExceptionMarginProp);
+            SafePropertyField(autoBuildVisualsProp);
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Auto-Extend for Spaced Crowd", EditorStyles.miniBoldLabel);
+            SafePropertyField(autoExtendWithCrowdSpacingProp);
+            if (autoExtendWithCrowdSpacingProp != null && autoExtendWithCrowdSpacingProp.boolValue)
+            {
+                SafePropertyField(topSpacingPaddingProp);
+                SafePropertyField(sideSpacingPaddingProp);
+            }
 
             EditorGUILayout.Space(6);
             if (GUILayout.Button("Rebuild Visual Container", GUILayout.Height(28)))

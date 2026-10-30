@@ -15,6 +15,7 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 4
   particleRadius: 0.1822
+  characterScale: 0.42
   maxParticles: 154
   containerShape: 0
   containerWidth: 4.67
@@ -101,6 +102,7 @@ MonoBehaviour:
   unifiedGridRows: 8
   unifiedGridRotation: 0
   unifiedCellSize: 1.35
+  unifiedMode: 0
   sharedDestinationPos: {x: 0, y: 0}
   unifiedCells: []
   unifiedBuses: []

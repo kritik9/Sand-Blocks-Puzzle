@@ -39,14 +39,56 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [SerializeField] private float characterScale = 0.08f;
         [Tooltip("Random scale variation range applied to characters (multiplier on base scale)")]
         [SerializeField] private Vector2 scaleVariationRange = new Vector2(0.92f, 1.08f);
+
+        [Header("Character Rotation & Jitter")]
         [Tooltip("If true, rotates characters 180 degrees so their back side faces the camera, revealing their full body")]
         [SerializeField] private bool faceBackSide = true;
-        [Tooltip("Local rotation applied to passenger figures")]
+        [Tooltip("Base Euler rotation applied to standing passenger figures (X=pitch, Y=yaw, Z=roll)")]
         [SerializeField] private Vector3 characterRotationEuler = Vector3.zero;
         [Tooltip("Random Y-axis yaw rotation jitter range (degrees)")]
         [SerializeField] private Vector2 rotationJitterYRange = new Vector2(-12f, 12f);
-        [Tooltip("Z elevation offset toward camera (height up)")]
+        [Tooltip("Random Z-axis lean tilt range (degrees)")]
+        [SerializeField] private Vector2 rotationJitterZRange = new Vector2(-3f, 3f);
+        [Tooltip("Z elevation offset toward camera in legacy Vertical_XY mode")]
         [SerializeField] private float characterZOffset = -0.15f;
+
+        [Header("Standing Crowd Layout & Spacing")]
+        [Tooltip("Horizontal spacing multiplier between passenger columns within a cell (e.g. 1.0 = standard, >1.0 spreads columns wider)")]
+        [Range(0.4f, 2.5f)]
+        [SerializeField] private float crowdHorizontalSpacingMultiplier = 1.0f;
+
+        [Tooltip("Vertical (depth) spacing multiplier between passenger rows within a cell (e.g. 1.0 = standard, >1.0 spreads rows further apart)")]
+        [Range(0.4f, 2.5f)]
+        [SerializeField] private float crowdVerticalSpacingMultiplier = 1.0f;
+
+        [Tooltip("Base column spacing ratio relative to cell size")]
+        [SerializeField] private float baseColumnSpacingRatio = 0.22f;
+
+        [Tooltip("Base row spacing ratio relative to cell size")]
+        [SerializeField] private float baseRowSpacingRatio = 0.26f;
+
+        [Tooltip("If true, automatically scales down passenger figures when a cell has many passengers (e.g. > 6) so they fit comfortably without intersecting")]
+        [SerializeField] private bool autoScaleCrowdByCount = true;
+
+        [Tooltip("Scale multiplier applied when cell has > 6 passengers if autoScaleCrowdByCount is enabled")]
+        [Range(0.5f, 1.0f)]
+        [SerializeField] private float denseCrowdScaleFactor = 0.78f;
+
+        [Header("Passenger Base Pad (CellPad) Dimensions")]
+        [Tooltip("Thickness of the cell pad in Horizontal_XZ mode")]
+        [SerializeField] private float cellPadThickness = 0.06f;
+
+        [Tooltip("Elevation Y of the cell pad in Horizontal_XZ mode")]
+        [SerializeField] private float cellPadElevationY = 0.03f;
+
+        [Tooltip("Extra elevation offset for characters on the pad (fine-tune feet contact)")]
+        [SerializeField] private float characterElevationOffset = 0.0f;
+
+        [Tooltip("Thickness of destination station pads in Horizontal_XZ mode")]
+        [SerializeField] private float stationPadThickness = 0.08f;
+
+        [Tooltip("Elevation Y of destination station pads in Horizontal_XZ mode")]
+        [SerializeField] private float stationPadElevationY = 0.04f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color destinationColor = new Color(1f, 0.82f, 0.2f, 1f);
@@ -102,6 +144,35 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         public bool IsBusBusy(BusVehicle bus) => false;
         public bool IsLevelStartAnimating => isLevelStartAnimating;
         public bool AnimateLevelStart { get => animateLevelStart; set => animateLevelStart = value; }
+        public float CrowdHorizontalSpacingMultiplier { get => crowdHorizontalSpacingMultiplier; set { crowdHorizontalSpacingMultiplier = value; RefreshAllCellVisuals(); } }
+        public float CrowdVerticalSpacingMultiplier { get => crowdVerticalSpacingMultiplier; set { crowdVerticalSpacingMultiplier = value; RefreshAllCellVisuals(); } }
+        public bool AutoScaleCrowdByCount { get => autoScaleCrowdByCount; set { autoScaleCrowdByCount = value; RefreshAllCellVisuals(); } }
+        public float DenseCrowdScaleFactor { get => denseCrowdScaleFactor; set { denseCrowdScaleFactor = value; RefreshAllCellVisuals(); } }
+        public float CellPadThickness { get => cellPadThickness; set { cellPadThickness = value; RefreshAllCellVisuals(); } }
+        public float CellPadElevationY { get => cellPadElevationY; set { cellPadElevationY = value; RefreshAllCellVisuals(); } }
+        public float CharacterElevationOffset { get => characterElevationOffset; set { characterElevationOffset = value; RefreshAllCellVisuals(); } }
+        public bool FaceBackSide { get => faceBackSide; set { faceBackSide = value; RefreshAllCellVisuals(); } }
+        public Vector2 RotationJitterZRange { get => rotationJitterZRange; set { rotationJitterZRange = value; RefreshAllCellVisuals(); } }
+
+        public Vector3 GetEffectiveBaseEuler()
+        {
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+            float curBaseRotY = isHorizontal
+                ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
+                : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+            return new Vector3(characterRotationEuler.x, curBaseRotY, characterRotationEuler.z);
+        }
+
+        private static float GetStableRandom(int index, float min, float max)
+        {
+            if (Mathf.Approximately(min, max)) return min;
+            uint hash = (uint)index * 2654435761u ^ 0x9e3779b9u;
+            hash = (hash ^ (hash >> 16)) * 0x85ebca6bu;
+            hash = (hash ^ (hash >> 13)) * 0xc2b2ae35u;
+            hash ^= (hash >> 16);
+            float t = (hash & 0xFFFF) / 65535f;
+            return Mathf.Lerp(min, max, t);
+        }
 
         private class RuntimePassengerCell
         {
@@ -284,66 +355,84 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         /// - For 6 or fewer: Uses authentic Dice Symmetry (1=center, 2=diagonal, 3=diagonal+center, 4=4 corners, 5=5 dot, 6=2x3 columns).
         /// - For more than 6: Divides passengers evenly across three horizontal rows in the same cell.
         /// </summary>
-        public static Vector3[] GetSymmetricalPositions(int count, float cellSize)
+public static Vector3[] GetSymmetricalPositions(int count, float cellSize)
         {
             if (count <= 0) return Array.Empty<Vector3>();
 
+            float hMult = (Instance != null) ? Instance.crowdHorizontalSpacingMultiplier : 1.0f;
+            float vMult = (Instance != null) ? Instance.crowdVerticalSpacingMultiplier : 1.0f;
+            float baseColRatio = (Instance != null) ? Instance.baseColumnSpacingRatio : 0.22f;
+            float baseRowRatio = (Instance != null) ? Instance.baseRowSpacingRatio : 0.26f;
+
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+            float surfaceY = (Instance != null)
+                ? (Instance.cellPadElevationY + Instance.cellPadThickness * 0.5f + Instance.characterElevationOffset)
+                : 0.06f;
+            float zOffset = (Instance != null) ? Instance.characterZOffset : -0.15f;
+
             var positions = new Vector3[count];
-            float d = cellSize * 0.24f;
+
+            float hSpacing = cellSize * baseColRatio * hMult;
+            float vSpacing = cellSize * baseRowRatio * vMult;
+            float maxSpan = cellSize * 0.82f;
 
             if (count <= 6)
             {
+                float dX = Mathf.Min(hSpacing, maxSpan * 0.45f);
+                float dV = Mathf.Min(vSpacing, maxSpan * 0.45f);
+
                 switch (count)
                 {
                     case 1:
-                        positions[0] = new Vector3(0f, 0f, -0.2f);
+                        positions[0] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset);
                         break;
                     case 2:
-                        positions[0] = new Vector3(-d, d, -0.2f);
-                        positions[1] = new Vector3(d, -d, -0.2f);
+                        positions[0] = MakePos(-dX, 0f, isHorizontal, surfaceY, zOffset);
+                        positions[1] = MakePos(dX, 0f, isHorizontal, surfaceY, zOffset);
                         break;
                     case 3:
-                        positions[0] = new Vector3(-d, d, -0.2f);
-                        positions[1] = new Vector3(0f, 0f, -0.2f);
-                        positions[2] = new Vector3(d, -d, -0.2f);
+                        positions[0] = MakePos(-dX, dV * 0.7f, isHorizontal, surfaceY, zOffset);
+                        positions[1] = MakePos(0f, -dV * 0.35f, isHorizontal, surfaceY, zOffset);
+                        positions[2] = MakePos(dX, dV * 0.7f, isHorizontal, surfaceY, zOffset);
                         break;
                     case 4:
-                        positions[0] = new Vector3(-d, d, -0.2f);
-                        positions[1] = new Vector3(d, d, -0.2f);
-                        positions[2] = new Vector3(-d, -d, -0.2f);
-                        positions[3] = new Vector3(d, -d, -0.2f);
+                        positions[0] = MakePos(-dX, dV * 0.6f, isHorizontal, surfaceY, zOffset);
+                        positions[1] = MakePos(dX, dV * 0.6f, isHorizontal, surfaceY, zOffset);
+                        positions[2] = MakePos(-dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset);
+                        positions[3] = MakePos(dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset);
                         break;
                     case 5:
-                        positions[0] = new Vector3(-d, d, -0.2f);
-                        positions[1] = new Vector3(d, d, -0.2f);
-                        positions[2] = new Vector3(0f, 0f, -0.2f);
-                        positions[3] = new Vector3(-d, -d, -0.2f);
-                        positions[4] = new Vector3(d, -d, -0.2f);
+                        positions[0] = MakePos(-dX, dV * 0.65f, isHorizontal, surfaceY, zOffset);
+                        positions[1] = MakePos(dX, dV * 0.65f, isHorizontal, surfaceY, zOffset);
+                        positions[2] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset);
+                        positions[3] = MakePos(-dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset);
+                        positions[4] = MakePos(dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset);
                         break;
                     case 6:
-                        positions[0] = new Vector3(-d, d, -0.2f);
-                        positions[1] = new Vector3(d, d, -0.2f);
-                        positions[2] = new Vector3(-d, 0f, -0.2f);
-                        positions[3] = new Vector3(d, 0f, -0.2f);
-                        positions[4] = new Vector3(-d, -d, -0.2f);
-                        positions[5] = new Vector3(d, -d, -0.2f);
+                        float col3Spacing = Mathf.Min(hSpacing * 0.85f, maxSpan / 2f);
+                        for (int c = 0; c < 3; c++)
+                        {
+                            float x = (c - 1f) * col3Spacing;
+                            positions[c] = MakePos(x, dV * 0.55f, isHorizontal, surfaceY, zOffset);
+                            positions[c + 3] = MakePos(x, -dV * 0.55f, isHorizontal, surfaceY, zOffset);
+                        }
                         break;
                 }
                 return positions;
             }
 
-            // More than 6: Divide into three horizontal rows in the same cell
-            int rowCount = 3;
+            // More than 6: 2 rows (for 7-8) or 3 rows (for 9+)
+            int rowCount = (count <= 8) ? 2 : 3;
             int basePerRow = count / rowCount;
             int remainder = count % rowCount;
 
-            int[] countsPerRow = new int[3];
-            countsPerRow[0] = basePerRow + (remainder > 0 ? 1 : 0); // Top row
-            countsPerRow[1] = basePerRow + (remainder > 1 ? 1 : 0); // Middle row
-            countsPerRow[2] = basePerRow;                          // Bottom row
+            int[] countsPerRow = new int[rowCount];
+            for (int r = 0; r < rowCount; r++)
+            {
+                countsPerRow[r] = basePerRow + (r < remainder ? 1 : 0);
+            }
 
-            float rowSpacing = cellSize * 0.26f;
-            float[] rowY = new float[] { rowSpacing, 0f, -rowSpacing };
+            float actualRowSpacing = Mathf.Min(vSpacing, maxSpan / Mathf.Max(1, rowCount - 1));
 
             int index = 0;
             for (int r = 0; r < rowCount; r++)
@@ -351,22 +440,34 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 int numInRow = countsPerRow[r];
                 if (numInRow <= 0) continue;
 
-                float maxRowWidth = cellSize * 0.74f;
-                float xSpacing = (numInRow > 1) ? Mathf.Min(cellSize * 0.20f, maxRowWidth / (numInRow - 1)) : 0f;
+                float actualColSpacing = (numInRow > 1) ? Mathf.Min(hSpacing, maxSpan / (numInRow - 1)) : 0f;
+                float rowPos = (r - (rowCount - 1) * 0.5f) * actualRowSpacing;
 
                 for (int c = 0; c < numInRow; c++)
                 {
-                    float x = (numInRow > 1) ? (c - (numInRow - 1) * 0.5f) * xSpacing : 0f;
-                    positions[index++] = new Vector3(x, rowY[r], -0.2f);
+                    float x = (numInRow > 1) ? (c - (numInRow - 1) * 0.5f) * actualColSpacing : 0f;
+                    positions[index++] = MakePos(x, -rowPos, isHorizontal, surfaceY, zOffset);
                 }
             }
 
             return positions;
         }
+
+        private static Vector3 MakePos(float x, float rowOffset, bool isHorizontal, float surfaceY, float zOffset)
+        {
+            if (isHorizontal)
+            {
+                return new Vector3(x, surfaceY, rowOffset);
+            }
+            else
+            {
+                return new Vector3(x, rowOffset, zOffset);
+            }
+        }
         #endregion
 
         #region Setup Visuals
-        private void SpawnPassengerCell(UnifiedCellData data)
+private void SpawnPassengerCell(UnifiedCellData data)
         {
             var cell = new RuntimePassengerCell
             {
@@ -383,13 +484,27 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             cell.rootObject = cellRoot;
 
             Color c = GetPaletteColor(data.colorId);
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
 
             // Base platform pad
             var basePad = GameObject.CreatePrimitive(PrimitiveType.Cube);
             basePad.name = "CellPad";
             basePad.transform.SetParent(cellRoot.transform);
-            basePad.transform.localPosition = new Vector3(0f, 0f, 0.08f);
-            basePad.transform.localScale = animateLevelStart ? Vector3.zero : new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f);
+            if (isHorizontal)
+            {
+                basePad.transform.localPosition = new Vector3(0f, cellPadElevationY, 0f);
+                basePad.transform.localScale = animateLevelStart
+                    ? Vector3.zero
+                    : new Vector3(puzzleGrid.CellSize * 0.90f, cellPadThickness, puzzleGrid.CellSize * 0.90f);
+            }
+            else
+            {
+                basePad.transform.localPosition = new Vector3(0f, 0f, 0.08f);
+                basePad.transform.localScale = animateLevelStart
+                    ? Vector3.zero
+                    : new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f);
+            }
+
             var padCol = basePad.GetComponent<Collider>();
             if (padCol != null) Destroy(padCol);
 
@@ -401,10 +516,11 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             // Symmetrical passenger figures standing on cell
             int figureCount = Mathf.Min(data.passengerCount, 18);
             Vector3[] positions = GetSymmetricalPositions(figureCount, puzzleGrid.CellSize);
+            float figBaseScale = (autoScaleCrowdByCount && figureCount > 6) ? characterScale * denseCrowdScaleFactor : characterScale;
 
             for (int i = 0; i < figureCount; i++)
             {
-                var fig = CreatePassengerFigure(data.colorId);
+                var fig = CreatePassengerFigure(data.colorId, i, data.gridPosition);
                 fig.name = $"Figure_{i}";
                 fig.transform.SetParent(cellRoot.transform);
                 fig.transform.localPosition = positions[i];
@@ -412,14 +528,17 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 {
                     fig.transform.localScale = Vector3.zero;
                 }
+                else
+                {
+                    fig.transform.localScale = Vector3.one * figBaseScale;
+                }
                 cell.miniFigures.Add(fig);
             }
-
 
             passengerCells[data.gridPosition] = cell;
         }
 
-        private void BuildDestinationStation(List<Vector2Int> cells)
+                private void BuildDestinationStation(List<Vector2Int> cells)
         {
             if (destinationVisual != null) Destroy(destinationVisual);
 
@@ -442,8 +561,17 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 pad.name = $"StationPad_{pos.x}_{pos.y}";
                 pad.transform.SetParent(destinationVisual.transform);
                 pad.transform.position = worldPos;
-                pad.transform.localPosition = new Vector3(pad.transform.localPosition.x, pad.transform.localPosition.y, 0.12f);
-                pad.transform.localScale = animateLevelStart ? Vector3.zero : new Vector3(puzzleGrid.CellSize * 0.96f, puzzleGrid.CellSize * 0.96f, 0.20f);
+                bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+                if (isHorizontal)
+                {
+                    pad.transform.localPosition = new Vector3(pad.transform.localPosition.x, stationPadElevationY, pad.transform.localPosition.z);
+                    pad.transform.localScale = animateLevelStart ? Vector3.zero : new Vector3(puzzleGrid.CellSize * 0.96f, stationPadThickness, puzzleGrid.CellSize * 0.96f);
+                }
+                else
+                {
+                    pad.transform.localPosition = new Vector3(pad.transform.localPosition.x, pad.transform.localPosition.y, 0.12f);
+                    pad.transform.localScale = animateLevelStart ? Vector3.zero : new Vector3(puzzleGrid.CellSize * 0.96f, puzzleGrid.CellSize * 0.96f, 0.20f);
+                }
                 var col = pad.GetComponent<Collider>();
                 if (col != null) Destroy(col);
 
@@ -767,10 +895,18 @@ namespace SandBlocks.Gameplay.UnifiedGrid
 
             character.name = $"TerminalPassenger_{totalTransferredCount}";
             character.transform.SetParent(padTransform);
-            character.transform.localEulerAngles = characterRotationEuler;
-            character.transform.localScale = Vector3.one * characterScale;
+            Vector3 baseEuler = GetEffectiveBaseEuler();
             var destCp = character.GetComponent<CharacterPassenger>();
-            if (destCp != null) destCp.PlayIdle();
+            if (destCp != null)
+            {
+                destCp.PlayIdle();
+                destCp.ApplyRotationJitter(baseEuler, 0f, 0f);
+            }
+            else
+            {
+                character.transform.localRotation = Quaternion.Euler(baseEuler);
+            }
+            character.transform.localScale = Vector3.one * characterScale;
 
             if (!destinationCellFigures.ContainsKey(destCell)) destinationCellFigures[destCell] = new List<GameObject>();
             var list = destinationCellFigures[destCell];
@@ -908,10 +1044,21 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             onArrived?.Invoke(flyer);
         }
 
-        private GameObject CreatePassengerFigure(int colorId)
+private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2Int gridPos = default)
         {
             GameObject fig;
             Color c = GetPaletteColor(colorId);
+
+            Vector3 baseEuler = GetEffectiveBaseEuler();
+
+            int seedY = cellIndex * 2399 + (gridPos.x * 37 + gridPos.y * 101) * 10007 + 3;
+            int seedZ = cellIndex * 4001 + (gridPos.x * 53 + gridPos.y * 131) * 13337 + 5;
+            float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
+                : 0f;
+            float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
+                : 0f;
 
             if (characterPrefab != null)
             {
@@ -920,22 +1067,21 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                     ? UnityEngine.Random.Range(scaleVariationRange.x, scaleVariationRange.y)
                     : 1f;
                 fig.transform.localScale = Vector3.one * (characterScale * randScaleMult);
-                float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
-                float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
-                    ? UnityEngine.Random.Range(rotationJitterYRange.x, rotationJitterYRange.y)
-                    : 0f;
-                fig.transform.localEulerAngles = new Vector3(characterRotationEuler.x, baseRotY + jitterY, characterRotationEuler.z);
-                fig.transform.localPosition = new Vector3(0f, 0f, characterZOffset);
+
                 var col = fig.GetComponent<Collider>();
                 if (col != null) Destroy(col);
+
                 var cp = fig.GetComponent<CharacterPassenger>() ?? fig.AddComponent<CharacterPassenger>();
                 cp.SetColor(c);
                 cp.PlayIdle();
+                cp.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
             }
             else
             {
                 fig = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                fig.transform.localScale = new Vector3(0.24f, 0.28f, 0.24f);
+                bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+                fig.transform.localScale = isHorizontal ? new Vector3(0.24f, 0.28f, 0.24f) : new Vector3(0.24f, 0.28f, 0.24f);
+                fig.transform.localRotation = Quaternion.Euler(baseEuler.x, baseEuler.y + jitterY, baseEuler.z + jitterZ);
                 var col = fig.GetComponent<Collider>();
                 if (col != null) Destroy(col);
                 var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
@@ -1023,11 +1169,14 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         private IEnumerator PlayLevelStartSequenceRoutine()
         {
             isLevelStartAnimating = true;
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
 
             // 1. Destination platform entrance (if in DestinationDropOff mode)
             if (CurrentUnifiedMode == UnifiedMode.DestinationDropOff && destinationVisual != null && puzzleGrid != null)
             {
-                Vector3 destPadScale = new Vector3(puzzleGrid.CellSize * 0.96f, puzzleGrid.CellSize * 0.96f, 0.20f);
+                Vector3 destPadScale = isHorizontal
+                    ? new Vector3(puzzleGrid.CellSize * 0.96f, stationPadThickness, puzzleGrid.CellSize * 0.96f)
+                    : new Vector3(puzzleGrid.CellSize * 0.96f, puzzleGrid.CellSize * 0.96f, 0.20f);
                 int padIdx = 0;
                 foreach (var pad in destinationPadObjects.Values)
                 {
@@ -1069,11 +1218,10 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             });
 
             Vector3 targetBaseScale = (puzzleGrid != null)
-                ? new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f)
+                ? (isHorizontal
+                    ? new Vector3(puzzleGrid.CellSize * 0.90f, cellPadThickness, puzzleGrid.CellSize * 0.90f)
+                    : new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f))
                 : Vector3.one;
-            Vector3 targetFigScale = characterPrefab != null
-                ? Vector3.one * characterScale
-                : new Vector3(0.24f, 0.28f, 0.24f);
 
             float maxAnimDuration = 0f;
 
@@ -1090,6 +1238,13 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                     StartCoroutine(PopInTransform(cell.baseRenderer.transform, targetBaseScale, delay: cellDelay, duration: 0.28f));
                     maxAnimDuration = Mathf.Max(maxAnimDuration, cellDelay + 0.28f);
                 }
+
+                float cellFigScale = (autoScaleCrowdByCount && cell.miniFigures.Count > 6)
+                    ? characterScale * denseCrowdScaleFactor
+                    : characterScale;
+                Vector3 targetFigScale = characterPrefab != null
+                    ? Vector3.one * cellFigScale
+                    : new Vector3(0.24f, 0.28f, 0.24f);
 
                 // Dolls pop in with micro-stagger
                 for (int f = 0; f < cell.miniFigures.Count; f++)
@@ -1190,12 +1345,12 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             }
 
             // 2. Passenger Cells & Figures
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
             Vector3 targetBaseScale = (puzzleGrid != null)
-                ? new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f)
+                ? (isHorizontal
+                    ? new Vector3(puzzleGrid.CellSize * 0.90f, cellPadThickness, puzzleGrid.CellSize * 0.90f)
+                    : new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f))
                 : Vector3.one;
-            Vector3 targetFigScale = characterPrefab != null
-                ? Vector3.one * characterScale
-                : new Vector3(0.24f, 0.28f, 0.24f);
 
             foreach (var kvp in passengerCells)
             {
@@ -1206,6 +1361,13 @@ namespace SandBlocks.Gameplay.UnifiedGrid
                 {
                     cell.baseRenderer.transform.localScale = targetBaseScale;
                 }
+
+                float cellFigScale = (autoScaleCrowdByCount && cell.miniFigures.Count > 6)
+                    ? characterScale * denseCrowdScaleFactor
+                    : characterScale;
+                Vector3 targetFigScale = characterPrefab != null
+                    ? Vector3.one * cellFigScale
+                    : new Vector3(0.24f, 0.28f, 0.24f);
 
                 for (int f = 0; f < cell.miniFigures.Count; f++)
                 {
@@ -1282,5 +1444,77 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             Cleanup();
         }
         #endregion
-    }
+    
+        [ContextMenu("Refresh All Cell Visuals")]
+        public void RefreshAllCellVisuals()
+        {
+            if (passengerCells == null || passengerCells.Count == 0 || puzzleGrid == null) return;
+
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+            Vector3 padScale = isHorizontal
+                ? new Vector3(puzzleGrid.CellSize * 0.90f, cellPadThickness, puzzleGrid.CellSize * 0.90f)
+                : new Vector3(puzzleGrid.CellSize * 0.90f, puzzleGrid.CellSize * 0.90f, 0.12f);
+            Vector3 padPos = isHorizontal
+                ? new Vector3(0f, cellPadElevationY, 0f)
+                : new Vector3(0f, 0f, 0.08f);
+
+            Vector3 baseEuler = GetEffectiveBaseEuler();
+
+            foreach (var cell in passengerCells.Values)
+            {
+                if (cell == null || cell.rootObject == null) continue;
+
+                if (cell.baseRenderer != null)
+                {
+                    cell.baseRenderer.transform.localScale = padScale;
+                    cell.baseRenderer.transform.localPosition = padPos;
+                }
+
+                int count = cell.miniFigures.Count;
+                if (count == 0) continue;
+
+                Vector3[] positions = GetSymmetricalPositions(count, puzzleGrid.CellSize);
+                float figScale = (autoScaleCrowdByCount && count > 6) ? characterScale * denseCrowdScaleFactor : characterScale;
+
+                for (int i = 0; i < count; i++)
+                {
+                    var fig = cell.miniFigures[i];
+                    if (fig == null) continue;
+
+                    if (i < positions.Length) fig.transform.localPosition = positions[i];
+                    fig.transform.localScale = Vector3.one * figScale;
+
+                    int seedY = i * 2399 + (cell.gridPos.x * 37 + cell.gridPos.y * 101) * 10007 + 3;
+                    int seedZ = i * 4001 + (cell.gridPos.x * 53 + cell.gridPos.y * 131) * 13337 + 5;
+                    float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                        ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
+                        : 0f;
+                    float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                        ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
+                        : 0f;
+
+                    var cp = fig.GetComponent<CharacterPassenger>();
+                    if (cp != null)
+                    {
+                        cp.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
+                    }
+                    else
+                    {
+                        fig.transform.localRotation = Quaternion.Euler(baseEuler.x, baseEuler.y + jitterY, baseEuler.z + jitterZ);
+                    }
+                }
+            }
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (Application.isPlaying)
+            {
+                RefreshAllCellVisuals();
+            }
+        }
+#endif
+
+}
 }

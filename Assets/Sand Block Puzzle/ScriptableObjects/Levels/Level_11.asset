@@ -1,0 +1,87 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
+  m_Name: Level_11
+  m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
+  gameplayMode: 0
+  levelName: Level 11
+  particleRadius: 0.1883
+  characterScale: 0.8
+  verticalSpacingMultiplier: 1.3
+  maxParticles: 289
+  containerShape: 0
+  containerWidth: 6.97125
+  containerHeight: 6.1793337
+  containerCenter: {x: 0, y: 0}
+  leftBorderOffset: 0
+  rightBorderOffset: 0
+  topBorderOffset: 0
+  bottomBorderOffset: 0
+  customPolygonPoints: []
+  patternType: 3
+  gridColumns: 13
+  gridRows: 13
+  customCrowdColors: 07000000070000000500000003000000030000000500000003000000050000000300000003000000050000000600000006000000070000000700000007000000050000000300000005000000030000000500000003000000050000000600000006000000060000000500000007000000070000000700000005000000030000000300000003000000050000000600000006000000060000000500000005000000050000000700000007000000070000000500000003000000050000000600000006000000060000000500000005000000010000000500000005000000070000000700000007000000030000000600000006000000060000000500000005000000080000000500000001000000050000000500000007000000070000000600000006000000060000000500000005000000080000000500000005000000050000000100000005000000050000000600000007000000060000000500000005000000080000000500000005000000050000000100000005000000050000000600000006000000060000000700000007000000050000000500000008000000050000000100000005000000050000000600000006000000060000000300000007000000070000000700000005000000050000000800000005000000050000000600000006000000060000000500000003000000050000000700000007000000070000000500000005000000050000000600000006000000060000000500000003000000030000000300000005000000070000000700000007000000050000000600000006000000060000000500000003000000050000000300000005000000030000000500000007000000070000000700000006000000060000000500000003000000030000000500000003000000050000000300000003000000050000000700000007000000
+  colorMapTexture: {fileID: 0}
+  puzzleColumns: 7
+  puzzleRows: 6
+  buses:
+  - name: Yellow Bus
+    colorId: 6
+    capacity: 36
+    length: 3
+    rotationDegrees: 180
+    gridPosition: {x: 1, y: 3}
+  - name: Orange Bus
+    colorId: 7
+    capacity: 33
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 1}
+  - name: Pink Bus
+    colorId: 3
+    capacity: 26
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 0}
+  - name: Green Bus
+    colorId: 5
+    capacity: 32
+    length: 3
+    rotationDegrees: 180
+    gridPosition: {x: 3, y: 0}
+  - name: Long White
+    colorId: 5
+    capacity: 32
+    length: 3
+    rotationDegrees: 90
+    gridPosition: {x: 0, y: 1}
+  - name: Bus 8
+    colorId: 1
+    capacity: 5
+    length: 3
+    rotationDegrees: 90
+    gridPosition: {x: 6, y: 1}
+  - name: Bus 9
+    colorId: 8
+    capacity: 5
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 3, y: 2}
+  unifiedGridColumns: 8
+  unifiedGridRows: 8
+  unifiedGridRotation: 0
+  unifiedCellSize: 1.35
+  unifiedMode: 0
+  sharedDestinationPos: {x: 0, y: 0}
+  unifiedCells: []
+  unifiedBuses: []

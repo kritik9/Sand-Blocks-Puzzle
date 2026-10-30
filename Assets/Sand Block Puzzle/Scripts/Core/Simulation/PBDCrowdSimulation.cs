@@ -306,9 +306,17 @@ namespace SandBlocks.Core.Simulation
             if (targetIdx >= 0)
             {
                 var target = particles[targetIdx];
-                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-                float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
-                worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, target.position.y) : new Vector3(target.position.x, target.position.y, 0f);
+                var renderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+                if (renderer != null)
+                {
+                    worldPos = renderer.GetCalculatedWorldPosition(target.position);
+                }
+                else
+                {
+                    bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                    float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
+                    worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, target.position.y) : new Vector3(target.position.x, target.position.y, 0f);
+                }
                 target.isActive = false;
                 particles[targetIdx] = target;
                 if (remainingActiveCount > 0) remainingActiveCount--;
@@ -325,12 +333,14 @@ namespace SandBlocks.Core.Simulation
         {
             if (!isInitialized || activeCount == 0) return false;
 
-            float thresholdY = bottomY + tolerance;
-            float lowerCatchY = bottomY - 0.2f;
+            float margin = (boundary != null) ? boundary.FloorExceptionMargin : 0.8f;
+            float lowerCatchY = bottomY - margin;
             for (int i = 0; i < activeCount; i++)
             {
                 var p = particles[i];
                 if (!p.isActive || p.colorId != colorId) continue;
+                // A particle rests on floor at bottomY + p.radius. Center must be within tolerance above resting height.
+                float thresholdY = bottomY + p.radius + Mathf.Max(tolerance, 0.02f);
                 if (p.position.y >= lowerCatchY && p.position.y <= thresholdY && p.position.x >= minX && p.position.x <= maxX)
                 {
                     return true;
@@ -349,8 +359,8 @@ namespace SandBlocks.Core.Simulation
             worldPos = Vector3.zero;
             if (!isInitialized || activeCount == 0) return false;
 
-            float thresholdY = bottomY + tolerance;
-            float lowerCatchY = bottomY - 0.2f;
+            float margin = (boundary != null) ? boundary.FloorExceptionMargin : 0.8f;
+            float lowerCatchY = bottomY - margin;
             float bestDistSq = float.MaxValue;
             int targetIdx = -1;
 
@@ -359,6 +369,7 @@ namespace SandBlocks.Core.Simulation
                 var p = particles[i];
                 if (!p.isActive || p.colorId != colorId) continue;
 
+                float thresholdY = bottomY + p.radius + Mathf.Max(tolerance, 0.02f);
                 if (p.position.y >= lowerCatchY && p.position.y <= thresholdY && p.position.x >= minX && p.position.x <= maxX)
                 {
                     float dx = p.position.x - targetX;
@@ -376,9 +387,17 @@ namespace SandBlocks.Core.Simulation
             {
                 var target = particles[targetIdx];
                 float safeY = math.max(target.position.y, bottomY + target.radius);
-                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-                float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
-                worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, safeY) : new Vector3(target.position.x, safeY, 0f);
+                var renderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+                if (renderer != null)
+                {
+                    worldPos = renderer.GetCalculatedWorldPosition(new float2(target.position.x, safeY));
+                }
+                else
+                {
+                    bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+                    float elevationY = (boundary != null) ? boundary.SurfaceElevationY : 0.08f;
+                    worldPos = isHorizontal ? new Vector3(target.position.x, elevationY, safeY) : new Vector3(target.position.x, safeY, 0f);
+                }
                 target.isActive = false;
                 particles[targetIdx] = target;
                 if (remainingActiveCount > 0) remainingActiveCount--;

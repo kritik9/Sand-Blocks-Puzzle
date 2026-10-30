@@ -26,6 +26,8 @@ namespace SandBlocks.Gameplay
         [Header("Transfer Tuning")]
         [SerializeField] private float transferInterval = 0.08f;
         [SerializeField] private float flightDuration = 0.35f;
+        [Tooltip("Depth / range along Z-axis (in Horizontal_XZ) into the crowd that can be collected by buses at the collection line.")]
+        [Range(0.05f, 2.5f)]
         [SerializeField] private float boundaryLayerTolerance = 0.7f;
         [SerializeField] private float commuterScale = 0.08f;
 
@@ -42,6 +44,10 @@ namespace SandBlocks.Gameplay
         [SerializeField] private bool showToleranceGizmo = true;
         [Tooltip("If true, only draws gizmos when this GameObject is selected. If false, always draws in Scene View.")]
         [SerializeField] private bool showGizmoOnlyWhenSelected = false;
+        [Tooltip("Vertical elevation offset above the container surface so gizmos and labels ride cleanly on top of characters")]
+        [SerializeField] private float gizmoElevationOffset = 0.03f;
+        [Tooltip("3D volume height for the tolerance and exception bands in Scene View")]
+        [SerializeField] private float gizmoVolumeHeight = 0.45f;
 
         private float transferTimer;
         private readonly List<GameObject> inFlightCommuters = new List<GameObject>();
@@ -105,6 +111,8 @@ namespace SandBlocks.Gameplay
 
             float bottomY = boundary.BottomY;
 
+            float effectiveTolerance = Mathf.Max(boundaryLayerTolerance, 0.02f);
+
             for (int i = 0; i < candidates.Count; i++)
             {
                 var bus = candidates[i];
@@ -117,14 +125,14 @@ namespace SandBlocks.Gameplay
 
                 // Only extract if people of this bus's color are currently ON THE BOTTOM BOUNDARY LINE
                 // and strictly within this bus's column percentage slice [minX, maxX]
-                if (!simulation.HasColorOnBottomBoundary(bus.ColorId, bottomY, minX, maxX, boundaryLayerTolerance))
+                if (!simulation.HasColorOnBottomBoundary(bus.ColorId, bottomY, minX, maxX, effectiveTolerance))
                 {
                     continue;
                 }
 
-                // Extract matching person within [minX, maxX] closest to bus center
-                float busCenterX = bus.transform.position.x;
-                if (simulation.TryExtractBottomParticle(bus.ColorId, bottomY, minX, maxX, busCenterX, out Vector3 startPos, boundaryLayerTolerance))
+                // Extract matching person within [minX, maxX] closest to bus center of this column slice
+                float sliceCenterX = (minX + maxX) * 0.5f;
+                if (simulation.TryExtractBottomParticle(bus.ColorId, bottomY, minX, maxX, sliceCenterX, out Vector3 startPos, effectiveTolerance))
                 {
                     if (bus is BusVehicle busVehicle)
                     {
@@ -165,7 +173,11 @@ namespace SandBlocks.Gameplay
 
             // Determine occupied columns on the puzzle grid
             int colMin = bus.GridPosition.x;
-            if (puzzleGrid.TryGetGridDropPosition(bus.transform.position, bus.Length, bus.IsVertical, out Vector2Int cand))
+            if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == bus)
+            {
+                colMin = dragHandler.CurrentHoveredGrid.x;
+            }
+            else if (puzzleGrid.TryGetGridDropPosition(bus.transform.position, bus.Length, bus.IsVertical, out Vector2Int cand))
             {
                 colMin = cand.x;
             }
@@ -186,8 +198,9 @@ namespace SandBlocks.Gameplay
             minX = crowdLeft + minPct * crowdWidth;
             maxX = crowdLeft + maxPct * crowdWidth;
 
-            // Small tolerance buffer for edge particles (0.12 units)
-            float toleranceBuffer = 0.12f;
+            // Safe column-proportional edge tolerance buffer (clamps to at most 25% of column span)
+            float colSpan = crowdWidth / totalCols;
+            float toleranceBuffer = Mathf.Min(0.35f, colSpan * 0.25f);
             minX -= toleranceBuffer;
             maxX += toleranceBuffer;
 
@@ -238,6 +251,18 @@ namespace SandBlocks.Gameplay
 
             int topRow = puzzleGrid != null ? puzzleGrid.Rows - 1 : 4;
             float cellSize = puzzleGrid != null ? puzzleGrid.CellSize : 1.35f;
+
+            // 0. Active dragging hover check: matches immediately while user drags bus to top row
+            if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == vehicle)
+            {
+                int hTopY = vehicle.IsVertical 
+                    ? (dragHandler.CurrentHoveredGrid.y + vehicle.Length - 1) 
+                    : dragHandler.CurrentHoveredGrid.y;
+                if (hTopY == topRow)
+                {
+                    return true;
+                }
+            }
 
             // 1. Grid coordinate check: works for placed vehicles and hovering vehicles whose GridPosition is updated
             int vTopGridY = vehicle.IsVertical 
@@ -455,38 +480,44 @@ namespace SandBlocks.Gameplay
 
             if (isHorizontal)
             {
-                float elevation = 0.05f;
+                float surfaceY = (boundary != null) ? boundary.SurfaceElevationY : 0.23f;
+                float baseElevation = surfaceY + gizmoElevationOffset;
+                float boxHalfH = gizmoVolumeHeight * 0.5f;
+                float boxCenterY = baseElevation + boxHalfH;
 
-                // 1. Container Floor Line
-                Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.9f);
-                Gizmos.DrawLine(new Vector3(leftX, elevation, bottomY), new Vector3(rightX, elevation, bottomY));
+                // 1. Container Floor Line (Darker vivid red)
+                Gizmos.color = new Color(0.95f, 0.12f, 0.12f, 1f);
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation, bottomY), new Vector3(rightX, baseElevation, bottomY));
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation + gizmoVolumeHeight, bottomY), new Vector3(rightX, baseElevation + gizmoVolumeHeight, bottomY));
 
-                // 2. Tolerance Threshold Line
-                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.95f);
-                Gizmos.DrawLine(new Vector3(leftX, elevation, thresholdY), new Vector3(rightX, elevation, thresholdY));
+                // 2. Tolerance Threshold Line (Rich solid gold/amber)
+                Gizmos.color = new Color(1f, 0.72f, 0.0f, 1f);
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation, thresholdY), new Vector3(rightX, baseElevation, thresholdY));
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation + gizmoVolumeHeight, thresholdY), new Vector3(rightX, baseElevation + gizmoVolumeHeight, thresholdY));
 
-                // 3. Semi-transparent Tolerance Band Area
-                Vector3 bandCenter = new Vector3((leftX + rightX) * 0.5f, elevation, bottomY + boundaryLayerTolerance * 0.5f);
-                Vector3 bandSize = new Vector3(width, 0.02f, boundaryLayerTolerance);
+                // 3. 3D Volumetric Tolerance Band Area (Amber / Deep Gold with prominent visibility)
+                Vector3 bandCenter = new Vector3((leftX + rightX) * 0.5f, boxCenterY, bottomY + boundaryLayerTolerance * 0.5f);
+                Vector3 bandSize = new Vector3(width, gizmoVolumeHeight, boundaryLayerTolerance);
 
-                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
+                Gizmos.color = new Color(1f, 0.72f, 0.0f, 0.38f);
                 Gizmos.DrawCube(bandCenter, bandSize);
-                Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.45f);
+                Gizmos.color = new Color(1f, 0.72f, 0.0f, 0.95f);
                 Gizmos.DrawWireCube(bandCenter, bandSize);
 
-                // 3.5 Floor Exception Margin Safety Catch Zone
-                float exceptionMargin = boundary.FloorExceptionMargin;
+                // 3.5 Floor Exception Margin Safety Catch Zone (Rich Vivid Magenta)
+                float exceptionMargin = (boundary != null) ? boundary.FloorExceptionMargin : 0.8f;
                 float exceptionMarginZ = bottomY - exceptionMargin;
 
-                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.95f);
-                Gizmos.DrawLine(new Vector3(leftX, elevation, exceptionMarginZ), new Vector3(rightX, elevation, exceptionMarginZ));
+                Gizmos.color = new Color(0.85f, 0.12f, 0.55f, 1f);
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation, exceptionMarginZ), new Vector3(rightX, baseElevation, exceptionMarginZ));
+                Gizmos.DrawLine(new Vector3(leftX, baseElevation + gizmoVolumeHeight, exceptionMarginZ), new Vector3(rightX, baseElevation + gizmoVolumeHeight, exceptionMarginZ));
 
-                Vector3 exceptionCenter = new Vector3((leftX + rightX) * 0.5f, elevation, bottomY - exceptionMargin * 0.5f);
-                Vector3 exceptionSize = new Vector3(width, 0.02f, exceptionMargin);
+                Vector3 exceptionCenter = new Vector3((leftX + rightX) * 0.5f, boxCenterY, bottomY - exceptionMargin * 0.5f);
+                Vector3 exceptionSize = new Vector3(width, gizmoVolumeHeight, exceptionMargin);
 
-                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.12f);
+                Gizmos.color = new Color(0.85f, 0.12f, 0.55f, 0.32f);
                 Gizmos.DrawCube(exceptionCenter, exceptionSize);
-                Gizmos.color = new Color(0.96f, 0.25f, 0.55f, 0.45f);
+                Gizmos.color = new Color(0.85f, 0.12f, 0.55f, 0.95f);
                 Gizmos.DrawWireCube(exceptionCenter, exceptionSize);
 
                 // 4. Draw Active Bus Column Slices
@@ -501,34 +532,43 @@ namespace SandBlocks.Gameplay
                         if (TryGetBusCollectionRange(bus, out float minX, out float maxX))
                         {
                             Color busColor = (palette != null) ? palette.GetColor(bus.ColorId) : Color.cyan;
-                            Vector3 busSliceCenter = new Vector3((minX + maxX) * 0.5f, elevation, bottomY + boundaryLayerTolerance * 0.5f);
-                            Vector3 busSliceSize = new Vector3(maxX - minX, 0.03f, boundaryLayerTolerance);
+                            Vector3 busSliceCenter = new Vector3((minX + maxX) * 0.5f, boxCenterY, bottomY + boundaryLayerTolerance * 0.5f);
+                            Vector3 busSliceSize = new Vector3(maxX - minX, gizmoVolumeHeight * 1.05f, boundaryLayerTolerance);
 
-                            Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 0.35f);
+                            Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 0.48f);
                             Gizmos.DrawCube(busSliceCenter, busSliceSize);
-                            Gizmos.color = busColor;
+                            Gizmos.color = new Color(busColor.r, busColor.g, busColor.b, 1f);
                             Gizmos.DrawWireCube(busSliceCenter, busSliceSize);
 
 #if UNITY_EDITOR
-                            UnityEditor.Handles.Label(new Vector3(busSliceCenter.x - 0.4f, elevation + 0.1f, thresholdY),
-                                $"[{bus.name}] {minX:F1} to {maxX:F1}");
+                            var prevSliceZ = UnityEditor.Handles.zTest;
+                            UnityEditor.Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
+                            GUIStyle sliceStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = busColor }, fontSize = 11 };
+                            UnityEditor.Handles.Label(new Vector3(busSliceCenter.x - 0.4f, baseElevation + gizmoVolumeHeight + 0.18f, thresholdY),
+                                $"[{bus.name}] {minX:F1} to {maxX:F1}", sliceStyle);
+                            UnityEditor.Handles.zTest = prevSliceZ;
 #endif
                         }
                     }
                 }
 
 #if UNITY_EDITOR
-                GUIStyle labelStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = Color.yellow } };
-                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, thresholdY),
+                var prevHandlesZ = UnityEditor.Handles.zTest;
+                UnityEditor.Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
+                float labelY = baseElevation + gizmoVolumeHeight + 0.12f;
+
+                GUIStyle labelStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(1f, 0.85f, 0.1f, 1f) }, fontSize = 11 };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, labelY, thresholdY),
                     $"Tolerance Line (+{boundaryLayerTolerance:F2})", labelStyle);
 
-                GUIStyle floorStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(1f, 0.35f, 0.35f, 1f) } };
-                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, bottomY),
+                GUIStyle floorStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(1f, 0.25f, 0.25f, 1f) }, fontSize = 11 };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, labelY, bottomY),
                     $"Floor (Z: {bottomY:F2})", floorStyle);
 
-                GUIStyle exceptionStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(0.96f, 0.25f, 0.55f, 1f) } };
-                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, elevation, exceptionMarginZ),
+                GUIStyle exceptionStyle = new GUIStyle(UnityEditor.EditorStyles.boldLabel) { normal = { textColor = new Color(1f, 0.35f, 0.75f, 1f) }, fontSize = 11 };
+                UnityEditor.Handles.Label(new Vector3(rightX + 0.15f, labelY, exceptionMarginZ),
                     $"Exception Margin (-{exceptionMargin:F2})", exceptionStyle);
+                UnityEditor.Handles.zTest = prevHandlesZ;
 #endif
             }
             else

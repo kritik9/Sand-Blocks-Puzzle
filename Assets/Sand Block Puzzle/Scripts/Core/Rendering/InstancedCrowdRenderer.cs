@@ -58,6 +58,65 @@ namespace SandBlocks.Core.Rendering
         public bool AlignToPlateSurface { get => alignToPlateSurface; set => alignToPlateSurface = value; }
         public float CrowdElevationOffset { get => crowdElevationOffset; set => crowdElevationOffset = value; }
 
+        [Header("Crowd Layout & Spacing (Anti-Overlap)")]
+        [Tooltip("Vertical (depth/row) spacing multiplier. 1.0 = standard, 1.15 - 1.4 = spreads rows apart vertically so character meshes and outlines never intersect.")]
+        [Range(0.8f, 2.5f)]
+        [SerializeField] private float verticalSpacingMultiplier = 1.25f;
+
+        [Tooltip("Additional vertical gap added between rows (world units)")]
+        [SerializeField] private float verticalRowSpacing = 0f;
+
+        [Tooltip("Horizontal (column) spacing multiplier. 1.0 = standard.")]
+        [Range(0.8f, 2.0f)]
+        [SerializeField] private float horizontalSpacingMultiplier = 1.0f;
+
+        [Tooltip("If true, vertical spacing expands upwards from the bottom boundary (keeps bottom row flush with collection line). If false, expands symmetrically from container center.")]
+        [SerializeField] private bool anchorVerticalSpacingAtBottom = true;
+
+        public float VerticalSpacingMultiplier { get => verticalSpacingMultiplier; set => verticalSpacingMultiplier = value; }
+        public float VerticalRowSpacing { get => verticalRowSpacing; set => verticalRowSpacing = value; }
+        public float HorizontalSpacingMultiplier { get => horizontalSpacingMultiplier; set => horizontalSpacingMultiplier = value; }
+        public bool AnchorVerticalSpacingAtBottom { get => anchorVerticalSpacingAtBottom; set => anchorVerticalSpacingAtBottom = value; }
+
+        public Vector3 GetCalculatedWorldPosition(Unity.Mathematics.float2 simPos)
+        {
+            if (containerBoundary == null)
+            {
+                containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+            }
+
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
+            float rawX = simPos.x;
+            float rawY = simPos.y;
+
+            // Apply horizontal spacing relative to container center
+            float centerX = (containerBoundary != null) ? containerBoundary.ContainerCenter.x : 0f;
+            float posX = centerX + (rawX - centerX) * horizontalSpacingMultiplier;
+
+            // Apply vertical spacing
+            float posY;
+            if (anchorVerticalSpacingAtBottom)
+            {
+                float bottomY = (containerBoundary != null) ? containerBoundary.BottomY : -2.5f;
+                posY = bottomY + (rawY - bottomY) * verticalSpacingMultiplier + verticalRowSpacing;
+            }
+            else
+            {
+                float centerY = (containerBoundary != null) ? containerBoundary.ContainerCenter.y : 0f;
+                posY = centerY + (rawY - centerY) * verticalSpacingMultiplier + verticalRowSpacing;
+            }
+
+            if (isHorizontal)
+            {
+                return new Vector3(posX, EffectiveElevationY, posY + crowdZOffset);
+            }
+            else
+            {
+                return new Vector3(posX, posY + crowdYOffset, crowdZOffset);
+            }
+        }
+
         [Header("Crowd Scale Variation")]
         [Tooltip("Random scale variation range applied to crowd characters (multiplier on prefabScale, e.g. 0.92 to 1.08) so they don't look identical")]
         [SerializeField] private Vector2 scaleVariationRange = new Vector2(0.92f, 1.08f);
@@ -83,6 +142,38 @@ namespace SandBlocks.Core.Rendering
         public bool FaceBackSide => faceBackSide;
         public Vector2 RotationJitterYRange => rotationJitterYRange;
         public Vector2 RotationJitterZRange => rotationJitterZRange;
+
+        [Header("Rotation Jitter Randomization")]
+        [Tooltip("If true, a new random seed is rolled every time the crowd initializes or a level starts/restarts so rotations vary dynamically across plays")]
+        [SerializeField] private bool randomizeSeedEveryRun = true;
+
+        [Tooltip("Base seed for rotation jitter. Set or randomized at runtime.")]
+        [SerializeField] private int customRandomSeed = 1337;
+
+        private int runtimeRandomSeed = 0;
+
+        public bool RandomizeSeedEveryRun { get => randomizeSeedEveryRun; set => randomizeSeedEveryRun = value; }
+        public int CustomRandomSeed { get => customRandomSeed; set => customRandomSeed = value; }
+
+        public void ReshuffleRandomSeeds()
+        {
+            runtimeRandomSeed = UnityEngine.Random.Range(1000, 9999999);
+        }
+
+        [ContextMenu("Reshuffle Rotation Jitter")]
+        public void ReshuffleJitterInEditor()
+        {
+            ReshuffleRandomSeeds();
+            SyncLiveCharacterPositions();
+        }
+
+        private void Awake()
+        {
+            if (runtimeRandomSeed == 0)
+            {
+                runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
+            }
+        }
 
         [Header("Fallback Instanced Mesh Settings")]
         [SerializeField] private Mesh characterMesh;
@@ -121,11 +212,49 @@ namespace SandBlocks.Core.Rendering
                 prefabScale = defaultPrefabScale;
             }
         }
+
+        private float defaultVerticalSpacingMultiplier = -1f;
+
+        public void SetVerticalSpacingMultiplier(float multiplier)
+        {
+            if (defaultVerticalSpacingMultiplier < 0f) defaultVerticalSpacingMultiplier = verticalSpacingMultiplier;
+            if (multiplier > 0f)
+            {
+                verticalSpacingMultiplier = multiplier;
+            }
+            else
+            {
+                verticalSpacingMultiplier = defaultVerticalSpacingMultiplier;
+            }
+
+            if (containerBoundary == null) containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+            if (containerBoundary != null && containerBoundary.AutoExtendWithCrowdSpacing)
+            {
+                containerBoundary.BuildVisualContainer();
+            }
+        }
+
+        public void ResetVerticalSpacingMultiplier()
+        {
+            if (defaultVerticalSpacingMultiplier > 0f)
+            {
+                verticalSpacingMultiplier = defaultVerticalSpacingMultiplier;
+            }
+
+            if (containerBoundary == null) containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+            if (containerBoundary != null && containerBoundary.AutoExtendWithCrowdSpacing)
+            {
+                containerBoundary.BuildVisualContainer();
+            }
+        }
         private MaterialPropertyBlock propertyBlock;
         private readonly Matrix4x4[] batchMatrices = new Matrix4x4[1023];
         private readonly Vector4[] batchColors = new Vector4[1023];
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId_Prop = Shader.PropertyToID("_Color");
+        private static readonly int OutlineColorId = Shader.PropertyToID("_Outline_Color");
+        private static readonly int FirstShadeColorId = Shader.PropertyToID("_1st_ShadeColor");
+        private static readonly int SecondShadeColorId = Shader.PropertyToID("_2nd_ShadeColor");
 
         public Vector3 GetEffectiveBaseRotation()
         {
@@ -146,6 +275,15 @@ namespace SandBlocks.Core.Rendering
 
         public void Initialize(CrowdColorPalette colorPalette)
         {
+            if (randomizeSeedEveryRun)
+            {
+                ReshuffleRandomSeeds();
+            }
+            else
+            {
+                runtimeRandomSeed = customRandomSeed;
+            }
+
             palette = colorPalette;
             propertyBlock = new MaterialPropertyBlock();
 
@@ -269,19 +407,24 @@ namespace SandBlocks.Core.Rendering
 
                 bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
 
-                // 1. Position: apply elevation (EffectiveElevationY in Horizontal_XZ)
-                instance.transform.position = isHorizontal
-                    ? new Vector3(p.position.x, EffectiveElevationY, p.position.y + crowdZOffset)
-                    : new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+                // 1. Position: apply elevation & spacing (EffectiveElevationY & vertical/horizontal spacing)
+                instance.transform.position = GetCalculatedWorldPosition(p.position);
 
                 var pass = (i < pooledPassengers.Count) ? pooledPassengers[i] : instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
 
-                // 2. Rotation: base rotation + back-side flip + slight random organic jitter (yaw & tilt)
+                if (runtimeRandomSeed == 0)
+                {
+                    runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
+                }
+
+                // 2. Rotation: base rotation + back-side flip + dynamic organic random jitter (yaw & tilt)
+                int seedY = i * 2399 + runtimeRandomSeed * 10007 + 3;
+                int seedZ = i * 4001 + runtimeRandomSeed * 13337 + 5;
                 float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
-                    ? GetStableRandom(i * 11 + 3, rotationJitterYRange.x, rotationJitterYRange.y)
+                    ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
                     : 0f;
                 float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
-                    ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
+                    ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
                     : 0f;
                 float curBaseRotY = isHorizontal
                     ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
@@ -297,9 +440,10 @@ namespace SandBlocks.Core.Rendering
                     instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
                 }
 
-                // 3. Scale: uniform base * spawn pop * stable random scale variation
+                // 3. Scale: uniform base * spawn pop * organic random scale variation
+                int seedScale = i * 1871 + runtimeRandomSeed * 7919 + 1;
                 float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
-                    ? GetStableRandom(i * 7 + 1, scaleVariationRange.x, scaleVariationRange.y)
+                    ? GetStableRandom(seedScale, scaleVariationRange.x, scaleVariationRange.y)
                     : 1f;
                 instance.transform.localScale = Vector3.one * (prefabScale * scaleMult * randScaleMult);
 
@@ -319,6 +463,9 @@ namespace SandBlocks.Core.Rendering
                             if (rends[r] == null) continue;
                             propertyBlock.SetColor(BaseColorId, c);
                             propertyBlock.SetColor(ColorId_Prop, c);
+                            propertyBlock.SetColor(OutlineColorId, SandBlocks.Gameplay.CharacterPassenger.GetDarkerHarmoniousColor(c, 0.38f, 1.15f));
+                            propertyBlock.SetColor(FirstShadeColorId, SandBlocks.Gameplay.CharacterPassenger.GetDarkerHarmoniousColor(c, 0.72f, 1.05f));
+                            propertyBlock.SetColor(SecondShadeColorId, SandBlocks.Gameplay.CharacterPassenger.GetDarkerHarmoniousColor(c, 0.50f, 1.10f));
                             rends[r].SetPropertyBlock(propertyBlock);
                         }
                     }
@@ -338,30 +485,36 @@ namespace SandBlocks.Core.Rendering
 
             int batchIndex = 0;
             float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
 
             for (int i = 0; i < count; i++)
             {
                 var p = particles[i];
                 if (!p.isActive) continue;
 
-                bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-                Vector3 pos = isHorizontal
-                    ? new Vector3(p.position.x, EffectiveElevationY, p.position.y + crowdZOffset)
-                    : new Vector3(p.position.x, p.position.y + crowdYOffset, crowdZOffset);
+                Vector3 pos = GetCalculatedWorldPosition(p.position);
 
+                if (runtimeRandomSeed == 0)
+                {
+                    runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
+                }
+
+                int seedY = i * 2399 + runtimeRandomSeed * 10007 + 3;
+                int seedZ = i * 4001 + runtimeRandomSeed * 13337 + 5;
                 float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
-                    ? GetStableRandom(i * 11 + 3, rotationJitterYRange.x, rotationJitterYRange.y)
+                    ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
                     : 0f;
                 float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
-                    ? GetStableRandom(i * 13 + 5, rotationJitterZRange.x, rotationJitterZRange.y)
+                    ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
                     : 0f;
                 float curBaseRotY = isHorizontal
                     ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
                     : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
                 Quaternion rot = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
 
+                int seedScale = i * 1871 + runtimeRandomSeed * 7919 + 1;
                 float randScaleMult = (scaleVariationRange.x != 1f || scaleVariationRange.y != 1f)
-                    ? GetStableRandom(i * 7 + 1, scaleVariationRange.x, scaleVariationRange.y)
+                    ? GetStableRandom(seedScale, scaleVariationRange.x, scaleVariationRange.y)
                     : 1f;
                 Vector3 instScale = characterScale * randScaleMult;
 
@@ -402,22 +555,71 @@ namespace SandBlocks.Core.Rendering
         public void SyncLiveCharacterPositions()
         {
             if (pooledCharacters == null || pooledCharacters.Count == 0) return;
-            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-            float targetY = EffectiveElevationY;
-            for (int i = 0; i < pooledCharacters.Count; i++)
+
+            if (runtimeRandomSeed == 0)
             {
-                if (pooledCharacters[i] != null)
+                runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
+            }
+
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            float curBaseRotY = isHorizontal
+                ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
+                : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+            Vector3 baseEuler = new Vector3(characterRotationEuler.x, curBaseRotY, characterRotationEuler.z);
+
+            var sim = FindAnyObjectByType<SandBlocks.Core.Simulation.PBDCrowdSimulation>();
+            if (sim != null && sim.Particles.IsCreated && sim.ActiveCount > 0)
+            {
+                int count = Mathf.Min(pooledCharacters.Count, sim.ActiveCount);
+                for (int i = 0; i < count; i++)
                 {
-                    Vector3 pos = pooledCharacters[i].transform.position;
-                    if (isHorizontal)
+                    if (pooledCharacters[i] != null)
                     {
-                        pos.y = targetY;
+                        var p = sim.Particles[i];
+                        if (p.isActive)
+                        {
+                            pooledCharacters[i].transform.position = GetCalculatedWorldPosition(p.position);
+
+                            int seedY = i * 2399 + runtimeRandomSeed * 10007 + 3;
+                            int seedZ = i * 4001 + runtimeRandomSeed * 13337 + 5;
+                            float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                                ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
+                                : 0f;
+                            float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                                ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
+                                : 0f;
+
+                            var pass = (i < pooledPassengers.Count) ? pooledPassengers[i] : pooledCharacters[i].GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
+                            if (pass != null)
+                            {
+                                pass.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
+                            }
+                            else
+                            {
+                                pooledCharacters[i].transform.rotation = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                            }
+                        }
                     }
-                    else
+                }
+            }
+            else
+            {
+                float targetY = EffectiveElevationY;
+                for (int i = 0; i < pooledCharacters.Count; i++)
+                {
+                    if (pooledCharacters[i] != null)
                     {
-                        pos.z = crowdZOffset;
+                        Vector3 pos = pooledCharacters[i].transform.position;
+                        if (isHorizontal)
+                        {
+                            pos.y = targetY;
+                        }
+                        else
+                        {
+                            pos.z = crowdZOffset;
+                        }
+                        pooledCharacters[i].transform.position = pos;
                     }
-                    pooledCharacters[i].transform.position = pos;
                 }
             }
         }
@@ -426,6 +628,28 @@ namespace SandBlocks.Core.Rendering
         private void OnValidate()
         {
             SyncLiveCharacterPositions();
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorApplication.delayCall += () =>
+                {
+                    if (this != null)
+                    {
+                        if (containerBoundary == null) containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+                        if (containerBoundary != null && containerBoundary.AutoExtendWithCrowdSpacing)
+                        {
+                            containerBoundary.BuildVisualContainer();
+                        }
+                    }
+                };
+            }
+            else
+            {
+                if (containerBoundary == null) containerBoundary = FindAnyObjectByType<SandBlocks.Core.Boundary.ContainerBoundary>();
+                if (containerBoundary != null && containerBoundary.AutoExtendWithCrowdSpacing)
+                {
+                    containerBoundary.BuildVisualContainer();
+                }
+            }
         }
 #endif
 }

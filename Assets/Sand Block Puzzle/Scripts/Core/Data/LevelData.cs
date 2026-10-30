@@ -150,6 +150,9 @@ namespace SandBlocks.Core.Data
         [Tooltip("Visual scale/size of character models for this level (e.g. 0.009). If 0 or negative, uses the default scale configured in InstancedCrowdRenderer.")]
         public float characterScale = 0f;
 
+        [Tooltip("Vertical row spacing multiplier for this level (e.g. 1.25). If 0 or negative, uses the default multiplier configured in InstancedCrowdRenderer.")]
+        public float verticalSpacingMultiplier = 0f;
+
         public int maxParticles = 800;
 
 

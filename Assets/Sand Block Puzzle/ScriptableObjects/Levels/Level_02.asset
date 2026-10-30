@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
   m_Name: Level_02
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
+  gameplayMode: 0
   levelName: Level 2
   particleRadius: 0.1795
+  characterScale: 0.65
+  verticalSpacingMultiplier: 0
   maxParticles: 462
   containerShape: 0
   containerWidth: 8.58
@@ -68,3 +71,11 @@ MonoBehaviour:
     length: 3
     rotationDegrees: 90
     gridPosition: {x: 0, y: 1}
+  unifiedGridColumns: 8
+  unifiedGridRows: 8
+  unifiedGridRotation: 0
+  unifiedCellSize: 1.35
+  unifiedMode: 0
+  sharedDestinationPos: {x: 0, y: 0}
+  unifiedCells: []
+  unifiedBuses: []

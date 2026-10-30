@@ -843,7 +843,7 @@ namespace SandBlocks.Gameplay
             // Re-initialize simulation with guaranteed capacity so no particles are ever dropped
             simulation.Initialize(requiredCapacity, boundary);
 
-            // Apply per-level character scale if specified in LevelData
+            // Apply per-level character scale and vertical spacing if specified in LevelData
             if (crowdRenderer is SandBlocks.Core.Rendering.InstancedCrowdRenderer instRend)
             {
                 if (currentLevel != null && currentLevel.characterScale > 0f)
@@ -853,6 +853,15 @@ namespace SandBlocks.Gameplay
                 else
                 {
                     instRend.ResetCharacterScale();
+                }
+
+                if (currentLevel != null && currentLevel.verticalSpacingMultiplier > 0f)
+                {
+                    instRend.SetVerticalSpacingMultiplier(currentLevel.verticalSpacingMultiplier);
+                }
+                else
+                {
+                    instRend.ResetVerticalSpacingMultiplier();
                 }
             }
 

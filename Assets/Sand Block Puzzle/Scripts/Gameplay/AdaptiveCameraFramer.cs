@@ -152,7 +152,7 @@ namespace SandBlocks.Gameplay
 
             if (boundary != null && boundary.gameObject.activeInHierarchy)
             {
-                Rect bRect = boundary.Bounds;
+                Rect bRect = (boundary is SandBlocks.Core.Boundary.ContainerBoundary cb) ? cb.VisualBounds : boundary.Bounds;
                 topZ = bRect.yMax;
                 maxContentWidth = Mathf.Max(maxContentWidth, bRect.width);
                 centerX = boundary.transform.position.x + boundary.ContainerCenter.x;
@@ -217,7 +217,7 @@ namespace SandBlocks.Gameplay
 
             if (boundary != null && boundary.gameObject.activeInHierarchy)
             {
-                Rect bRect = boundary.Bounds;
+                Rect bRect = (boundary is SandBlocks.Core.Boundary.ContainerBoundary cb) ? cb.VisualBounds : boundary.Bounds;
                 topY = bRect.yMax;
                 maxContentWidth = Mathf.Max(maxContentWidth, bRect.width);
             }

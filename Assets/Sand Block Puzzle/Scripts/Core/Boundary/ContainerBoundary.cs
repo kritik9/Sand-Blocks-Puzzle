@@ -68,6 +68,65 @@ namespace SandBlocks.Core.Boundary
         public bool ShowBackPlate => showBackPlate;
         public float SurfaceElevationY => backPlateElevationY + (showBackPlate ? backPlateThickness * 0.5f : 0f);
 
+        [Header("Auto-Extend Boundary for Spaced Crowd")]
+        [Tooltip("If true, the boundary visuals (border beams and back plate) automatically extend when vertical/horizontal spacing is applied to crowd characters so they never hang outside the boundary")]
+        [SerializeField] protected bool autoExtendWithCrowdSpacing = true;
+
+        [Tooltip("Optional extra padding added to the top border beam and back plate beyond the crowd")]
+        [SerializeField] protected float topSpacingPadding = 0.2f;
+
+        [Tooltip("Optional extra padding added to the left and right border beams")]
+        [SerializeField] protected float sideSpacingPadding = 0.1f;
+
+        public bool AutoExtendWithCrowdSpacing { get => autoExtendWithCrowdSpacing; set => autoExtendWithCrowdSpacing = value; }
+        public float TopSpacingPadding { get => topSpacingPadding; set => topSpacingPadding = value; }
+        public float SideSpacingPadding { get => sideSpacingPadding; set => sideSpacingPadding = value; }
+
+        public Rect GetEffectiveVisualRect()
+        {
+            Rect baseRect = Bounds;
+            if (!autoExtendWithCrowdSpacing) return baseRect;
+
+            var crowdRenderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+            if (crowdRenderer == null) return baseRect;
+
+            float vMult = crowdRenderer.VerticalSpacingMultiplier;
+            float vSpacing = crowdRenderer.VerticalRowSpacing;
+            float hMult = crowdRenderer.HorizontalSpacingMultiplier;
+            bool anchorBottom = crowdRenderer.AnchorVerticalSpacingAtBottom;
+
+            float minX = baseRect.xMin;
+            float maxX = baseRect.xMax;
+            if (hMult > 1.0f)
+            {
+                float centerX = baseRect.center.x;
+                float halfW = (baseRect.width * 0.5f) * hMult + sideSpacingPadding;
+                minX = centerX - halfW;
+                maxX = centerX + halfW;
+            }
+
+            float minY = baseRect.yMin;
+            float maxY = baseRect.yMax;
+            if (vMult > 1.0f || vSpacing != 0f)
+            {
+                if (anchorBottom)
+                {
+                    maxY = minY + baseRect.height * vMult + vSpacing + topSpacingPadding;
+                }
+                else
+                {
+                    float centerY = baseRect.center.y;
+                    float halfH = (baseRect.height * 0.5f) * vMult + vSpacing * 0.5f + topSpacingPadding;
+                    minY = centerY - halfH;
+                    maxY = centerY + halfH;
+                }
+            }
+
+            return new Rect(minX, minY, Mathf.Max(0.1f, maxX - minX), Mathf.Max(0.1f, maxY - minY));
+        }
+
+        public Rect VisualBounds => GetEffectiveVisualRect();
+
         protected List<LineSegment> segments = new List<LineSegment>();
         protected GameObject visualRoot;
 
@@ -402,6 +461,26 @@ namespace SandBlocks.Core.Boundary
             return point;
         }
 
+        private void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying)
+            {
+                Destroy(obj);
+            }
+            else
+            {
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.delayCall += () =>
+                {
+                    if (obj != null) DestroyImmediate(obj);
+                };
+#else
+                Destroy(obj);
+#endif
+            }
+        }
+
         [ContextMenu("Rebuild Visual Container")]
         public void BuildVisualContainer()
         {
@@ -411,8 +490,8 @@ namespace SandBlocks.Core.Boundary
                 Transform child = transform.GetChild(i);
                 if (child != null && child.name.Contains("VisualContainer"))
                 {
-                    if (Application.isPlaying) Destroy(child.gameObject);
-                    else DestroyImmediate(child.gameObject);
+                    child.gameObject.SetActive(false);
+                    SafeDestroy(child.gameObject);
                 }
             }
             visualRoot = null;
@@ -428,28 +507,101 @@ namespace SandBlocks.Core.Boundary
             mat.color = borderColor;
 
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            Rect vRect = GetEffectiveVisualRect();
 
-            for (int i = 0; i < segments.Count; i++)
+            if (shapeType == ContainerShapeType.Rectangle)
             {
-                var seg = segments[i];
-                Vector3 start = isHorizontal ? new Vector3(seg.a.x, borderBeamElevationY, seg.a.y) : new Vector3(seg.a.x, seg.a.y, 0f);
-                Vector3 end = isHorizontal ? new Vector3(seg.b.x, borderBeamElevationY, seg.b.y) : new Vector3(seg.b.x, seg.b.y, 0f);
-                Vector3 mid = (start + end) * 0.5f;
-                float length = Vector3.Distance(start, end);
+                float leftX = vRect.xMin;
+                float rightX = vRect.xMax;
+                float topY = vRect.yMax;
+                float bottomY = vRect.yMin;
 
-                var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                beam.name = $"BorderBeam_{i}";
-                beam.transform.SetParent(visualRoot.transform);
-                beam.transform.position = mid;
-                beam.transform.rotation = Quaternion.FromToRotation(Vector3.right, (end - start).normalized);
-                beam.transform.localScale = isHorizontal 
-                    ? new Vector3(length + borderBeamThickness, borderBeamHeight, borderBeamThickness)
-                    : new Vector3(length + borderBeamThickness, borderBeamThickness, borderBeamDepth);
+                float2 bLeft = new float2(leftX, bottomY);
+                float2 bRight = new float2(rightX, bottomY);
+                float2 tRight = new float2(rightX, topY);
+                float2 tLeft = new float2(leftX, topY);
 
-                var col = beam.GetComponent<Collider>();
-                if (col != null) DestroyImmediate(col);
+                float2[] beamStarts = { bLeft, bRight, tRight, tLeft };
+                float2[] beamEnds = { bRight, tRight, tLeft, bLeft };
 
-                beam.GetComponent<Renderer>().sharedMaterial = mat;
+                for (int i = 0; i < 4; i++)
+                {
+                    float2 a = beamStarts[i];
+                    float2 b = beamEnds[i];
+                    Vector3 start = isHorizontal ? new Vector3(a.x, borderBeamElevationY, a.y) : new Vector3(a.x, a.y, 0f);
+                    Vector3 end = isHorizontal ? new Vector3(b.x, borderBeamElevationY, b.y) : new Vector3(b.x, b.y, 0f);
+                    Vector3 mid = (start + end) * 0.5f;
+                    float length = Vector3.Distance(start, end);
+
+                    var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    beam.name = $"BorderBeam_{i}";
+                    beam.transform.SetParent(visualRoot.transform);
+                    beam.transform.position = mid;
+                    beam.transform.rotation = Quaternion.FromToRotation(Vector3.right, (end - start).normalized);
+                    beam.transform.localScale = isHorizontal 
+                        ? new Vector3(length + borderBeamThickness, borderBeamHeight, borderBeamThickness)
+                        : new Vector3(length + borderBeamThickness, borderBeamThickness, borderBeamDepth);
+
+                    var col = beam.GetComponent<Collider>();
+                    if (col != null) { col.enabled = false; SafeDestroy(col); }
+
+                    beam.GetComponent<Renderer>().sharedMaterial = mat;
+                }
+            }
+            else
+            {
+                var crowdRenderer = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>();
+                float vMult = (autoExtendWithCrowdSpacing && crowdRenderer != null) ? crowdRenderer.VerticalSpacingMultiplier : 1f;
+                float hMult = (autoExtendWithCrowdSpacing && crowdRenderer != null) ? crowdRenderer.HorizontalSpacingMultiplier : 1f;
+                bool anchorBottom = (crowdRenderer != null) && crowdRenderer.AnchorVerticalSpacingAtBottom;
+                float baseYMin = Bounds.yMin;
+                float baseCenterX = Bounds.center.x;
+                float baseCenterY = Bounds.center.y;
+
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    var seg = segments[i];
+                    float2 a = seg.a;
+                    float2 b = seg.b;
+
+                    if (hMult > 1f)
+                    {
+                        a.x = baseCenterX + (a.x - baseCenterX) * hMult;
+                        b.x = baseCenterX + (b.x - baseCenterX) * hMult;
+                    }
+                    if (vMult > 1f)
+                    {
+                        if (anchorBottom)
+                        {
+                            a.y = baseYMin + (a.y - baseYMin) * vMult;
+                            b.y = baseYMin + (b.y - baseYMin) * vMult;
+                        }
+                        else
+                        {
+                            a.y = baseCenterY + (a.y - baseCenterY) * vMult;
+                            b.y = baseCenterY + (b.y - baseCenterY) * vMult;
+                        }
+                    }
+
+                    Vector3 start = isHorizontal ? new Vector3(a.x, borderBeamElevationY, a.y) : new Vector3(a.x, a.y, 0f);
+                    Vector3 end = isHorizontal ? new Vector3(b.x, borderBeamElevationY, b.y) : new Vector3(b.x, b.y, 0f);
+                    Vector3 mid = (start + end) * 0.5f;
+                    float length = Vector3.Distance(start, end);
+
+                    var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    beam.name = $"BorderBeam_{i}";
+                    beam.transform.SetParent(visualRoot.transform);
+                    beam.transform.position = mid;
+                    beam.transform.rotation = Quaternion.FromToRotation(Vector3.right, (end - start).normalized);
+                    beam.transform.localScale = isHorizontal 
+                        ? new Vector3(length + borderBeamThickness, borderBeamHeight, borderBeamThickness)
+                        : new Vector3(length + borderBeamThickness, borderBeamThickness, borderBeamDepth);
+
+                    var col = beam.GetComponent<Collider>();
+                    if (col != null) { col.enabled = false; SafeDestroy(col); }
+
+                    beam.GetComponent<Renderer>().sharedMaterial = mat;
+                }
             }
 
             // Backing plate
@@ -461,7 +613,7 @@ namespace SandBlocks.Core.Boundary
                 var backPlane = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 backPlane.name = "BackPlate";
                 backPlane.transform.SetParent(visualRoot.transform);
-                Rect b = Bounds;
+                Rect b = vRect;
                 backPlane.transform.position = isHorizontal 
                     ? new Vector3(b.center.x, backPlateElevationY, b.center.y) 
                     : new Vector3(b.center.x, b.center.y, 0.28f);
@@ -470,7 +622,7 @@ namespace SandBlocks.Core.Boundary
                     : new Vector3(b.width, b.height, 0.05f);
 
                 var bCol = backPlane.GetComponent<Collider>();
-                if (bCol != null) DestroyImmediate(bCol);
+                if (bCol != null) { bCol.enabled = false; SafeDestroy(bCol); }
                 backPlane.GetComponent<Renderer>().sharedMaterial = backMat;
             }
         }

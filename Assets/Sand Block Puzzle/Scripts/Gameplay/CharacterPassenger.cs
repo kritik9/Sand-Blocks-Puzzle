@@ -35,6 +35,52 @@ namespace SandBlocks.Gameplay
         private static readonly int IsSittingHash = Animator.StringToHash("IsSitting");
         private static readonly int BaseColorProp = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorProp = Shader.PropertyToID("_Color");
+        private static readonly int OutlineColorProp = Shader.PropertyToID("_Outline_Color");
+        private static readonly int OutlineColorAltProp = Shader.PropertyToID("_OutlineColor");
+        private static readonly int FirstShadeColorProp = Shader.PropertyToID("_1st_ShadeColor");
+        private static readonly int SecondShadeColorProp = Shader.PropertyToID("_2nd_ShadeColor");
+        private static readonly int RimLightColorProp = Shader.PropertyToID("_RimLightColor");
+        private static readonly int HighColorProp = Shader.PropertyToID("_HighColor");
+        private static readonly int RimLightPowerProp = Shader.PropertyToID("_RimLight_Power");
+        private static readonly int OutlineWidthProp = Shader.PropertyToID("_Outline_Width");
+
+        [Header("Dynamic Styling & Harmonious Outlines")]
+        [Tooltip("If true, dynamically tints outlines, shadows, rim lights, and specular highlights based on the character's color for a polished toy look")]
+        [SerializeField] private bool useDynamicStyling = true;
+
+        [Range(0.1f, 0.8f)]
+        [Tooltip("Brightness multiplier for dynamic outline (e.g. 0.38 gives deep rich matching color: dark red for red, dark navy for blue, dark gold for yellow)")]
+        [SerializeField] private float outlineDarkness = 0.38f;
+
+        [Range(1f, 1.5f)]
+        [Tooltip("Saturation boost for dynamic outline so colors stay vivid and stylized rather than dull")]
+        [SerializeField] private float outlineSaturationBoost = 1.15f;
+
+        [Tooltip("Optional custom outline width override. Set > 0 to override material outline width per character")]
+        [SerializeField] private float customOutlineWidth = 0f;
+
+        [Range(0.3f, 0.95f)]
+        [Tooltip("Brightness of 1st shade shadow (e.g. 0.72)")]
+        [SerializeField] private float shade1Darkness = 0.72f;
+
+        [Range(0.2f, 0.85f)]
+        [Tooltip("Brightness of 2nd shade shadow (e.g. 0.50)")]
+        [SerializeField] private float shade2Darkness = 0.50f;
+
+        [Header("Dynamic Rim & Gloss")]
+        [Tooltip("If true, injects a soft luminous pastel rim light matching the character's hue")]
+        [SerializeField] private bool enableDynamicRimLight = true;
+
+        [Range(0f, 1f)]
+        [Tooltip("Power of dynamic rim light (e.g. 0.35)")]
+        [SerializeField] private float dynamicRimLightPower = 0.35f;
+
+        [Range(0.2f, 0.9f)]
+        [Tooltip("Blend with white for dynamic rim light (0.55 = soft pastel tint matching character)")]
+        [SerializeField] private float rimLightTintBlend = 0.55f;
+
+        [Tooltip("If true, applies glossy specular highlight on character heads")]
+        [SerializeField] private bool enableDynamicSpecular = true;
 
         private MaterialPropertyBlock propBlock;
 
@@ -268,15 +314,88 @@ namespace SandBlocks.Gameplay
         }
 
         /// <summary>
-        /// Sets the color of the character's clothing/body matching the level palette.
+        /// Generates a rich, saturated, darker tone of a given color for dynamic outlines and deep shadows.
+        /// Preserves hue vibrancy instead of turning muddy or gray.
+        /// </summary>
+        public static Color GetDarkerHarmoniousColor(Color baseColor, float brightnessMultiplier = 0.38f, float saturationBoost = 1.15f)
+        {
+            Color.RGBToHSV(baseColor, out float h, out float s, out float v);
+            if (s > 0.05f)
+            {
+                s = Mathf.Clamp01(s * saturationBoost);
+                v = Mathf.Clamp01(v * brightnessMultiplier);
+            }
+            else
+            {
+                // Neutral white / gray gets stylish graphite outline
+                v = Mathf.Clamp(v * brightnessMultiplier, 0.25f, 0.45f);
+            }
+            Color result = Color.HSVToRGB(h, s, v);
+            result.a = baseColor.a;
+            return result;
+        }
+
+        /// <summary>
+        /// Generates a soft, pastel, luminous tone of a given color for dynamic rim lights and specular highlights.
+        /// </summary>
+        public static Color GetLighterLuminousColor(Color baseColor, float blendWithWhite = 0.55f)
+        {
+            Color result = Color.Lerp(baseColor, Color.white, blendWithWhite);
+            result.a = baseColor.a;
+            return result;
+        }
+
+        /// <summary>
+        /// Sets the color of the character's clothing/body matching the level palette,
+        /// and harmonizes matching dynamic outlines, shaded shadows, rim lights, and gloss.
         /// </summary>
         public void SetColor(Color color)
         {
             FindComponents();
             EnsureValidMaterials();
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
+
+            // 1. Base Albedo & Color
             propBlock.SetColor(BaseColorProp, color);
             propBlock.SetColor(ColorProp, color);
+
+            if (useDynamicStyling)
+            {
+                // 2. Dynamic Matching Outline Color (Dark Red for Red, Dark Blue for Blue, Dark Amber for Yellow, etc.)
+                Color outlineColor = GetDarkerHarmoniousColor(color, outlineDarkness, outlineSaturationBoost);
+                propBlock.SetColor(OutlineColorProp, outlineColor);
+                propBlock.SetColor(OutlineColorAltProp, outlineColor);
+
+                // 3. Dynamic Matching 1st & 2nd Shade Colors (Rich matching shadows for UTS3)
+                Color shade1 = GetDarkerHarmoniousColor(color, shade1Darkness, 1.05f);
+                Color shade2 = GetDarkerHarmoniousColor(color, shade2Darkness, 1.10f);
+                propBlock.SetColor(FirstShadeColorProp, shade1);
+                propBlock.SetColor(SecondShadeColorProp, shade2);
+
+                // 4. Dynamic Tinted Rim Light Color (Soft pastel glow matching character color)
+                if (enableDynamicRimLight)
+                {
+                    Color rimColor = GetLighterLuminousColor(color, rimLightTintBlend);
+                    propBlock.SetColor(RimLightColorProp, rimColor);
+                    if (dynamicRimLightPower > 0f)
+                    {
+                        propBlock.SetFloat(RimLightPowerProp, dynamicRimLightPower);
+                    }
+                }
+
+                // 5. Dynamic HighColor / Specular Gloss
+                if (enableDynamicSpecular)
+                {
+                    Color specColor = GetLighterLuminousColor(color, 0.85f);
+                    propBlock.SetColor(HighColorProp, specColor);
+                }
+
+                // 6. Optional Per-Character Outline Width Override
+                if (customOutlineWidth > 0f)
+                {
+                    propBlock.SetFloat(OutlineWidthProp, customOutlineWidth);
+                }
+            }
 
             if (renderers != null)
             {
