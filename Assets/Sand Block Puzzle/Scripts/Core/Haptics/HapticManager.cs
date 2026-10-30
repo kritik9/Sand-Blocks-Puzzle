@@ -9,9 +9,9 @@ namespace SandBlocks.Core.Haptics
 {
     /// <summary>
     /// High-performance, low-latency cross-platform haptic feedback manager.
-    /// Provides subtle, crisp micro-haptics with adjustable intensity and duration.
-    /// Features hardware-level effects (iOS Taptic Engine and Android API 29+ Predefined effects)
-    /// and micro-throttling to eliminate motor lag, buzzing, or frame drops.
+    /// Supports Android 12+ (VibratorManager), Android 10+ (VibrationEffect predefined),
+    /// Android 8+ (createOneShot amplitude control), and iOS Taptic Engine (UIFeedbackGenerator).
+    /// Features fallback to Handheld.Vibrate() to ensure 100% device compatibility.
     /// </summary>
     public class HapticManager : MonoBehaviour
     {
@@ -41,37 +41,40 @@ namespace SandBlocks.Core.Haptics
         [Tooltip("Global toggle for all vibration and haptic feedback")]
         [SerializeField] private bool enableHaptics = true;
 
-        [Tooltip("Global intensity multiplier (0.1 = very soft/light, 1.0 = standard)")]
-        [Range(0.05f, 1.0f)]
-        [SerializeField] private float intensityMultiplier = 0.45f;
+        [Tooltip("Global intensity multiplier (0.5 = soft, 1.0 = standard, 1.5 = firm)")]
+        [Range(0.1f, 2.0f)]
+        [SerializeField] private float intensityMultiplier = 1.0f;
 
-        [Tooltip("Global duration multiplier (0.1 = micro-tick, 1.0 = standard)")]
-        [Range(0.05f, 1.0f)]
-        [SerializeField] private float durationMultiplier = 0.5f;
+        [Tooltip("Global duration multiplier (0.5 = shorter tick, 1.0 = standard, 1.5 = longer buzz)")]
+        [Range(0.1f, 2.0f)]
+        [SerializeField] private float durationMultiplier = 1.0f;
 
         [Tooltip("Minimum time in seconds between consecutive haptics to prevent motor buzz buildup")]
         [Range(0.01f, 0.2f)]
-        [SerializeField] private float minHapticInterval = 0.065f;
+        [SerializeField] private float minHapticInterval = 0.045f;
 
-        [Header("Base Durations (Milliseconds)")]
-        [SerializeField] private long selectionDurationMs = 6;
-        [SerializeField] private long lightDurationMs = 8;
-        [SerializeField] private long mediumDurationMs = 14;
-        [SerializeField] private long heavyDurationMs = 20;
+        [Tooltip("If native JNI/Taptic vibration fails or is unsupported on the device, fall back to Unity Handheld.Vibrate()")]
+        [SerializeField] private bool fallbackToHandheldVibrate = true;
+
+        [Header("Base Durations (Milliseconds - Min 12ms for physical motor spin-up)")]
+        [SerializeField] private long selectionDurationMs = 18;
+        [SerializeField] private long lightDurationMs = 25;
+        [SerializeField] private long mediumDurationMs = 45;
+        [SerializeField] private long heavyDurationMs = 75;
 
         [Header("Base Amplitudes (1 - 255)")]
-        [Range(1, 255)] [SerializeField] private int selectionAmplitude = 25;
-        [Range(1, 255)] [SerializeField] private int lightAmplitude = 35;
-        [Range(1, 255)] [SerializeField] private int mediumAmplitude = 60;
-        [Range(1, 255)] [SerializeField] private int heavyAmplitude = 90;
+        [Range(1, 255)] [SerializeField] private int selectionAmplitude = 120;
+        [Range(1, 255)] [SerializeField] private int lightAmplitude = 160;
+        [Range(1, 255)] [SerializeField] private int mediumAmplitude = 210;
+        [Range(1, 255)] [SerializeField] private int heavyAmplitude = 255;
 
         [Header("Debug")]
-        [Tooltip("Log haptic triggers in Unity Editor for debugging")]
-        [SerializeField] private bool debugLogsInEditor = false;
+        [Tooltip("Log haptic triggers in Unity Editor / Device logs for debugging")]
+        [SerializeField] private bool debugLogs = false;
 
         private float lastHapticTime = -1f;
 
-        // Android predefined VibrationEffect constants
+        // Android predefined VibrationEffect constants (API 29+)
         private const int EFFECT_CLICK = 0;
         private const int EFFECT_DOUBLE_CLICK = 1;
         private const int EFFECT_TICK = 2;
@@ -84,6 +87,8 @@ namespace SandBlocks.Core.Haptics
         private static AndroidJavaClass vibrationEffectClass;
         private static int apiLevel = -1;
         private static bool isAndroidInitialized = false;
+        private static bool hasVibratorHardware = true;
+        private static bool hasAmplitudeControl = false;
 #endif
 
 #if UNITY_IOS && !UNITY_EDITOR
@@ -112,13 +117,19 @@ namespace SandBlocks.Core.Haptics
         public float IntensityMultiplier
         {
             get => intensityMultiplier;
-            set => intensityMultiplier = Mathf.Clamp(value, 0.05f, 1.0f);
+            set => intensityMultiplier = Mathf.Clamp(value, 0.1f, 2.0f);
         }
 
         public float DurationMultiplier
         {
             get => durationMultiplier;
-            set => durationMultiplier = Mathf.Clamp(value, 0.05f, 1.0f);
+            set => durationMultiplier = Mathf.Clamp(value, 0.1f, 2.0f);
+        }
+
+        public bool FallbackToHandheldVibrate
+        {
+            get => fallbackToHandheldVibrate;
+            set => fallbackToHandheldVibrate = value;
         }
 
         private void Awake()
@@ -136,6 +147,21 @@ namespace SandBlocks.Core.Haptics
             }
         }
 
+        private void OnValidate()
+        {
+            // Auto-upgrade legacy micro-durations that are physically below mobile motor threshold
+            if (selectionDurationMs < 12) selectionDurationMs = 18;
+            if (lightDurationMs < 15) lightDurationMs = 25;
+            if (mediumDurationMs < 25) mediumDurationMs = 45;
+            if (heavyDurationMs < 40) heavyDurationMs = 75;
+            if (selectionAmplitude < 60) selectionAmplitude = 120;
+            if (lightAmplitude < 80) lightAmplitude = 160;
+            if (mediumAmplitude < 120) mediumAmplitude = 210;
+            if (heavyAmplitude < 180) heavyAmplitude = 255;
+            if (intensityMultiplier < 0.6f) intensityMultiplier = 1.0f;
+            if (durationMultiplier < 0.6f) durationMultiplier = 1.0f;
+        }
+
         private void InitPlatform()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -147,14 +173,64 @@ namespace SandBlocks.Core.Haptics
                 {
                     apiLevel = version.GetStatic<int>("SDK_INT");
                 }
+
                 using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
                 using (var currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                 {
-                    vibrator = currentActivity.Call<AndroidJavaObject>("getSystemService", "vibrator");
+                    // Android 12+ (API 31+) uses VibratorManager to get the default system vibrator
+                    if (apiLevel >= 31)
+                    {
+                        try
+                        {
+                            using (var vibratorManager = currentActivity.Call<AndroidJavaObject>("getSystemService", "vibrator_manager"))
+                            {
+                                if (vibratorManager != null)
+                                {
+                                    vibrator = vibratorManager.Call<AndroidJavaObject>("getDefaultVibrator");
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (debugLogs) Debug.LogWarning($"[HapticManager] VibratorManager lookup fallback: {ex.Message}");
+                        }
+                    }
+
+                    // Fallback for API < 31 or if VibratorManager returned null
+                    if (vibrator == null)
+                    {
+                        vibrator = currentActivity.Call<AndroidJavaObject>("getSystemService", "vibrator");
+                    }
                 }
-                if (apiLevel >= 26)
+
+                if (vibrator != null)
                 {
-                    vibrationEffectClass = new AndroidJavaClass("android.os.VibrationEffect");
+                    try
+                    {
+                        hasVibratorHardware = vibrator.Call<bool>("hasVibrator");
+                    }
+                    catch
+                    {
+                        hasVibratorHardware = true;
+                    }
+
+                    if (apiLevel >= 26)
+                    {
+                        try
+                        {
+                            vibrationEffectClass = new AndroidJavaClass("android.os.VibrationEffect");
+                            hasAmplitudeControl = vibrator.Call<bool>("hasAmplitudeControl");
+                        }
+                        catch
+                        {
+                            hasAmplitudeControl = false;
+                        }
+                    }
+
+                    if (debugLogs)
+                    {
+                        Debug.Log($"<color=green>[HapticManager]</color> Android Initialized - API: {apiLevel}, HasVibrator: {hasVibratorHardware}, HasAmplitudeControl: {hasAmplitudeControl}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -176,6 +252,7 @@ namespace SandBlocks.Core.Haptics
         /// Ultra-short, gentle selection tick.
         /// Ideal for bus touch/select, button taps, and fine touch interactions.
         /// </summary>
+        [ContextMenu("Test Selection")]
         public void Selection()
         {
             if (!CanTrigger(minHapticInterval)) return;
@@ -188,9 +265,10 @@ namespace SandBlocks.Core.Haptics
         }
 
         /// <summary>
-        /// Crisp, subtle tactile click with minimal duration.
+        /// Crisp tactile click.
         /// Ideal for cell drag steps, passenger boarding ticks, and button taps.
         /// </summary>
+        [ContextMenu("Test Light Impact")]
         public void LightImpact()
         {
             if (!CanTrigger(minHapticInterval)) return;
@@ -206,6 +284,7 @@ namespace SandBlocks.Core.Haptics
         /// Mild, controlled tactile tap.
         /// Ideal for placing a bus on parking lot, bus departure, or passenger drop-off.
         /// </summary>
+        [ContextMenu("Test Medium Impact")]
         public void MediumImpact()
         {
             if (!CanTrigger(minHapticInterval)) return;
@@ -218,8 +297,9 @@ namespace SandBlocks.Core.Haptics
         }
 
         /// <summary>
-        /// Short, firm feedback for invalid actions or blocked moves without prolonged motor vibration.
+        /// Short, firm feedback for invalid actions or blocked moves.
         /// </summary>
+        [ContextMenu("Test Heavy Impact")]
         public void HeavyImpact()
         {
             if (!CanTrigger(minHapticInterval * 0.8f)) return;
@@ -232,8 +312,9 @@ namespace SandBlocks.Core.Haptics
         }
 
         /// <summary>
-        /// Soft, subtle double-pulse haptic pattern for level completion.
+        /// Subtle double-pulse haptic pattern for level completion.
         /// </summary>
+        [ContextMenu("Test Success")]
         public void Success()
         {
             if (!enableHaptics) return;
@@ -247,9 +328,9 @@ namespace SandBlocks.Core.Haptics
 
         private IEnumerator SuccessRoutine()
         {
-            TriggerHaptic(10, 45, EFFECT_CLICK, "Success_1");
-            yield return new WaitForSecondsRealtime(0.08f);
-            TriggerHaptic(14, 65, EFFECT_CLICK, "Success_2");
+            TriggerHaptic(20, 160, EFFECT_CLICK, "Success_1");
+            yield return new WaitForSecondsRealtime(0.09f);
+            TriggerHaptic(35, 230, EFFECT_HEAVY_CLICK, "Success_2");
         }
 
         private bool CanTrigger(float minInterval)
@@ -265,57 +346,118 @@ namespace SandBlocks.Core.Haptics
         {
             if (!enableHaptics) return;
 
-            long scaledMs = Math.Max(2, (long)Math.Round(baseMs * durationMultiplier));
+            long scaledMs = Math.Max(12, (long)Math.Round(baseMs * durationMultiplier));
             int scaledAmp = Mathf.Clamp((int)Math.Round(baseAmp * intensityMultiplier), 1, 255);
 
 #if UNITY_EDITOR
-            if (debugLogsInEditor)
+            if (debugLogs)
             {
                 Debug.Log($"<color=orange>[HapticManager]</color> {debugLabel} ({scaledMs}ms, amp: {scaledAmp}, effectId: {predefinedEffectId})");
             }
 #elif UNITY_ANDROID
-            if (vibrator == null) return;
-
-            try
+            if (vibrator == null || !hasVibratorHardware)
             {
-                // Prefer modern Android 10+ (API 29+) hardware-calibrated system effects (TICK, CLICK, POP)
-                if (apiLevel >= 29 && predefinedEffectId >= 0 && vibrationEffectClass != null)
+                if (fallbackToHandheldVibrate) Handheld.Vibrate();
+                return;
+            }
+
+            bool triggered = false;
+
+            // Tier 1: Modern Android 10+ (API 29+) hardware-calibrated system effects (TICK, CLICK, POP)
+            if (apiLevel >= 29 && predefinedEffectId >= 0 && vibrationEffectClass != null)
+            {
+                try
+                {
+                    using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createPredefined", predefinedEffectId))
+                    {
+                        if (effect != null)
+                        {
+                            vibrator.Call("vibrate", effect);
+                            triggered = true;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fallback to createOneShot if vendor HAL has no predefined waveform
+                }
+            }
+
+            // Tier 2: Android 8.0+ (API 26+) amplitude & duration controlled single pulse
+            if (!triggered && apiLevel >= 26 && vibrationEffectClass != null)
+            {
+                if (hasAmplitudeControl)
                 {
                     try
                     {
-                        using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createPredefined", predefinedEffectId))
+                        using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, scaledAmp))
                         {
-                            vibrator.Call("vibrate", effect);
-                            return;
+                            if (effect != null)
+                            {
+                                vibrator.Call("vibrate", effect);
+                                triggered = true;
+                            }
                         }
                     }
                     catch
                     {
-                        // Fallback if specific effect is not implemented on custom vendor ROM
+                        // Fallback below
                     }
                 }
 
-                // Android 8.0+ (API 26+) amplitude and duration controlled single pulse
-                if (apiLevel >= 26 && vibrationEffectClass != null)
+                // Tier 2b: If device lacks amplitude control, use DEFAULT_AMPLITUDE (-1)
+                if (!triggered)
                 {
-                    using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, scaledAmp))
+                    try
                     {
-                        vibrator.Call("vibrate", effect);
-                        return;
+                        using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, -1))
+                        {
+                            if (effect != null)
+                            {
+                                vibrator.Call("vibrate", effect);
+                                triggered = true;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback below
                     }
                 }
-
-                // Fallback for older Android: short duration pulse only (never call full Handheld.Vibrate)
-                vibrator.Call("vibrate", scaledMs);
             }
-            catch (Exception)
+
+            // Tier 3: Legacy vibrator single pulse
+            if (!triggered)
             {
-                // Silently ignore to avoid motor rumble or exception noise
+                try
+                {
+                    vibrator.Call("vibrate", scaledMs);
+                    triggered = true;
+                }
+                catch
+                {
+                    // Fall through to Handheld.Vibrate
+                }
+            }
+
+            // Tier 4: Universal fallback
+            if (!triggered && fallbackToHandheldVibrate)
+            {
+                Handheld.Vibrate();
+            }
+
+            if (debugLogs)
+            {
+                Debug.Log($"<color=orange>[HapticManager]</color> Android {debugLabel} Triggered: {triggered} ({scaledMs}ms)");
             }
 #elif UNITY_IOS
             // Handled via native HapticBridge
 #else
-            // Silent fallback on non-mobile platforms
+            // Fallback for any other platforms
+            if (fallbackToHandheldVibrate)
+            {
+                Handheld.Vibrate();
+            }
 #endif
         }
     }
