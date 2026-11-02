@@ -67,7 +67,7 @@ namespace SandBlocks.Core.Haptics
         [SerializeField] private bool hapticsOnVehicleSelect = true;
 
         [Tooltip("Haptic when vehicle crosses grid cells while dragging")]
-        [SerializeField] private bool hapticsOnVehicleDragStep = true;
+        [SerializeField] private bool hapticsOnVehicleDragStep = false;
 
         [Tooltip("Haptic when vehicle is placed successfully in a grid slot")]
         [SerializeField] private bool hapticsOnVehiclePlace = true;
@@ -278,7 +278,7 @@ namespace SandBlocks.Core.Haptics
                 selectionAmplitude = 120;
                 fallbackToHandheldVibrate = true;
                 hapticsOnUIButtons = true;
-                hapticsOnVehicleDragStep = true;
+                hapticsOnVehicleDragStep = false;
                 SavePreferences();
                 return;
             }

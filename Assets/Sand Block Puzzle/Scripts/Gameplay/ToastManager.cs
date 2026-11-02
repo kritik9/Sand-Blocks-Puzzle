@@ -82,11 +82,11 @@ namespace SandBlocks.Gameplay
             }
             else if (Instance != this)
             {
-                // If another instance exists, prefer the active one
                 Instance = this;
             }
 
             AutoDetectComponents();
+            EnsureCanvasSorting();
             SaveOriginalTransform();
 
             if (canvasGroup != null)
@@ -95,8 +95,6 @@ namespace SandBlocks.Gameplay
                 canvasGroup.interactable = false;
                 canvasGroup.blocksRaycasts = false;
             }
-
-            gameObject.SetActive(false);
         }
 
         private void OnValidate()
@@ -125,6 +123,40 @@ namespace SandBlocks.Gameplay
             }
         }
 
+        /// <summary>
+        /// Guarantees the toast is rendered above all dialogs, popups, and HUD screens.
+        /// If nested under InGameUI (which can be disabled), reparents directly to the root Canvas.
+        /// </summary>
+        public void EnsureCanvasSorting()
+        {
+            // If parented to InGameUI or sub-panels, reparent to root Canvas so HUD toggles never deactivate Toast
+            if (transform.parent != null && (transform.parent.name == "InGameUI" || transform.parent.name.Contains("Panel")))
+            {
+                var rootCanvas = GetComponentInParent<Canvas>(true);
+                if (rootCanvas != null && rootCanvas.transform != transform.parent)
+                {
+                    transform.SetParent(rootCanvas.transform, false);
+                }
+            }
+
+            // Ensure Toast has its own Canvas with max sorting order so nothing obscures it
+            var canvas = GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                canvas = gameObject.AddComponent<Canvas>();
+            }
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 9999;
+
+            var raycaster = GetComponent<GraphicRaycaster>();
+            if (raycaster == null)
+            {
+                gameObject.AddComponent<GraphicRaycaster>();
+            }
+
+            transform.SetAsLastSibling();
+        }
+
         private void SaveOriginalTransform()
         {
             if (hasSavedTransform) return;
@@ -137,11 +169,6 @@ namespace SandBlocks.Gameplay
         }
 
         /// <summary>
-        /// Global static helper to show a toast message from anywhere in the codebase.
-        /// </summary>
-        /// <param name="message">The text to display.</param>
-        /// <param name="duration">Optional custom display duration. Defaults to inspector setting if <= 0.</param>
-        /// <summary>
         /// Immediately dismisses any active toast.
         /// </summary>
         public static void DismissCurrent()
@@ -149,11 +176,23 @@ namespace SandBlocks.Gameplay
             Instance?.HideImmediate();
         }
 
+        /// <summary>
+        /// Global static helper to show a toast message from anywhere in the codebase.
+        /// Auto-finds or dynamically instantiates Toast UI if not present in the scene.
+        /// </summary>
+        /// <param name="message">The text to display.</param>
+        /// <param name="duration">Optional custom display duration. Defaults to inspector setting if <= 0.</param>
         public static void Show(string message, float duration = -1f)
         {
+            if (string.IsNullOrEmpty(message)) return;
+
             if (Instance == null)
             {
                 Instance = FindAnyObjectByType<ToastManager>(FindObjectsInactive.Include);
+                if (Instance == null)
+                {
+                    Instance = CreateDynamicFallback();
+                }
             }
 
             if (Instance != null)
@@ -166,6 +205,57 @@ namespace SandBlocks.Gameplay
             }
         }
 
+        private static ToastManager CreateDynamicFallback()
+        {
+            var canvas = FindAnyObjectByType<Canvas>();
+            if (canvas == null) return null;
+
+            var toastObj = new GameObject("ToastMessage", typeof(RectTransform), typeof(CanvasGroup), typeof(ToastManager));
+            toastObj.transform.SetParent(canvas.transform, false);
+            var rect = toastObj.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.sizeDelta = Vector2.zero;
+            rect.anchoredPosition = Vector2.zero;
+
+            var containerObj = new GameObject("Container", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            containerObj.transform.SetParent(toastObj.transform, false);
+            var contRect = containerObj.GetComponent<RectTransform>();
+            contRect.anchorMin = new Vector2(0.5f, 0.5f);
+            contRect.anchorMax = new Vector2(0.5f, 0.5f);
+            contRect.sizeDelta = new Vector2(720f, 0f);
+            contRect.anchoredPosition = Vector2.zero;
+
+            var img = containerObj.GetComponent<Image>();
+            img.color = new Color(0.12f, 0.12f, 0.16f, 0.94f);
+
+            var vlg = containerObj.GetComponent<VerticalLayoutGroup>();
+            vlg.padding = new RectOffset(40, 40, 24, 24);
+            vlg.childAlignment = TextAnchor.MiddleCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+
+            var csf = containerObj.GetComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var textObj = new GameObject("MessageText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textObj.transform.SetParent(containerObj.transform, false);
+            var tmp = textObj.GetComponent<TextMeshProUGUI>();
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.fontSize = 32f;
+            tmp.color = Color.white;
+
+            var tm = toastObj.GetComponent<ToastManager>();
+            tm.canvasGroup = toastObj.GetComponent<CanvasGroup>();
+            tm.containerRect = contRect;
+            tm.messageText = tmp;
+            tm.backgroundImage = img;
+            tm.displayDuration = 1.8f;
+            Instance = tm;
+            return tm;
+        }
+
         /// <summary>
         /// Shows the toast notification with animated pop-in and fade-out.
         /// </summary>
@@ -173,11 +263,12 @@ namespace SandBlocks.Gameplay
         {
             if (string.IsNullOrEmpty(message)) return;
 
+            EnsureCanvasSorting();
             AutoDetectComponents();
             SaveOriginalTransform();
 
-            // Prevent rapid identical toast spam
-            if (Time.unscaledTime - lastShowTime < 0.2f && messageText != null && messageText.text == message)
+            // Prevent rapid identical spam within fraction of second
+            if (Time.unscaledTime - lastShowTime < 0.25f && messageText != null && messageText.text == message && activeToastRoutine != null)
             {
                 return;
             }
@@ -186,16 +277,20 @@ namespace SandBlocks.Gameplay
             if (activeToastRoutine != null)
             {
                 StopCoroutine(activeToastRoutine);
+                activeToastRoutine = null;
             }
 
-            gameObject.SetActive(true);
+            if (!gameObject.activeSelf)
+            {
+                gameObject.SetActive(true);
+            }
+            transform.SetAsLastSibling();
 
             if (messageText != null)
             {
                 messageText.text = message;
             }
 
-            // Force layout rebuild so content size fitters resize properly for short or long text
             if (containerRect != null)
             {
                 LayoutRebuilder.ForceRebuildLayoutImmediate(containerRect);
@@ -206,7 +301,7 @@ namespace SandBlocks.Gameplay
                 Core.Haptics.HapticManager.Instance?.LightImpact();
             }
 
-            float holdTime = (duration > 0f) ? duration : displayDuration;
+            float holdTime = (duration > 0f) ? duration : Mathf.Max(displayDuration, 1.8f);
             activeToastRoutine = StartCoroutine(AnimateToastRoutine(holdTime));
         }
 
@@ -227,16 +322,13 @@ namespace SandBlocks.Gameplay
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / inDur);
 
-                // Smooth ease-out curve
                 float alphaEase = Mathf.Sin(t * Mathf.PI * 0.5f);
                 if (canvasGroup != null) canvasGroup.alpha = alphaEase;
 
                 if (containerRect != null)
                 {
-                    // Vertical slide
                     containerRect.anchoredPosition = Vector2.Lerp(startPos, basePos, alphaEase);
 
-                    // Elastic scale pop
                     if (animateScale)
                     {
                         float currentScale;
@@ -257,7 +349,7 @@ namespace SandBlocks.Gameplay
                 yield return null;
             }
 
-            // Lock to exact settled position
+            // Settle exactly
             if (canvasGroup != null) canvasGroup.alpha = 1f;
             if (containerRect != null)
             {
@@ -276,7 +368,7 @@ namespace SandBlocks.Gameplay
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / outDur);
-                float ease = t * t; // Ease in
+                float ease = t * t;
 
                 if (canvasGroup != null) canvasGroup.alpha = Mathf.Lerp(1f, 0f, ease);
 
@@ -289,14 +381,17 @@ namespace SandBlocks.Gameplay
             }
 
             // Cleanup & hide
-            if (canvasGroup != null) canvasGroup.alpha = 0f;
+            if (canvasGroup != null)
+            {
+                canvasGroup.alpha = 0f;
+                canvasGroup.blocksRaycasts = false;
+            }
             if (containerRect != null)
             {
                 containerRect.anchoredPosition = basePos;
                 containerRect.localScale = baseScale;
             }
 
-            gameObject.SetActive(false);
             activeToastRoutine = null;
         }
 
@@ -311,8 +406,11 @@ namespace SandBlocks.Gameplay
                 activeToastRoutine = null;
             }
 
-            if (canvasGroup != null) canvasGroup.alpha = 0f;
-            gameObject.SetActive(false);
+            if (canvasGroup != null)
+            {
+                canvasGroup.alpha = 0f;
+                canvasGroup.blocksRaycasts = false;
+            }
         }
     }
 }

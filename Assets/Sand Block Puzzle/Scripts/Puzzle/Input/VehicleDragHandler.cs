@@ -18,11 +18,7 @@ namespace SandBlocks.Puzzle.Input
         [SerializeField] private Camera gameCamera;
 
         [Header("Smooth Movement Tuning")]
-        [Tooltip("Base speed in units/second at which the vehicle advances along waypoints during dragging")]
-        [SerializeField] private float pathFollowSpeed = 36f;
 
-        [Tooltip("Dynamic catch-up multiplier scaling speed based on distance between vehicle and pointer")]
-        [SerializeField] private float catchUpMultiplier = 28f;
 
         [Tooltip("Smooth follow damping factor for responsive, organic bus tracking")]
         [Range(15f, 60f)]
@@ -41,10 +37,6 @@ namespace SandBlocks.Puzzle.Input
         private HashSet<Vector2Int> reachablePositions = new HashSet<Vector2Int>();
         private Plane dragPlane;
 
-        // Waypoint-based path following
-        private List<Vector2Int> activePath = new List<Vector2Int>();
-        private int currentWaypointIndex = 0;
-        private Vector2Int lastTargetDestination = new Vector2Int(-999, -999);
         private Coroutine activeSnapRoutine;
 
         public VehicleBase HoveredVehicle => selectedVehicle;
@@ -85,11 +77,7 @@ namespace SandBlocks.Puzzle.Input
                 }
             }
 
-            // If selected vehicle was destroyed or lost while dragging (e.g. rapid level change), reset drag state cleanly
-            if (selectedVehicle == null && activePath.Count > 0)
-            {
-                ResetDragState();
-            }
+
 
             HandleInput();
         }
@@ -155,9 +143,7 @@ namespace SandBlocks.Puzzle.Input
                         ? new Vector2(initialWorldPos.x, initialWorldPos.z)
                         : new Vector2(initialWorldPos.x, initialWorldPos.y);
 
-                    activePath.Clear();
-                    currentWaypointIndex = 0;
-                    lastTargetDestination = initialGridPos;
+
 
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleSelect();
@@ -171,138 +157,155 @@ namespace SandBlocks.Puzzle.Input
                     Vector3 planeNormal = isHorizontal ? Vector3.up : Vector3.back;
                     Vector3 planePoint = isHorizontal ? new Vector3(0f, vehicle.transform.position.y, 0f) : new Vector3(0f, 0f, vehicle.transform.position.z);
                     dragPlane = new Plane(planeNormal, planePoint);
+
                     Ray ray = gameCamera.ScreenPointToRay(screenPos);
                     if (dragPlane.Raycast(ray, out float enter))
                     {
                         dragOffset = vehicle.transform.position - ray.GetPoint(enter);
                     }
-                    else
-                    {
-                        dragOffset = Vector3.zero;
-                    }
 
-                    // If completely blocked (only start pos is in reachable set), play blocked feedback
-                    if (reachablePositions.Count <= 1 && selectedVehicle is BusVehicle bus)
+                    // If bus is trapped with no valid moves anywhere on the board, and not at the top collection row
+                    bool isAtTopRow = IsVehicleAtTopRow(selectedVehicle, initialGridPos);
+                    if (!isAtTopRow && reachablePositions != null && reachablePositions.Count <= 1)
                     {
-                        bus.PlayBlockedShake(Vector3.zero);
-                        SandBlocks.Gameplay.ToastManager.Show("Bus cannot be moved! Path is blocked.");
+                        if (selectedVehicle is BusVehicle blockedBus)
+                        {
+                            blockedBus.PlayBlockedShake(Vector3.zero, showToast: false);
+                        }
+                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
+                        SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
+                        SandBlocks.Gameplay.ToastManager.Show("Bus cannot move! Path is blocked.");
                     }
                 }
             }
             else if (isHeld && selectedVehicle != null)
             {
-                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
-
-                if (selectedVehicle.IsFull && !shouldStayForDropOff)
-                {
-                    // Bus became full while dragging and is driving away: release gracefully
-                    selectedVehicle.SetSelected(false);
-                    activePath.Clear();
-                    selectedVehicle = null;
-                    return;
-                }
-
                 Ray ray = gameCamera.ScreenPointToRay(screenPos);
                 if (dragPlane.Raycast(ray, out float enter))
                 {
                     Vector3 rawPointerWorld = ray.GetPoint(enter) + dragOffset;
                     Vector2 pointerFlat = isHorizontal ? new Vector2(rawPointerWorld.x, rawPointerWorld.z) : new Vector2(rawPointerWorld.x, rawPointerWorld.y);
 
-                    // Find which grid cell the pointer is aiming for
-                    Vector2Int desiredGrid = puzzleGrid.WorldToGrid(rawPointerWorld, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    float cellSize = puzzleGrid.CellSize;
+                    float stepThreshold = cellSize * 0.50f;
 
-                    // Determine target destination among reachable cells
-                    Vector2Int targetDestination;
-                    if (reachablePositions.Contains(desiredGrid))
-                    {
-                        targetDestination = desiredGrid;
-                    }
-                    else
-                    {
-                        targetDestination = puzzleGrid.GetClosestReachablePosition(reachablePositions, desiredGrid);
-                    }
+                    // 1. Step-by-step neighbor advancement
+                    // The bus can ONLY advance to directly adjacent cells along the path the finger is taking.
+                    // If the finger moves across an obstacle or into a blocked cell, the bus STOPS at the obstacle!
+                    // It will NEVER automatically trace a detour around obstacles to reach the finger.
+                    bool steppedAny = false;
+                    int maxStepsThisFrame = 4; // safety cap for fast swipes
 
-                    // If target destination changed, recalculate collision-free path
-                    if (targetDestination != lastTargetDestination)
+                    while (maxStepsThisFrame > 0)
                     {
-                        lastTargetDestination = targetDestination;
+                        maxStepsThisFrame--;
 
-                        if (currentHoveredGrid == targetDestination)
+                        Vector3 cellWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        Vector2 cellFlat = isHorizontal ? new Vector2(cellWorld.x, cellWorld.z) : new Vector2(cellWorld.x, cellWorld.y);
+                        Vector2 toPointer = pointerFlat - cellFlat;
+
+                        Vector2Int primaryStep = Vector2Int.zero;
+                        Vector2Int secondaryStep = Vector2Int.zero;
+
+                        if (Mathf.Abs(toPointer.x) >= Mathf.Abs(toPointer.y))
                         {
-                            activePath.Clear();
-                            activePath.Add(targetDestination);
-                            currentWaypointIndex = 0;
+                            if (Mathf.Abs(toPointer.x) > stepThreshold)
+                                primaryStep = new Vector2Int(toPointer.x > 0 ? 1 : -1, 0);
+                            if (Mathf.Abs(toPointer.y) > stepThreshold)
+                                secondaryStep = new Vector2Int(0, toPointer.y > 0 ? 1 : -1);
                         }
                         else
                         {
-                            var newPath = puzzleGrid.FindPath(selectedVehicle, currentHoveredGrid, targetDestination);
-                            if (newPath != null && newPath.Count > 0)
+                            if (Mathf.Abs(toPointer.y) > stepThreshold)
+                                primaryStep = new Vector2Int(0, toPointer.y > 0 ? 1 : -1);
+                            if (Mathf.Abs(toPointer.x) > stepThreshold)
+                                secondaryStep = new Vector2Int(toPointer.x > 0 ? 1 : -1, 0);
+                        }
+
+                        bool tookStep = false;
+
+                        // Try primary adjacent step
+                        if (primaryStep != Vector2Int.zero)
+                        {
+                            Vector2Int cand = currentHoveredGrid + primaryStep;
+                            if (puzzleGrid.CanPlace(selectedVehicle, cand))
                             {
-                                activePath = newPath;
-                                currentWaypointIndex = (newPath.Count > 1 && newPath[0] == currentHoveredGrid) ? 1 : 0;
+                                currentHoveredGrid = cand;
+                                selectedVehicle.GridPosition = currentHoveredGrid;
+                                tookStep = true;
+                                steppedAny = true;
                             }
                         }
+
+                        // If primary step was blocked, try secondary step
+                        if (!tookStep && secondaryStep != Vector2Int.zero)
+                        {
+                            Vector2Int cand = currentHoveredGrid + secondaryStep;
+                            if (puzzleGrid.CanPlace(selectedVehicle, cand))
+                            {
+                                currentHoveredGrid = cand;
+                                selectedVehicle.GridPosition = currentHoveredGrid;
+                                tookStep = true;
+                                steppedAny = true;
+                            }
+                        }
+
+                        if (!tookStep)
+                        {
+                            // Neither step direction was valid or pointer is within threshold -> stop stepping!
+                            break;
+                        }
                     }
 
-                    // Responsive dynamic travel speed based on distance to pointer
-                    float distToTarget = Vector2.Distance(currentVehicleFlatPos, pointerFlat);
-                    float dynamicSpeed = Mathf.Max(pathFollowSpeed, distToTarget * catchUpMultiplier);
-                    float stepDist = dynamicSpeed * Time.deltaTime;
-
-                    // Advance continuously through waypoints in this frame (no frame-dropping or micro-hitches)
-                    while (stepDist > 0.0001f && activePath != null && currentWaypointIndex < activePath.Count)
+                    if (steppedAny)
                     {
-                        Vector2Int nextWp = activePath[currentWaypointIndex];
-                        Vector3 nextWorld = puzzleGrid.GridToWorld(nextWp, selectedVehicle.Length, selectedVehicle.IsVertical);
-                        Vector2 nextFlat = isHorizontal ? new Vector2(nextWorld.x, nextWorld.z) : new Vector2(nextWorld.x, nextWorld.y);
-
-                        float distToWp = Vector2.Distance(currentVehicleFlatPos, nextFlat);
-
-                        if (distToWp <= stepDist)
-                        {
-                            currentVehicleFlatPos = nextFlat;
-                            stepDist -= distToWp;
-                            currentHoveredGrid = nextWp;
-                            selectedVehicle.GridPosition = currentHoveredGrid;
-                            currentWaypointIndex++;
-
-                            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
-                            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleDragStep();
-                        }
-                        else
-                        {
-                            currentVehicleFlatPos = Vector2.MoveTowards(currentVehicleFlatPos, nextFlat, stepDist);
-                            stepDist = 0f;
-                        }
+                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
                     }
 
-                    // Continuous sub-cell tracking when at target destination (zero deadzone)
-                    if (activePath == null || currentWaypointIndex >= activePath.Count)
+                    // 2. Continuous sub-cell visual tracking with directional obstacle resistance
+                    Vector3 anchorWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    Vector2 anchorFlat = isHorizontal ? new Vector2(anchorWorld.x, anchorWorld.z) : new Vector2(anchorWorld.x, anchorWorld.y);
+                    Vector2 dragOffsetFromCell = pointerFlat - anchorFlat;
+
+                    // Check which directions from currentHoveredGrid are free or blocked
+                    bool canMoveRight = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.right);
+                    bool canMoveLeft  = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.left);
+                    bool canMoveUp    = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.up);
+                    bool canMoveDown  = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.down);
+
+                    float freeRange = cellSize * 0.48f;
+                    float elasticRange = cellSize * elasticEdgeResistance;
+
+                    // Clamp X offset
+                    if (dragOffsetFromCell.x > 0)
                     {
-                        Vector3 curCellWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
-                        Vector2 curCellFlat = isHorizontal ? new Vector2(curCellWorld.x, curCellWorld.z) : new Vector2(curCellWorld.x, curCellWorld.y);
-                        Vector2 pointerOffset = pointerFlat - curCellFlat;
-
-                        Vector2 subCellTarget;
-                        if (desiredGrid == currentHoveredGrid || reachablePositions.Contains(desiredGrid))
-                        {
-                            // Free responsive tracking toward pointer within cell boundary
-                            float maxOffset = puzzleGrid.CellSize * 0.48f;
-                            subCellTarget = curCellFlat + Vector2.ClampMagnitude(pointerOffset, maxOffset);
-                        }
-                        else
-                        {
-                            // Elastic rubber-band resistance against blocked edge
-                            float maxElastic = puzzleGrid.CellSize * elasticEdgeResistance;
-                            subCellTarget = curCellFlat + Vector2.ClampMagnitude(pointerOffset, maxElastic);
-                        }
-
-                        currentVehicleFlatPos = Vector2.Lerp(currentVehicleFlatPos, subCellTarget, Time.deltaTime * smoothFollowDamping);
+                        float maxAllowed = canMoveRight ? freeRange : elasticRange;
+                        dragOffsetFromCell.x = Mathf.Min(dragOffsetFromCell.x, maxAllowed);
+                    }
+                    else if (dragOffsetFromCell.x < 0)
+                    {
+                        float maxAllowed = canMoveLeft ? freeRange : elasticRange;
+                        dragOffsetFromCell.x = Mathf.Max(dragOffsetFromCell.x, -maxAllowed);
                     }
 
-                    // Apply position with smooth lift and visual shake offset
+                    // Clamp Y offset
+                    if (dragOffsetFromCell.y > 0)
+                    {
+                        float maxAllowed = canMoveUp ? freeRange : elasticRange;
+                        dragOffsetFromCell.y = Mathf.Min(dragOffsetFromCell.y, maxAllowed);
+                    }
+                    else if (dragOffsetFromCell.y < 0)
+                    {
+                        float maxAllowed = canMoveDown ? freeRange : elasticRange;
+                        dragOffsetFromCell.y = Mathf.Max(dragOffsetFromCell.y, -maxAllowed);
+                    }
+
+
+
+                    Vector2 targetFlatPos = anchorFlat + dragOffsetFromCell;
+                    currentVehicleFlatPos = Vector2.Lerp(currentVehicleFlatPos, targetFlatPos, Time.deltaTime * smoothFollowDamping);
+
+                    // 3. Apply position with smooth lift and visual shake offset
                     Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
                     float liftAmount = 0.20f;
                     Vector3 idealWorldPos = isHorizontal
@@ -317,28 +320,14 @@ namespace SandBlocks.Puzzle.Input
                 if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
                 {
                     selectedVehicle.SetSelected(false);
-                    activePath.Clear();
                     selectedVehicle = null;
                     return;
                 }
 
-                // Determine final placement cell: find closest reachable position to current visual position
+                // Place the vehicle cleanly at the cell it reached step-by-step
                 Vector2Int finalGridPos = currentHoveredGrid;
-                float closestDistSqr = float.MaxValue;
-                Vector3 curPos = selectedVehicle.transform.position;
 
-                foreach (var reachable in reachablePositions)
-                {
-                    Vector3 rw = puzzleGrid.GridToWorld(reachable, selectedVehicle.Length, selectedVehicle.IsVertical);
-                    float d = (curPos - rw).sqrMagnitude;
-                    if (d < closestDistSqr)
-                    {
-                        closestDistSqr = d;
-                        finalGridPos = reachable;
-                    }
-                }
-
-                if (reachablePositions.Contains(finalGridPos) && puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
+                if (puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
                 {
                     puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
                     Vector3 snapTarget = puzzleGrid.GridToWorld(finalGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
@@ -354,17 +343,20 @@ namespace SandBlocks.Puzzle.Input
                     Vector3 snapTarget = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
                     activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
 
-                    if (selectedVehicle is BusVehicle bus)
+                    bool wasAtTopRow = IsVehicleAtTopRow(selectedVehicle, initialGridPos);
+                    if (!wasAtTopRow)
                     {
-                        bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up);
+                        if (selectedVehicle is BusVehicle bus)
+                        {
+                            bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up, showToast: false);
+                        }
+                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
+                        SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
+                        SandBlocks.Gameplay.ToastManager.Show("Cannot place bus here! Spot is blocked.");
                     }
-                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
-                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
-                    SandBlocks.Gameplay.ToastManager.Show("Cannot place bus here! Spot is blocked.");
                 }
 
                 selectedVehicle.SetSelected(false);
-                activePath.Clear();
                 selectedVehicle = null;
             }
         }
@@ -405,12 +397,36 @@ namespace SandBlocks.Puzzle.Input
                 activeSnapRoutine = null;
             }
 
-            if (selectedVehicle != null) selectedVehicle.SetSelected(false);
+            if (selectedVehicle != null)
+            {
+                if (puzzleGrid != null && selectedVehicle.gameObject != null)
+                {
+                    bool isPlaced = false;
+                    var registered = puzzleGrid.RegisteredVehicles;
+                    if (registered != null)
+                    {
+                        for (int i = 0; i < registered.Count; i++)
+                        {
+                            if (registered[i] == selectedVehicle)
+                            {
+                                isPlaced = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!isPlaced)
+                    {
+                        puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
+                        selectedVehicle.transform.position = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    }
+                }
+
+                selectedVehicle.SetSelected(false);
+            }
+
             selectedVehicle = null;
-            activePath.Clear();
-            currentWaypointIndex = 0;
             reachablePositions.Clear();
-            lastTargetDestination = new Vector2Int(-999, -999);
             currentHoveredGrid = new Vector2Int(-999, -999);
         }
 
@@ -421,8 +437,15 @@ namespace SandBlocks.Puzzle.Input
                 var newReachable = puzzleGrid.GetReachablePositions(selectedVehicle, currentHoveredGrid);
                 newReachable.UnionWith(puzzleGrid.GetReachablePositions(selectedVehicle, initialGridPos));
                 reachablePositions = newReachable;
-                lastTargetDestination = new Vector2Int(-999, -999);
             }
+        }
+
+        private bool IsVehicleAtTopRow(VehicleBase vehicle, Vector2Int gridPos)
+        {
+            if (vehicle == null || puzzleGrid == null) return false;
+            int topRow = puzzleGrid.Rows - 1;
+            int maxOccupiedY = vehicle.IsVertical ? (gridPos.y + vehicle.Length - 1) : gridPos.y;
+            return maxOccupiedY >= topRow;
         }
 
         private VehicleBase RaycastVehicle(Vector2 screenPos)

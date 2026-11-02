@@ -139,6 +139,9 @@ namespace SandBlocks.Puzzle.Vehicles
         [Tooltip("Toggle the bus squash-and-stretch pop animation when a passenger fills into the bus")]
         [SerializeField] private bool enablePassengerBoardPop = true;
         [SerializeField] private float popScaleMultiplier = 1.14f;
+        [Tooltip("Duration of the bus pop bounce animation when a passenger boards (seconds)")]
+        [Range(0.05f, 0.6f)]
+        [SerializeField] private float passengerPopDuration = 0.20f;
         [SerializeField] private float blockedShakeMagnitude = 0.16f;
 
         [Header("Spawn Animation")]
@@ -201,6 +204,12 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             get => enablePassengerBoardPop;
             set => enablePassengerBoardPop = value;
+        }
+
+        public float PassengerPopDuration
+        {
+            get => passengerPopDuration;
+            set => passengerPopDuration = Mathf.Max(0.05f, value);
         }
 
         public float SeatedCharacterScale
@@ -827,7 +836,7 @@ namespace SandBlocks.Puzzle.Vehicles
 
         private IEnumerator PassengerPopRoutine()
         {
-            float duration = 0.22f;
+            float duration = Mathf.Max(0.05f, passengerPopDuration);
             float elapsed = 0f;
 
             while (elapsed < duration)
@@ -848,14 +857,17 @@ namespace SandBlocks.Puzzle.Vehicles
             activePopRoutine = null;
         }
 
-        public void PlayBlockedShake(Vector3 dragDirection)
+        public void PlayBlockedShake(Vector3 dragDirection, bool showToast = true)
         {
             if (Time.time - lastShakeTime < 0.2f) return;
             lastShakeTime = Time.time;
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
-            SandBlocks.Gameplay.ToastManager.Show("Path is blocked!");
+            if (showToast)
+            {
+                SandBlocks.Gameplay.ToastManager.Show("Path is blocked!");
+            }
 
             if (activeShakeRoutine != null) StopCoroutine(activeShakeRoutine);
             activeShakeRoutine = StartCoroutine(BlockedShakeRoutine(dragDirection));
