@@ -633,7 +633,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Puzzle.Input.VehicleDragHandler
   puzzleGrid: {fileID: 1914735582}
   gameCamera: {fileID: 330585545}
-  pathFollowSpeed: 18
+  pathFollowSpeed: 36
+  catchUpMultiplier: 28
+  smoothFollowDamping: 35
+  elasticEdgeResistance: 0.18
 --- !u!1 &220182915
 GameObject:
   m_ObjectHideFlags: 0

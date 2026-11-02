@@ -1522,8 +1522,8 @@ namespace SandBlocks.Puzzle.Vehicles
             headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
         }
 
-        [ContextMenu("Trigger Headlight Flare (Test)")]
-        public void TriggerHeadlightFlareTest()
+        [ContextMenu("Trigger Headlight Highlight (Test)")]
+        public void TriggerHeadlightHighlightTest()
         {
             targetIntensityMultiplier = maxIntensityMultiplier;
             nextEventTime = Time.time + 1.2f;

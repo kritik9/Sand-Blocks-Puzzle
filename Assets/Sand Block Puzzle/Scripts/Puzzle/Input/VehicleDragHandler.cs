@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -6,20 +7,37 @@ using SandBlocks.Puzzle.Vehicles;
 
 namespace SandBlocks.Puzzle.Input
 {
+    /// <summary>
+    /// High-performance, buttery-smooth vehicle drag and pathfinding controller.
+    /// Provides continuous sub-cell tracking, multi-waypoint delta consumption (zero frame-dropping),
+    /// elastic edge resistance, and organic ease-out slot snapping.
+    /// </summary>
     public class VehicleDragHandler : MonoBehaviour
     {
         [SerializeField] private PuzzleGrid puzzleGrid;
         [SerializeField] private Camera gameCamera;
 
-        [Header("Movement Tuning")]
-        [Tooltip("Speed in units/second at which the vehicle moves along grid path waypoints during dragging")]
-        [SerializeField] private float pathFollowSpeed = 18f;
+        [Header("Smooth Movement Tuning")]
+        [Tooltip("Base speed in units/second at which the vehicle advances along waypoints during dragging")]
+        [SerializeField] private float pathFollowSpeed = 36f;
+
+        [Tooltip("Dynamic catch-up multiplier scaling speed based on distance between vehicle and pointer")]
+        [SerializeField] private float catchUpMultiplier = 28f;
+
+        [Tooltip("Smooth follow damping factor for responsive, organic bus tracking")]
+        [Range(15f, 60f)]
+        [SerializeField] private float smoothFollowDamping = 35f;
+
+        [Tooltip("Sub-cell elastic resistance factor when pulling against a blocked edge (0 = rigid wall, 0.25 = soft rubber band)")]
+        [Range(0f, 0.35f)]
+        [SerializeField] private float elasticEdgeResistance = 0.18f;
 
         private VehicleBase selectedVehicle;
         private Vector3 dragOffset;
         private Vector3 initialWorldPos;
         private Vector2Int initialGridPos;
         private Vector2Int currentHoveredGrid;
+        private Vector2 currentVehicleFlatPos;
         private HashSet<Vector2Int> reachablePositions = new HashSet<Vector2Int>();
         private Plane dragPlane;
 
@@ -27,6 +45,7 @@ namespace SandBlocks.Puzzle.Input
         private List<Vector2Int> activePath = new List<Vector2Int>();
         private int currentWaypointIndex = 0;
         private Vector2Int lastTargetDestination = new Vector2Int(-999, -999);
+        private Coroutine activeSnapRoutine;
 
         public VehicleBase HoveredVehicle => selectedVehicle;
         public bool IsDragging => selectedVehicle != null;
@@ -120,15 +139,25 @@ namespace SandBlocks.Puzzle.Input
                 var vehicle = RaycastVehicle(screenPos);
                 if (vehicle != null && (!vehicle.IsFull || SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null))
                 {
+                    if (activeSnapRoutine != null)
+                    {
+                        StopCoroutine(activeSnapRoutine);
+                        activeSnapRoutine = null;
+                    }
+
                     selectedVehicle = vehicle;
                     selectedVehicle.SetSelected(true);
                     initialWorldPos = vehicle.transform.position;
                     initialGridPos = vehicle.GridPosition;
                     currentHoveredGrid = initialGridPos;
 
+                    currentVehicleFlatPos = isHorizontal
+                        ? new Vector2(initialWorldPos.x, initialWorldPos.z)
+                        : new Vector2(initialWorldPos.x, initialWorldPos.y);
+
                     activePath.Clear();
                     currentWaypointIndex = 0;
-                    lastTargetDestination = new Vector2Int(-999, -999);
+                    lastTargetDestination = initialGridPos;
 
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleSelect();
@@ -152,7 +181,7 @@ namespace SandBlocks.Puzzle.Input
                         dragOffset = Vector3.zero;
                     }
 
-                    // If completely blocked (only start pos is in reachable set), immediately play blocked shake
+                    // If completely blocked (only start pos is in reachable set), play blocked feedback
                     if (reachablePositions.Count <= 1 && selectedVehicle is BusVehicle bus)
                     {
                         bus.PlayBlockedShake(Vector3.zero);
@@ -179,8 +208,9 @@ namespace SandBlocks.Puzzle.Input
                 if (dragPlane.Raycast(ray, out float enter))
                 {
                     Vector3 rawPointerWorld = ray.GetPoint(enter) + dragOffset;
+                    Vector2 pointerFlat = isHorizontal ? new Vector2(rawPointerWorld.x, rawPointerWorld.z) : new Vector2(rawPointerWorld.x, rawPointerWorld.y);
 
-                    // Find which grid cell the pointer is trying to aim for
+                    // Find which grid cell the pointer is aiming for
                     Vector2Int desiredGrid = puzzleGrid.WorldToGrid(rawPointerWorld, selectedVehicle.Length, selectedVehicle.IsVertical);
 
                     // Determine target destination among reachable cells
@@ -192,31 +222,14 @@ namespace SandBlocks.Puzzle.Input
                     else
                     {
                         targetDestination = puzzleGrid.GetClosestReachablePosition(reachablePositions, desiredGrid);
-
-                        // If user is actively pulling towards an unreachable/blocked cell, trigger blocked shake
-                        Vector3 desiredWorld = puzzleGrid.GridToWorld(desiredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
-                        Vector3 currentWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
-                        Vector3 pullDiff = desiredWorld - currentWorld;
-
-                        if (pullDiff.sqrMagnitude > 0.15f && selectedVehicle is BusVehicle bus)
-                        {
-                            bus.PlayBlockedShake(pullDiff.normalized);
-                        }
                     }
 
-                    // If target destination changed, recalculate the collision-free path of waypoints
+                    // If target destination changed, recalculate collision-free path
                     if (targetDestination != lastTargetDestination)
                     {
                         lastTargetDestination = targetDestination;
 
-                        // Start path from the waypoint we are currently moving towards, or currentHoveredGrid
-                        Vector2Int pathStart = currentHoveredGrid;
-                        if (activePath != null && currentWaypointIndex < activePath.Count)
-                        {
-                            pathStart = activePath[currentWaypointIndex];
-                        }
-
-                        if (pathStart == targetDestination)
+                        if (currentHoveredGrid == targetDestination)
                         {
                             activePath.Clear();
                             activePath.Add(targetDestination);
@@ -224,7 +237,7 @@ namespace SandBlocks.Puzzle.Input
                         }
                         else
                         {
-                            var newPath = puzzleGrid.FindPath(selectedVehicle, pathStart, targetDestination);
+                            var newPath = puzzleGrid.FindPath(selectedVehicle, currentHoveredGrid, targetDestination);
                             if (newPath != null && newPath.Count > 0)
                             {
                                 activePath = newPath;
@@ -233,25 +246,25 @@ namespace SandBlocks.Puzzle.Input
                         }
                     }
 
-                    // Smoothly advance vehicle along activePath waypoints step-by-step
-                    if (activePath != null && currentWaypointIndex < activePath.Count)
+                    // Responsive dynamic travel speed based on distance to pointer
+                    float distToTarget = Vector2.Distance(currentVehicleFlatPos, pointerFlat);
+                    float dynamicSpeed = Mathf.Max(pathFollowSpeed, distToTarget * catchUpMultiplier);
+                    float stepDist = dynamicSpeed * Time.deltaTime;
+
+                    // Advance continuously through waypoints in this frame (no frame-dropping or micro-hitches)
+                    while (stepDist > 0.0001f && activePath != null && currentWaypointIndex < activePath.Count)
                     {
-                        Vector2Int nextWaypoint = activePath[currentWaypointIndex];
-                        Vector3 targetWorld = puzzleGrid.GridToWorld(nextWaypoint, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        Vector2Int nextWp = activePath[currentWaypointIndex];
+                        Vector3 nextWorld = puzzleGrid.GridToWorld(nextWp, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        Vector2 nextFlat = isHorizontal ? new Vector2(nextWorld.x, nextWorld.z) : new Vector2(nextWorld.x, nextWorld.y);
 
-                        Vector3 curPos = selectedVehicle.transform.position;
-                        Vector2 curFlat = isHorizontal ? new Vector2(curPos.x, curPos.z) : new Vector2(curPos.x, curPos.y);
-                        Vector2 targetFlat = isHorizontal ? new Vector2(targetWorld.x, targetWorld.z) : new Vector2(targetWorld.x, targetWorld.y);
+                        float distToWp = Vector2.Distance(currentVehicleFlatPos, nextFlat);
 
-                        float remainingWaypoints = activePath.Count - currentWaypointIndex;
-                        float dynamicSpeed = Mathf.Max(pathFollowSpeed, remainingWaypoints * 12f);
-                        float stepDist = dynamicSpeed * Time.deltaTime;
-
-                        if (Vector2.Distance(curFlat, targetFlat) <= stepDist + 0.02f)
+                        if (distToWp <= stepDist)
                         {
-                            // Arrived at nextWaypoint
-                            curFlat = targetFlat;
-                            currentHoveredGrid = nextWaypoint;
+                            currentVehicleFlatPos = nextFlat;
+                            stepDist -= distToWp;
+                            currentHoveredGrid = nextWp;
                             selectedVehicle.GridPosition = currentHoveredGrid;
                             currentWaypointIndex++;
 
@@ -260,29 +273,43 @@ namespace SandBlocks.Puzzle.Input
                         }
                         else
                         {
-                            curFlat = Vector2.MoveTowards(curFlat, targetFlat, stepDist);
+                            currentVehicleFlatPos = Vector2.MoveTowards(currentVehicleFlatPos, nextFlat, stepDist);
+                            stepDist = 0f;
                         }
+                    }
 
-                        Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
-                        if (isHorizontal)
+                    // Continuous sub-cell tracking when at target destination (zero deadzone)
+                    if (activePath == null || currentWaypointIndex >= activePath.Count)
+                    {
+                        Vector3 curCellWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        Vector2 curCellFlat = isHorizontal ? new Vector2(curCellWorld.x, curCellWorld.z) : new Vector2(curCellWorld.x, curCellWorld.y);
+                        Vector2 pointerOffset = pointerFlat - curCellFlat;
+
+                        Vector2 subCellTarget;
+                        if (desiredGrid == currentHoveredGrid || reachablePositions.Contains(desiredGrid))
                         {
-                            selectedVehicle.transform.position = new Vector3(curFlat.x + shakeOffset.x, initialWorldPos.y + 0.25f, curFlat.y + shakeOffset.z);
+                            // Free responsive tracking toward pointer within cell boundary
+                            float maxOffset = puzzleGrid.CellSize * 0.48f;
+                            subCellTarget = curCellFlat + Vector2.ClampMagnitude(pointerOffset, maxOffset);
                         }
                         else
                         {
-                            selectedVehicle.transform.position = new Vector3(curFlat.x + shakeOffset.x, curFlat.y + shakeOffset.y, initialWorldPos.z - 0.25f);
+                            // Elastic rubber-band resistance against blocked edge
+                            float maxElastic = puzzleGrid.CellSize * elasticEdgeResistance;
+                            subCellTarget = curCellFlat + Vector2.ClampMagnitude(pointerOffset, maxElastic);
                         }
+
+                        currentVehicleFlatPos = Vector2.Lerp(currentVehicleFlatPos, subCellTarget, Time.deltaTime * smoothFollowDamping);
                     }
-                    else
-                    {
-                        // Holding position smoothly at currentHoveredGrid
-                        Vector3 basePos = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
-                        Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
-                        Vector3 targetPos = isHorizontal
-                            ? new Vector3(basePos.x + shakeOffset.x, initialWorldPos.y + 0.25f, basePos.z + shakeOffset.z)
-                            : new Vector3(basePos.x + shakeOffset.x, basePos.y + shakeOffset.y, initialWorldPos.z - 0.25f);
-                        selectedVehicle.transform.position = Vector3.Lerp(selectedVehicle.transform.position, targetPos, Time.deltaTime * 32f);
-                    }
+
+                    // Apply position with smooth lift and visual shake offset
+                    Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
+                    float liftAmount = 0.20f;
+                    Vector3 idealWorldPos = isHorizontal
+                        ? new Vector3(currentVehicleFlatPos.x + shakeOffset.x, initialWorldPos.y + liftAmount, currentVehicleFlatPos.y + shakeOffset.z)
+                        : new Vector3(currentVehicleFlatPos.x + shakeOffset.x, currentVehicleFlatPos.y + shakeOffset.y, initialWorldPos.z - liftAmount);
+
+                    selectedVehicle.transform.position = Vector3.Lerp(selectedVehicle.transform.position, idealWorldPos, Time.deltaTime * 45f);
                 }
             }
             else if (isUp && selectedVehicle != null)
@@ -295,31 +322,38 @@ namespace SandBlocks.Puzzle.Input
                     return;
                 }
 
-                // Determine final placement cell (nearest waypoint or current cell)
+                // Determine final placement cell: find closest reachable position to current visual position
                 Vector2Int finalGridPos = currentHoveredGrid;
-                if (activePath != null && currentWaypointIndex < activePath.Count)
-                {
-                    Vector2Int nextWaypoint = activePath[currentWaypointIndex];
-                    Vector3 curPos = selectedVehicle.transform.position;
-                    Vector3 curGridPos = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
-                    Vector3 nextGridPos = puzzleGrid.GridToWorld(nextWaypoint, selectedVehicle.Length, selectedVehicle.IsVertical);
+                float closestDistSqr = float.MaxValue;
+                Vector3 curPos = selectedVehicle.transform.position;
 
-                    if (Vector3.Distance(curPos, nextGridPos) < Vector3.Distance(curPos, curGridPos))
+                foreach (var reachable in reachablePositions)
+                {
+                    Vector3 rw = puzzleGrid.GridToWorld(reachable, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    float d = (curPos - rw).sqrMagnitude;
+                    if (d < closestDistSqr)
                     {
-                        finalGridPos = nextWaypoint;
+                        closestDistSqr = d;
+                        finalGridPos = reachable;
                     }
                 }
 
                 if (reachablePositions.Contains(finalGridPos) && puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
                 {
                     puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
+                    Vector3 snapTarget = puzzleGrid.GridToWorld(finalGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
+
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehiclePlace();
                 }
                 else
                 {
-                    // Fallback to start pos
+                    // Fallback to start position with smooth snap
                     puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
+                    Vector3 snapTarget = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
+
                     if (selectedVehicle is BusVehicle bus)
                     {
                         bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up);
@@ -335,17 +369,42 @@ namespace SandBlocks.Puzzle.Input
             }
         }
 
+        private IEnumerator SmoothSnapToSlotRoutine(VehicleBase vehicle, Vector3 targetPos)
+        {
+            if (vehicle == null) yield break;
+            float elapsed = 0f;
+            float duration = 0.08f;
+            Vector3 startPos = vehicle.transform.position;
+
+            while (elapsed < duration && vehicle != null)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / duration);
+                vehicle.transform.position = Vector3.Lerp(startPos, targetPos, t);
+                yield return null;
+            }
+
+            if (vehicle != null)
+            {
+                vehicle.transform.position = targetPos;
+            }
+            activeSnapRoutine = null;
+        }
+
         /// <summary>
         /// Cancels any active drag operation and resets all path/hover states.
         /// Safely called on level transitions or rapid UI clicks to prevent stuck drags or ghost waypoints.
-        /// </summary>
-        /// <summary>
-        /// Cancels any active drag operation and resets state.
         /// </summary>
         public void CancelDrag() => ResetDragState();
 
         public void ResetDragState()
         {
+            if (activeSnapRoutine != null)
+            {
+                StopCoroutine(activeSnapRoutine);
+                activeSnapRoutine = null;
+            }
+
             if (selectedVehicle != null) selectedVehicle.SetSelected(false);
             selectedVehicle = null;
             activePath.Clear();
