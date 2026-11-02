@@ -22,6 +22,17 @@ namespace SandBlocks.Gameplay
 
     public class GameManager : MonoBehaviour
     {
+        public static GameManager Instance { get; private set; }
+        [Header("Bus Animation Options")]
+        [Tooltip("Toggle the bus squash-and-stretch pop animation when a passenger fills into the bus")]
+        [SerializeField] private bool enableBusPassengerPopAnimation = true;
+
+        public bool EnableBusPassengerPopAnimation
+        {
+            get => enableBusPassengerPopAnimation;
+            set => enableBusPassengerPopAnimation = value;
+        }
+
         [Header("Level Start Animations")]
         [Tooltip("If true, crowd and buses animate into the scene on level start and restart")]
         [SerializeField] private bool animateLevelStart = true;
@@ -128,6 +139,9 @@ namespace SandBlocks.Gameplay
         [Tooltip("Optional in-game HUD root GameObject to toggle")]
         [SerializeField] private GameObject inGameUI;
 
+        [Tooltip("Home Button inside the In-Game HUD to return to the home screen")]
+        [SerializeField] private Button homeButton;
+
         [Header("Settings Screen UI")]
         [Tooltip("The Settings Screen canvas panel/root object")]
         [SerializeField] private GameObject settingsScreen;
@@ -143,6 +157,8 @@ namespace SandBlocks.Gameplay
 
         public GameObject SettingsScreen => settingsScreen;
         public Button SettingsButton => settingsButton;
+        public Button HomeButton => homeButton;
+        public GameObject InGameUI => inGameUI;
 
 
         private bool isGameStarted = true;
@@ -205,6 +221,7 @@ namespace SandBlocks.Gameplay
 
         private void Awake()
         {
+            if (Instance == null) Instance = this;
             CurrentOrientation = boardOrientation;
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (simulation == null) simulation = FindAnyObjectByType<PBDCrowdSimulation>();
@@ -302,6 +319,27 @@ namespace SandBlocks.Gameplay
                 settingsCloseButton.onClick.AddListener(CloseSettings);
             }
 
+            // Auto-detect Home Button if not assigned
+            if (homeButton == null)
+            {
+                if (inGameUI != null)
+                {
+                    var found = inGameUI.transform.Find("HomeButton");
+                    if (found != null) homeButton = found.GetComponent<Button>();
+                }
+                if (homeButton == null)
+                {
+                    var foundBtn = GameObject.Find("HomeButton") ?? GameObject.Find("Btn_Home") ?? GameObject.Find("Home");
+                    if (foundBtn != null) homeButton = foundBtn.GetComponent<Button>();
+                }
+            }
+
+            if (homeButton != null)
+            {
+                homeButton.onClick.RemoveListener(OnHomeButtonClicked);
+                homeButton.onClick.AddListener(OnHomeButtonClicked);
+            }
+
             if (settingsScreen != null)
             {
                 settingsScreen.SetActive(false);
@@ -356,6 +394,7 @@ namespace SandBlocks.Gameplay
 
         private void OnDestroy()
         {
+            if (Instance == this) Instance = null;
             if (restartButton != null)
             {
                 restartButton.onClick.RemoveListener(RestartGame);
@@ -364,6 +403,7 @@ namespace SandBlocks.Gameplay
             if (settingsButton != null) settingsButton.onClick.RemoveListener(OpenSettings);
             if (inGameSettingsButton != null) inGameSettingsButton.onClick.RemoveListener(OpenSettings);
             if (settingsCloseButton != null) settingsCloseButton.onClick.RemoveListener(CloseSettings);
+            if (homeButton != null) homeButton.onClick.RemoveListener(OnHomeButtonClicked);
 
         }
 
@@ -803,6 +843,38 @@ namespace SandBlocks.Gameplay
             {
                 levelManager.SetNavigationUIActive(active);
             }
+        }
+
+        /// <summary>
+        /// Returns to the Home Screen from gameplay. Can be assigned directly to Button.OnClick in the Inspector.
+        /// </summary>
+        public void OnHomeButtonClicked()
+        {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
+
+            // Cancel any active drag operation so vehicles don't get stuck
+            dragHandler?.CancelDrag();
+
+            // Dismiss any active toast messages
+            SandBlocks.Gameplay.ToastManager.DismissCurrent();
+
+            // Close settings dialog if open
+            if (settingsScreen != null && settingsScreen.activeSelf)
+            {
+                settingsScreen.SetActive(false);
+            }
+
+            ShowHomeScreen();
+        }
+
+        /// <summary>
+        /// Public function to return to home screen, identical to OnHomeButtonClicked.
+        /// Can be hooked up directly to a UI Button's OnClick event in the Inspector.
+        /// </summary>
+        public void ReturnToHomeScreen()
+        {
+            OnHomeButtonClicked();
         }
 
         public void ShowHomeScreen()

@@ -339,6 +339,11 @@ namespace SandBlocks.Puzzle.Input
         /// Cancels any active drag operation and resets all path/hover states.
         /// Safely called on level transitions or rapid UI clicks to prevent stuck drags or ghost waypoints.
         /// </summary>
+        /// <summary>
+        /// Cancels any active drag operation and resets state.
+        /// </summary>
+        public void CancelDrag() => ResetDragState();
+
         public void ResetDragState()
         {
             if (selectedVehicle != null) selectedVehicle.SetSelected(false);

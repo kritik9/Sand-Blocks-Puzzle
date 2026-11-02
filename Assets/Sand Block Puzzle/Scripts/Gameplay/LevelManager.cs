@@ -41,6 +41,9 @@ namespace SandBlocks.Gameplay
         [Tooltip("UI Button to restart the current level")]
         [SerializeField] private Button restartLevelButton;
 
+        [Tooltip("UI Button to return to the Home Screen")]
+        [SerializeField] private Button homeButton;
+
         [Tooltip("Optional TextMeshPro text displaying current level title or number")]
         [SerializeField] private TMP_Text levelTitleText;
 
@@ -66,6 +69,7 @@ namespace SandBlocks.Gameplay
         public bool HasNextLevel => loopLevels || currentLevelIndex < levels.Count - 1;
         public bool HasPreviousLevel => loopLevels || currentLevelIndex > 0;
         public IReadOnlyList<LevelData> Levels => levels;
+        public Button HomeButton => homeButton;
 
         private void Awake()
         {
@@ -148,6 +152,12 @@ namespace SandBlocks.Gameplay
                 if (go != null) restartLevelButton = go.GetComponent<Button>();
             }
 
+            if (homeButton == null)
+            {
+                var go = GameObject.Find("HomeButton") ?? GameObject.Find("Btn_Home") ?? GameObject.Find("Home");
+                if (go != null) homeButton = go.GetComponent<Button>();
+            }
+
             if (levelTitleText == null)
             {
                 var go = GameObject.Find("LevelText") ?? GameObject.Find("LevelTitleText") ?? GameObject.Find("Txt_Level") ?? GameObject.Find("LevelTitle");
@@ -174,6 +184,12 @@ namespace SandBlocks.Gameplay
                 restartLevelButton.onClick.RemoveListener(RestartCurrentLevel);
                 restartLevelButton.onClick.AddListener(RestartCurrentLevel);
             }
+
+            if (homeButton != null)
+            {
+                homeButton.onClick.RemoveListener(OnHomeButtonClicked);
+                homeButton.onClick.AddListener(OnHomeButtonClicked);
+            }
         }
 
         private void TeardownButtonListeners()
@@ -181,11 +197,30 @@ namespace SandBlocks.Gameplay
             if (nextLevelButton != null) nextLevelButton.onClick.RemoveListener(NextLevel);
             if (previousLevelButton != null) previousLevelButton.onClick.RemoveListener(PreviousLevel);
             if (restartLevelButton != null) restartLevelButton.onClick.RemoveListener(RestartCurrentLevel);
+            if (homeButton != null) homeButton.onClick.RemoveListener(OnHomeButtonClicked);
         }
 
         // =========================================================================
         // LEVEL NAVIGATION (Can be hooked up to Button OnClick in Inspector)
         // =========================================================================
+
+        /// <summary>
+        /// Returns to the Home Screen. Can be hooked up directly to a UI Button's OnClick event in the Inspector.
+        /// </summary>
+        public void OnHomeButtonClicked()
+        {
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
+
+            if (gameManager != null)
+            {
+                gameManager.OnHomeButtonClicked();
+            }
+            else if (GameManager.Instance != null)
+            {
+                GameManager.Instance.OnHomeButtonClicked();
+            }
+        }
 
         /// <summary>
         /// Advances to the next level in the list.
@@ -504,6 +539,7 @@ namespace SandBlocks.Gameplay
             if (nextLevelButton != null) nextLevelButton.gameObject.SetActive(active);
             if (previousLevelButton != null) previousLevelButton.gameObject.SetActive(active);
             if (restartLevelButton != null) restartLevelButton.gameObject.SetActive(active);
+            if (homeButton != null) homeButton.gameObject.SetActive(active);
             if (levelTitleText != null) levelTitleText.gameObject.SetActive(active);
         }
 

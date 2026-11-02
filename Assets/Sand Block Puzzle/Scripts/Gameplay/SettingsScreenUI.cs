@@ -35,21 +35,21 @@ namespace SandBlocks.Gameplay
         [SerializeField] private TMP_Text hapticsStatusText;
 
         [Header("Intensity Setting")]
-        [Tooltip("Slider for overall vibration intensity (0.05 to 1.50)")]
+        [Tooltip("Slider for overall vibration intensity (0.20 to 2.00)")]
         [SerializeField] private Slider intensitySlider;
 
         [Tooltip("Text displaying intensity percentage")]
         [SerializeField] private TMP_Text intensityValueText;
 
         [Header("Duration Setting")]
-        [Tooltip("Slider for vibration duration multiplier (0.05 to 1.50)")]
+        [Tooltip("Slider for vibration duration multiplier (0.20 to 2.00)")]
         [SerializeField] private Slider durationSlider;
 
         [Tooltip("Text displaying duration percentage")]
         [SerializeField] private TMP_Text durationValueText;
 
         [Header("Amplitude Setting")]
-        [Tooltip("Slider for physical motor amplitude (10 to 255)")]
+        [Tooltip("Slider for physical motor amplitude (50 to 255)")]
         [SerializeField] private Slider amplitudeSlider;
 
         [Tooltip("Text displaying amplitude value")]
@@ -229,6 +229,19 @@ namespace SandBlocks.Gameplay
             HapticManager.Instance?.SavePreferences();
         }
 
+        private float lastSliderHapticTime = -1f;
+        private Coroutine testFeedbackRoutine;
+
+        private void TrySliderFeedbackHaptic()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now - lastSliderHapticTime > 0.14f)
+            {
+                lastSliderHapticTime = now;
+                HapticManager.Instance?.LightImpact();
+            }
+        }
+
         private void OnIntensitySliderChanged(float value)
         {
             if (HapticManager.Instance != null)
@@ -238,6 +251,7 @@ namespace SandBlocks.Gameplay
 
             UpdateLabels();
             HapticManager.Instance?.SavePreferences();
+            TrySliderFeedbackHaptic();
         }
 
         private void OnDurationSliderChanged(float value)
@@ -249,19 +263,21 @@ namespace SandBlocks.Gameplay
 
             UpdateLabels();
             HapticManager.Instance?.SavePreferences();
+            TrySliderFeedbackHaptic();
         }
 
         private void OnAmplitudeSliderChanged(float value)
         {
-            int amp = Mathf.Clamp(Mathf.RoundToInt(value), 1, 255);
+            int amp = Mathf.Clamp(Mathf.RoundToInt(value), 50, 255);
             if (HapticManager.Instance != null)
             {
                 HapticManager.Instance.LightAmplitude = amp;
-                HapticManager.Instance.SelectionAmplitude = Mathf.Clamp(Mathf.RoundToInt(amp * 0.75f), 1, 255);
+                HapticManager.Instance.SelectionAmplitude = Mathf.Clamp(Mathf.RoundToInt(amp * 0.75f), 40, 255);
             }
 
             UpdateLabels();
             HapticManager.Instance?.SavePreferences();
+            TrySliderFeedbackHaptic();
         }
 
         private void OnUIButtonsToggleChanged(bool isEnabled)
@@ -304,8 +320,31 @@ namespace SandBlocks.Gameplay
         {
             if (HapticManager.Instance != null)
             {
-                HapticManager.Instance.LightImpact();
+                HapticManager.Instance.TriggerTestHaptic();
             }
+            AudioManager.Instance?.PlayButtonClick();
+
+            if (gameObject.activeInHierarchy)
+            {
+                if (testFeedbackRoutine != null) StopCoroutine(testFeedbackRoutine);
+                testFeedbackRoutine = StartCoroutine(TestButtonFeedbackRoutine());
+            }
+        }
+
+        private System.Collections.IEnumerator TestButtonFeedbackRoutine()
+        {
+            if (testHapticButton == null) yield break;
+            var tmp = testHapticButton.GetComponentInChildren<TMP_Text>();
+            string originalText = tmp != null ? tmp.text : "⚡ Test Vibration";
+            if (tmp != null) tmp.text = "⚡ Vibrating...";
+
+            Transform btnTransform = testHapticButton.transform;
+            Vector3 origScale = Vector3.one;
+            btnTransform.localScale = origScale * 1.08f;
+            yield return new WaitForSecondsRealtime(0.25f);
+            btnTransform.localScale = origScale;
+            if (tmp != null) tmp.text = originalText;
+            testFeedbackRoutine = null;
         }
 
         private void UpdateLabels()
@@ -427,15 +466,15 @@ namespace SandBlocks.Gameplay
             CreateDivider(cardGo.transform, whiteBox, 1, new Color(1f, 1f, 1f, 0.08f));
 
             // 5. Sliders (Intensity, Duration, Amplitude)
-            var (intRow, intSlider, intVal) = CreateSliderRow(cardGo.transform, "IntensityRow", "Vibration Intensity", 0.05f, 1.50f, 0.35f, false, whiteBox, new Color(0.25f, 0.70f, 1.0f), font);
+            var (intRow, intSlider, intVal) = CreateSliderRow(cardGo.transform, "IntensityRow", "Vibration Intensity", 0.20f, 2.00f, 1.00f, false, whiteBox, new Color(0.25f, 0.70f, 1.0f), font);
             intensitySlider = intSlider;
             intensityValueText = intVal;
 
-            var (durRow, durSlider, durVal) = CreateSliderRow(cardGo.transform, "DurationRow", "Vibration Duration", 0.05f, 1.50f, 0.40f, false, whiteBox, new Color(0.20f, 0.85f, 0.65f), font);
+            var (durRow, durSlider, durVal) = CreateSliderRow(cardGo.transform, "DurationRow", "Vibration Duration", 0.20f, 2.00f, 1.00f, false, whiteBox, new Color(0.20f, 0.85f, 0.65f), font);
             durationSlider = durSlider;
             durationValueText = durVal;
 
-            var (ampRow, ampSlider, ampVal) = CreateSliderRow(cardGo.transform, "AmplitudeRow", "Motor Amplitude", 10f, 255f, 70f, true, whiteBox, new Color(1.0f, 0.75f, 0.20f), font);
+            var (ampRow, ampSlider, ampVal) = CreateSliderRow(cardGo.transform, "AmplitudeRow", "Motor Amplitude", 50f, 255f, 160f, true, whiteBox, new Color(1.0f, 0.75f, 0.20f), font);
             amplitudeSlider = ampSlider;
             amplitudeValueText = ampVal;
 

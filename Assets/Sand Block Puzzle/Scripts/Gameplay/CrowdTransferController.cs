@@ -23,6 +23,16 @@ namespace SandBlocks.Gameplay
         [SerializeField] private CrowdColorPalette palette;
         [SerializeField] private GameObject commuterStreamPrefab;
 
+        [Header("Bus Animation Options")]
+        [Tooltip("Toggle the bus squash-and-stretch pop animation when a passenger fills into the bus")]
+        [SerializeField] private bool enableBusPopAnimation = true;
+
+        public bool EnableBusPopAnimation
+        {
+            get => enableBusPopAnimation;
+            set => enableBusPopAnimation = value;
+        }
+
         [Header("Transfer Tuning")]
         [SerializeField] private float transferInterval = 0.08f;
         [SerializeField] private float flightDuration = 0.35f;
@@ -373,7 +383,10 @@ namespace SandBlocks.Gameplay
                 // Enable pre-placed seat passenger on the bus and destroy flying commuter
                 if (targetBus != null)
                 {
+                    bool prevPop = targetBus.EnablePassengerBoardPop;
+                    if (!enableBusPopAnimation) targetBus.EnablePassengerBoardPop = false;
                     targetBus.BoardPassenger();
+                    if (!enableBusPopAnimation) targetBus.EnablePassengerBoardPop = prevPop;
                 }
             }
             finally

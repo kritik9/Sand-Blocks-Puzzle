@@ -136,6 +136,8 @@ namespace SandBlocks.Puzzle.Vehicles
         [SerializeField] private float passengerScale = 0.1f;
 
         [Header("Visual Juice & Feedback")]
+        [Tooltip("Toggle the bus squash-and-stretch pop animation when a passenger fills into the bus")]
+        [SerializeField] private bool enablePassengerBoardPop = true;
         [SerializeField] private float popScaleMultiplier = 1.14f;
         [SerializeField] private float blockedShakeMagnitude = 0.16f;
 
@@ -195,6 +197,11 @@ namespace SandBlocks.Puzzle.Vehicles
         public List<Transform> SeatTransforms => seatTransforms;
         public int SeatCount => seatTransforms != null ? seatTransforms.Count : 0;
         public GameObject PassengerPrefab => passengerPrefab;
+        public bool EnablePassengerBoardPop
+        {
+            get => enablePassengerBoardPop;
+            set => enablePassengerBoardPop = value;
+        }
 
         public float SeatedCharacterScale
         {
@@ -810,6 +817,9 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void PlayPassengerBoardPop()
         {
+            if (!enablePassengerBoardPop) return;
+            if (GameManager.Instance != null && !GameManager.Instance.EnableBusPassengerPopAnimation) return;
+
             InitScaleIfNeeded();
             if (activePopRoutine != null) StopCoroutine(activePopRoutine);
             activePopRoutine = StartCoroutine(PassengerPopRoutine());

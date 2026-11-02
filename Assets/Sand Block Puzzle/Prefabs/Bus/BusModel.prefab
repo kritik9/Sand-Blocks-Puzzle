@@ -139,6 +139,7 @@ MonoBehaviour:
   seatedRotationOffset: {x: 0, y: 0, z: 0}
   passengerCountText: {fileID: 2594175972394676783}
   passengerScale: 0.009
+  enablePassengerBoardPop: 0
   popScaleMultiplier: 1.14
   blockedShakeMagnitude: 0.16
   spawnBounceDuration: 0.35

@@ -80,6 +80,46 @@ namespace SandBlocks.Core.Simulation
             float effectiveExceptionMargin = (boundary != null ? boundary.FloorExceptionMargin : floorExceptionMargin);
             float floorLevel = safetyFloorY;
 
+            // 0. Auto-wake check: ensure NO active particle is left suspended in mid-air with empty space beneath it
+            for (int i = 0; i < activeCount; i++)
+            {
+                var p = particles[i];
+                if (!p.isActive || !p.isSettled) continue;
+
+                float particleFloorRestY = floorLevel + p.radius;
+                // If firmly resting on the floor (within small tolerance), it is solidly supported
+                if (p.position.y <= particleFloorRestY + 0.04f)
+                {
+                    continue;
+                }
+
+                // If suspended above floor, check if another active settled particle supports it directly beneath
+                bool isSupported = false;
+                for (int j = 0; j < activeCount; j++)
+                {
+                    if (j == i) continue;
+                    var pBelow = particles[j];
+                    if (!pBelow.isActive || !pBelow.isSettled) continue;
+
+                    float dy = p.position.y - pBelow.position.y;
+                    float maxSupportDy = (p.radius + pBelow.radius) * 1.25f;
+                    float maxSupportDx = (p.radius + pBelow.radius) * 0.90f;
+
+                    if (dy > 0.01f && dy <= maxSupportDy && math.abs(p.position.x - pBelow.position.x) <= maxSupportDx)
+                    {
+                        isSupported = true;
+                        break;
+                    }
+                }
+
+                // If unsupported in air, wake it immediately so gravity pulls it down to the floor
+                if (!isSupported)
+                {
+                    p.isSettled = false;
+                    particles[i] = p;
+                }
+            }
+
             // 1. Predict positions ONLY for awake particles
             bool anyAwake = false;
             for (int i = 0; i < activeCount; i++)
@@ -93,16 +133,11 @@ namespace SandBlocks.Core.Simulation
                     p.velocity += grav;
                     p.velocity *= damping;
 
-                    // Cushion Margin Above Floor: Smoothly damp downward velocity when approaching floor
+                    // Floor contact: arrest downward velocity cleanly on contact without artificial mid-air slowdown
                     float floorWithRadius = floorLevel + p.radius;
-                    if (p.position.y <= floorWithRadius + floorCushionMargin && p.velocity.y < 0f)
-                    {
-                        p.velocity.y *= 0.5f;
-                    }
-
-                    // Exception Margin: If at or below floor, arrest downward velocity completely
                     if (p.position.y <= floorWithRadius)
                     {
+                        p.position.y = floorWithRadius;
                         p.velocity.y = math.max(0f, p.velocity.y);
                     }
 
@@ -252,10 +287,42 @@ namespace SandBlocks.Core.Simulation
                 // Apply strong resting friction
                 p.velocity.x *= math.clamp(1f - friction * dt * 25f, 0f, 1f);
 
-                if (math.lengthsq(p.velocity) < sqrSleep)
+                // Particles can ONLY sleep if resting on the floor or on another settled particle underneath
+                bool canSettle = false;
+                if (p.position.y <= restingFloorY + 0.04f)
+                {
+                    canSettle = true;
+                }
+                else
+                {
+                    // Check if supported from underneath by another active settled particle
+                    for (int j = 0; j < activeCount; j++)
+                    {
+                        if (j == i) continue;
+                        var pBelow = particles[j];
+                        if (!pBelow.isActive || !pBelow.isSettled) continue;
+
+                        float dy = p.position.y - pBelow.position.y;
+                        float maxSupportDy = (p.radius + pBelow.radius) * 1.25f;
+                        float maxSupportDx = (p.radius + pBelow.radius) * 0.90f;
+
+                        if (dy > 0.01f && dy <= maxSupportDy && math.abs(p.position.x - pBelow.position.x) <= maxSupportDx)
+                        {
+                            canSettle = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (canSettle && math.lengthsq(p.velocity) < sqrSleep)
                 {
                     p.isSettled = true;
                     p.velocity = float2.zero;
+                }
+                else if (!canSettle)
+                {
+                    // Must remain awake while in mid-air
+                    p.isSettled = false;
                 }
 
                 particles[i] = p;
@@ -417,13 +484,14 @@ namespace SandBlocks.Core.Simulation
         public void WakeNeighbors(float2 center, float radius)
         {
             float rSq = radius * radius;
+            float colWidth = math.max(radius * 1.8f, 0.85f);
             for (int i = 0; i < activeCount; i++)
             {
                 var p = particles[i];
                 if (!p.isActive) continue;
 
                 bool inRadius = math.distancesq(p.position, center) <= rSq;
-                bool inColumnAbove = (p.position.y > center.y) && (math.abs(p.position.x - center.x) <= radius * 0.95f);
+                bool inColumnAbove = (p.position.y > center.y) && (math.abs(p.position.x - center.x) <= colWidth);
 
                 if (inRadius || inColumnAbove)
                 {

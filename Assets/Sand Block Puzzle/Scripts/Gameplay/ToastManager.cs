@@ -141,6 +141,14 @@ namespace SandBlocks.Gameplay
         /// </summary>
         /// <param name="message">The text to display.</param>
         /// <param name="duration">Optional custom display duration. Defaults to inspector setting if <= 0.</param>
+        /// <summary>
+        /// Immediately dismisses any active toast.
+        /// </summary>
+        public static void DismissCurrent()
+        {
+            Instance?.HideImmediate();
+        }
+
         public static void Show(string message, float duration = -1f)
         {
             if (Instance == null)
