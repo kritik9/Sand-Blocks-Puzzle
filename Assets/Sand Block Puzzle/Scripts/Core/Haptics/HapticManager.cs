@@ -41,32 +41,60 @@ namespace SandBlocks.Core.Haptics
         [Tooltip("Global toggle for all vibration and haptic feedback")]
         [SerializeField] private bool enableHaptics = true;
 
-        [Tooltip("Global intensity multiplier (0.5 = soft, 1.0 = standard, 1.5 = firm)")]
-        [Range(0.1f, 2.0f)]
-        [SerializeField] private float intensityMultiplier = 1.0f;
+        [Tooltip("Global intensity multiplier (0.1 = soft/subtle, 0.35 = gentle, 1.0 = standard)")]
+        [Range(0.05f, 2.0f)]
+        [SerializeField] private float intensityMultiplier = 0.35f;
 
-        [Tooltip("Global duration multiplier (0.5 = shorter tick, 1.0 = standard, 1.5 = longer buzz)")]
-        [Range(0.1f, 2.0f)]
-        [SerializeField] private float durationMultiplier = 1.0f;
+        [Tooltip("Global duration multiplier (0.1 = crisp micro-tap, 0.4 = short tick, 1.0 = standard buzz)")]
+        [Range(0.05f, 2.0f)]
+        [SerializeField] private float durationMultiplier = 0.40f;
 
         [Tooltip("Minimum time in seconds between consecutive haptics to prevent motor buzz buildup")]
-        [Range(0.01f, 0.2f)]
-        [SerializeField] private float minHapticInterval = 0.045f;
+        [Range(0.01f, 0.5f)]
+        [SerializeField] private float minHapticInterval = 0.08f;
 
-        [Tooltip("If native JNI/Taptic vibration fails or is unsupported on the device, fall back to Unity Handheld.Vibrate()")]
-        [SerializeField] private bool fallbackToHandheldVibrate = true;
+        [Tooltip("If true, uses Android system-predefined waveforms (Tick, Click, Pop). If false, uses custom amplitude/duration pulses (recommended for soft, subtle tactile feel).")]
+        [SerializeField] private bool useSystemPredefinedHaptics = false;
 
-        [Header("Base Durations (Milliseconds - Min 12ms for physical motor spin-up)")]
-        [SerializeField] private long selectionDurationMs = 18;
-        [SerializeField] private long lightDurationMs = 25;
-        [SerializeField] private long mediumDurationMs = 45;
-        [SerializeField] private long heavyDurationMs = 75;
+        [Tooltip("If native JNI/Taptic vibration fails, fall back to Unity Handheld.Vibrate() (Caution: Handheld.Vibrate is a fixed 500ms max rumble)")]
+        [SerializeField] private bool fallbackToHandheldVibrate = false;
+
+        [Header("Granular Action Toggles (Enable/Disable by Action)")]
+        [Tooltip("Haptic on UI buttons (Play button on home screen, Restart, Next/Prev Level buttons). Disable to remove haptics from Play button!")]
+        [SerializeField] private bool hapticsOnUIButtons = false;
+
+        [Tooltip("Haptic when player touches/selects a vehicle to drag")]
+        [SerializeField] private bool hapticsOnVehicleSelect = true;
+
+        [Tooltip("Haptic when vehicle crosses grid cells while dragging. (Disabled by default to prevent high vibration frequency)")]
+        [SerializeField] private bool hapticsOnVehicleDragStep = false;
+
+        [Tooltip("Haptic when vehicle is placed successfully in a grid slot")]
+        [SerializeField] private bool hapticsOnVehiclePlace = true;
+
+        [Tooltip("Haptic when vehicle drop is blocked / invalid move")]
+        [SerializeField] private bool hapticsOnVehicleBlocked = true;
+
+        [Tooltip("Haptic when a passenger boards the bus")]
+        [SerializeField] private bool hapticsOnPassengerBoard = true;
+
+        [Tooltip("Haptic when a bus departs (drives away)")]
+        [SerializeField] private bool hapticsOnBusDepart = true;
+
+        [Tooltip("Haptic on level completion / victory celebration")]
+        [SerializeField] private bool hapticsOnLevelWin = true;
+
+        [Header("Base Durations (Milliseconds)")]
+        [SerializeField] private long selectionDurationMs = 12;
+        [SerializeField] private long lightDurationMs = 18;
+        [SerializeField] private long mediumDurationMs = 30;
+        [SerializeField] private long heavyDurationMs = 50;
 
         [Header("Base Amplitudes (1 - 255)")]
-        [Range(1, 255)] [SerializeField] private int selectionAmplitude = 120;
-        [Range(1, 255)] [SerializeField] private int lightAmplitude = 160;
-        [Range(1, 255)] [SerializeField] private int mediumAmplitude = 210;
-        [Range(1, 255)] [SerializeField] private int heavyAmplitude = 255;
+        [Range(1, 255)] [SerializeField] private int selectionAmplitude = 50;
+        [Range(1, 255)] [SerializeField] private int lightAmplitude = 70;
+        [Range(1, 255)] [SerializeField] private int mediumAmplitude = 110;
+        [Range(1, 255)] [SerializeField] private int heavyAmplitude = 160;
 
         [Header("Debug")]
         [Tooltip("Log haptic triggers in Unity Editor / Device logs for debugging")]
@@ -117,19 +145,137 @@ namespace SandBlocks.Core.Haptics
         public float IntensityMultiplier
         {
             get => intensityMultiplier;
-            set => intensityMultiplier = Mathf.Clamp(value, 0.1f, 2.0f);
+            set => intensityMultiplier = Mathf.Clamp(value, 0.05f, 2.0f);
         }
 
         public float DurationMultiplier
         {
             get => durationMultiplier;
-            set => durationMultiplier = Mathf.Clamp(value, 0.1f, 2.0f);
+            set => durationMultiplier = Mathf.Clamp(value, 0.05f, 2.0f);
         }
 
         public bool FallbackToHandheldVibrate
         {
             get => fallbackToHandheldVibrate;
             set => fallbackToHandheldVibrate = value;
+        }
+
+        public bool UseSystemPredefinedHaptics
+        {
+            get => useSystemPredefinedHaptics;
+            set => useSystemPredefinedHaptics = value;
+        }
+
+        public bool HapticsOnUIButtons
+        {
+            get => hapticsOnUIButtons;
+            set => hapticsOnUIButtons = value;
+        }
+
+        public bool HapticsOnVehicleSelect
+        {
+            get => hapticsOnVehicleSelect;
+            set => hapticsOnVehicleSelect = value;
+        }
+
+        public bool HapticsOnVehicleDragStep
+        {
+            get => hapticsOnVehicleDragStep;
+            set => hapticsOnVehicleDragStep = value;
+        }
+
+        public bool HapticsOnVehiclePlace
+        {
+            get => hapticsOnVehiclePlace;
+            set => hapticsOnVehiclePlace = value;
+        }
+
+        public bool HapticsOnVehicleBlocked
+        {
+            get => hapticsOnVehicleBlocked;
+            set => hapticsOnVehicleBlocked = value;
+        }
+
+        public bool HapticsOnPassengerBoard
+        {
+            get => hapticsOnPassengerBoard;
+            set => hapticsOnPassengerBoard = value;
+        }
+
+        public bool HapticsOnBusDepart
+        {
+            get => hapticsOnBusDepart;
+            set => hapticsOnBusDepart = value;
+        }
+
+        public bool HapticsOnLevelWin
+        {
+            get => hapticsOnLevelWin;
+            set => hapticsOnLevelWin = value;
+        }
+
+        public int SelectionAmplitude
+        {
+            get => selectionAmplitude;
+            set => selectionAmplitude = Mathf.Clamp(value, 1, 255);
+        }
+
+        public int LightAmplitude
+        {
+            get => lightAmplitude;
+            set => lightAmplitude = Mathf.Clamp(value, 1, 255);
+        }
+
+        public int MediumAmplitude
+        {
+            get => mediumAmplitude;
+            set => mediumAmplitude = Mathf.Clamp(value, 1, 255);
+        }
+
+        public int HeavyAmplitude
+        {
+            get => heavyAmplitude;
+            set => heavyAmplitude = Mathf.Clamp(value, 1, 255);
+        }
+
+        private const string PREF_KEY_HAPTICS_ENABLED = "Haptics_Enabled";
+        private const string PREF_KEY_INTENSITY = "Haptics_Intensity";
+        private const string PREF_KEY_DURATION = "Haptics_Duration";
+        private const string PREF_KEY_LIGHT_AMP = "Haptics_LightAmplitude";
+        private const string PREF_KEY_UI_BUTTONS = "Haptics_UIButtons";
+        private const string PREF_KEY_DRAG_STEP = "Haptics_DragStep";
+
+        /// <summary>
+        /// Saves all haptic settings to PlayerPrefs so user preferences persist across sessions.
+        /// </summary>
+        public void SavePreferences()
+        {
+            PlayerPrefs.SetInt(PREF_KEY_HAPTICS_ENABLED, enableHaptics ? 1 : 0);
+            PlayerPrefs.SetFloat(PREF_KEY_INTENSITY, intensityMultiplier);
+            PlayerPrefs.SetFloat(PREF_KEY_DURATION, durationMultiplier);
+            PlayerPrefs.SetInt(PREF_KEY_LIGHT_AMP, lightAmplitude);
+            PlayerPrefs.SetInt(PREF_KEY_UI_BUTTONS, hapticsOnUIButtons ? 1 : 0);
+            PlayerPrefs.SetInt(PREF_KEY_DRAG_STEP, hapticsOnVehicleDragStep ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// Loads user-configured haptic preferences from PlayerPrefs.
+        /// </summary>
+        public void LoadPreferences()
+        {
+            if (PlayerPrefs.HasKey(PREF_KEY_HAPTICS_ENABLED))
+                enableHaptics = (PlayerPrefs.GetInt(PREF_KEY_HAPTICS_ENABLED) == 1);
+            if (PlayerPrefs.HasKey(PREF_KEY_INTENSITY))
+                intensityMultiplier = Mathf.Clamp(PlayerPrefs.GetFloat(PREF_KEY_INTENSITY), 0.05f, 2.0f);
+            if (PlayerPrefs.HasKey(PREF_KEY_DURATION))
+                durationMultiplier = Mathf.Clamp(PlayerPrefs.GetFloat(PREF_KEY_DURATION), 0.05f, 2.0f);
+            if (PlayerPrefs.HasKey(PREF_KEY_LIGHT_AMP))
+                lightAmplitude = Mathf.Clamp(PlayerPrefs.GetInt(PREF_KEY_LIGHT_AMP), 1, 255);
+            if (PlayerPrefs.HasKey(PREF_KEY_UI_BUTTONS))
+                hapticsOnUIButtons = (PlayerPrefs.GetInt(PREF_KEY_UI_BUTTONS) == 1);
+            if (PlayerPrefs.HasKey(PREF_KEY_DRAG_STEP))
+                hapticsOnVehicleDragStep = (PlayerPrefs.GetInt(PREF_KEY_DRAG_STEP) == 1);
         }
 
         private void Awake()
@@ -139,6 +285,7 @@ namespace SandBlocks.Core.Haptics
                 instance = this;
                 transform.SetParent(null);
                 DontDestroyOnLoad(gameObject);
+                LoadPreferences();
                 InitPlatform();
             }
             else if (instance != this)
@@ -149,17 +296,18 @@ namespace SandBlocks.Core.Haptics
 
         private void OnValidate()
         {
-            // Auto-upgrade legacy micro-durations that are physically below mobile motor threshold
-            if (selectionDurationMs < 12) selectionDurationMs = 18;
-            if (lightDurationMs < 15) lightDurationMs = 25;
-            if (mediumDurationMs < 25) mediumDurationMs = 45;
-            if (heavyDurationMs < 40) heavyDurationMs = 75;
-            if (selectionAmplitude < 60) selectionAmplitude = 120;
-            if (lightAmplitude < 80) lightAmplitude = 160;
-            if (mediumAmplitude < 120) mediumAmplitude = 210;
-            if (heavyAmplitude < 180) heavyAmplitude = 255;
-            if (intensityMultiplier < 0.6f) intensityMultiplier = 1.0f;
-            if (durationMultiplier < 0.6f) durationMultiplier = 1.0f;
+            // Keep ranges safe without overriding user-set low/subtle values
+            intensityMultiplier = Mathf.Clamp(intensityMultiplier, 0.05f, 2.0f);
+            durationMultiplier = Mathf.Clamp(durationMultiplier, 0.05f, 2.0f);
+            minHapticInterval = Mathf.Clamp(minHapticInterval, 0.01f, 0.5f);
+            selectionDurationMs = Math.Max(1, selectionDurationMs);
+            lightDurationMs = Math.Max(1, lightDurationMs);
+            mediumDurationMs = Math.Max(1, mediumDurationMs);
+            heavyDurationMs = Math.Max(1, heavyDurationMs);
+            selectionAmplitude = Mathf.Clamp(selectionAmplitude, 1, 255);
+            lightAmplitude = Mathf.Clamp(lightAmplitude, 1, 255);
+            mediumAmplitude = Mathf.Clamp(mediumAmplitude, 1, 255);
+            heavyAmplitude = Mathf.Clamp(heavyAmplitude, 1, 255);
         }
 
         private void InitPlatform()
@@ -248,6 +396,94 @@ namespace SandBlocks.Core.Haptics
             enableHaptics = enabled;
         }
 
+        // ==========================================
+        // Action-Specific Trigger Methods (Gated by Inspector Toggles)
+        // ==========================================
+
+        /// <summary>
+        /// Triggered on UI buttons (Play, Restart, Next/Previous level).
+        /// Respects the 'hapticsOnUIButtons' toggle (disabled by default so Play button has no vibration).
+        /// </summary>
+        public void TriggerUIButton()
+        {
+            if (!hapticsOnUIButtons) return;
+            LightImpact();
+        }
+
+        /// <summary>
+        /// Triggered when the player touches / selects a vehicle to drag.
+        /// Respects the 'hapticsOnVehicleSelect' toggle.
+        /// </summary>
+        public void TriggerVehicleSelect()
+        {
+            if (!hapticsOnVehicleSelect) return;
+            Selection();
+        }
+
+        /// <summary>
+        /// Triggered when dragging a vehicle across grid cells.
+        /// Respects the 'hapticsOnVehicleDragStep' toggle (disabled by default to prevent high frequency vibration).
+        /// </summary>
+        public void TriggerVehicleDragStep()
+        {
+            if (!hapticsOnVehicleDragStep) return;
+            LightImpact();
+        }
+
+        /// <summary>
+        /// Triggered when a vehicle is successfully placed into a valid grid slot.
+        /// Respects the 'hapticsOnVehiclePlace' toggle.
+        /// </summary>
+        public void TriggerVehiclePlace()
+        {
+            if (!hapticsOnVehiclePlace) return;
+            MediumImpact();
+        }
+
+        /// <summary>
+        /// Triggered when an attempted vehicle move or drop is invalid / blocked.
+        /// Respects the 'hapticsOnVehicleBlocked' toggle.
+        /// </summary>
+        public void TriggerVehicleBlocked()
+        {
+            if (!hapticsOnVehicleBlocked) return;
+            HeavyImpact();
+        }
+
+        /// <summary>
+        /// Triggered when a passenger boards the bus or reaches destination.
+        /// Respects the 'hapticsOnPassengerBoard' toggle.
+        /// </summary>
+        public void TriggerPassengerBoard()
+        {
+            if (!hapticsOnPassengerBoard) return;
+            LightImpact();
+        }
+
+        /// <summary>
+        /// Triggered when a bus becomes full and departs.
+        /// Respects the 'hapticsOnBusDepart' toggle.
+        /// </summary>
+        public void TriggerBusDepart()
+        {
+            if (!hapticsOnBusDepart) return;
+            MediumImpact();
+        }
+
+        /// <summary>
+        /// Triggered on level completion / victory celebration.
+        /// Respects the 'hapticsOnLevelWin' toggle.
+        /// </summary>
+        public void TriggerLevelWin()
+        {
+            if (!hapticsOnLevelWin) return;
+            Success();
+        }
+
+        // ==========================================
+        // Base Primitive Haptic Methods
+        // ==========================================
+
         /// <summary>
         /// Ultra-short, gentle selection tick.
         /// Ideal for bus touch/select, button taps, and fine touch interactions.
@@ -328,9 +564,9 @@ namespace SandBlocks.Core.Haptics
 
         private IEnumerator SuccessRoutine()
         {
-            TriggerHaptic(20, 160, EFFECT_CLICK, "Success_1");
+            TriggerHaptic(18, 120, EFFECT_CLICK, "Success_1");
             yield return new WaitForSecondsRealtime(0.09f);
-            TriggerHaptic(35, 230, EFFECT_HEAVY_CLICK, "Success_2");
+            TriggerHaptic(30, 180, EFFECT_HEAVY_CLICK, "Success_2");
         }
 
         private bool CanTrigger(float minInterval)
@@ -346,7 +582,7 @@ namespace SandBlocks.Core.Haptics
         {
             if (!enableHaptics) return;
 
-            long scaledMs = Math.Max(12, (long)Math.Round(baseMs * durationMultiplier));
+            long scaledMs = Math.Max(5, (long)Math.Round(baseMs * durationMultiplier));
             int scaledAmp = Mathf.Clamp((int)Math.Round(baseAmp * intensityMultiplier), 1, 255);
 
 #if UNITY_EDITOR
@@ -363,8 +599,31 @@ namespace SandBlocks.Core.Haptics
 
             bool triggered = false;
 
-            // Tier 1: Modern Android 10+ (API 29+) hardware-calibrated system effects (TICK, CLICK, POP)
-            if (apiLevel >= 29 && predefinedEffectId >= 0 && vibrationEffectClass != null)
+            // Tier 1: Android 8.0+ (API 26+) amplitude & duration controlled single pulse.
+            // When amplitude control is available and system predefined is not forced,
+            // createOneShot gives 100% accurate adherence to the Intensity & Duration sliders!
+            if (!useSystemPredefinedHaptics && apiLevel >= 26 && vibrationEffectClass != null && hasAmplitudeControl)
+            {
+                try
+                {
+                    using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, scaledAmp))
+                    {
+                        if (effect != null)
+                        {
+                            vibrator.Call("vibrate", effect);
+                            triggered = true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugLogs) Debug.LogWarning($"[HapticManager] createOneShot failed: {ex.Message}");
+                }
+            }
+
+            // Tier 2: Modern Android 10+ (API 29+) hardware-calibrated system effects (TICK, CLICK, POP)
+            // Used when useSystemPredefinedHaptics is enabled or as fallback
+            if (!triggered && apiLevel >= 29 && predefinedEffectId >= 0 && vibrationEffectClass != null)
             {
                 try
                 {
@@ -379,54 +638,31 @@ namespace SandBlocks.Core.Haptics
                 }
                 catch
                 {
-                    // Fallback to createOneShot if vendor HAL has no predefined waveform
+                    // Fallback to createOneShot
                 }
             }
 
-            // Tier 2: Android 8.0+ (API 26+) amplitude & duration controlled single pulse
+            // Tier 3: Android 8.0+ (API 26+) createOneShot without amplitude control (DEFAULT_AMPLITUDE = -1)
             if (!triggered && apiLevel >= 26 && vibrationEffectClass != null)
             {
-                if (hasAmplitudeControl)
+                try
                 {
-                    try
+                    using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, -1))
                     {
-                        using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, scaledAmp))
+                        if (effect != null)
                         {
-                            if (effect != null)
-                            {
-                                vibrator.Call("vibrate", effect);
-                                triggered = true;
-                            }
+                            vibrator.Call("vibrate", effect);
+                            triggered = true;
                         }
-                    }
-                    catch
-                    {
-                        // Fallback below
                     }
                 }
-
-                // Tier 2b: If device lacks amplitude control, use DEFAULT_AMPLITUDE (-1)
-                if (!triggered)
+                catch
                 {
-                    try
-                    {
-                        using (var effect = vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", scaledMs, -1))
-                        {
-                            if (effect != null)
-                            {
-                                vibrator.Call("vibrate", effect);
-                                triggered = true;
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Fallback below
-                    }
+                    // Fallback below
                 }
             }
 
-            // Tier 3: Legacy vibrator single pulse
+            // Tier 4: Legacy vibrator single pulse (pre-API 26)
             if (!triggered)
             {
                 try
@@ -436,11 +672,11 @@ namespace SandBlocks.Core.Haptics
                 }
                 catch
                 {
-                    // Fall through to Handheld.Vibrate
+                    // Fall through
                 }
             }
 
-            // Tier 4: Universal fallback
+            // Tier 5: Fallback ONLY if explicitly enabled by user
             if (!triggered && fallbackToHandheldVibrate)
             {
                 Handheld.Vibrate();
@@ -448,7 +684,7 @@ namespace SandBlocks.Core.Haptics
 
             if (debugLogs)
             {
-                Debug.Log($"<color=orange>[HapticManager]</color> Android {debugLabel} Triggered: {triggered} ({scaledMs}ms)");
+                Debug.Log($"<color=orange>[HapticManager]</color> Android {debugLabel} Triggered: {triggered} ({scaledMs}ms, amp: {scaledAmp})");
             }
 #elif UNITY_IOS
             // Handled via native HapticBridge

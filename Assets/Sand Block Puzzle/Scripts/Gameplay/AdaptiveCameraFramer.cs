@@ -1,6 +1,7 @@
 using UnityEngine;
 using SandBlocks.Core.Boundary;
 using SandBlocks.Puzzle.Grid;
+using UnityEngine.Rendering.Universal;
 
 namespace SandBlocks.Gameplay
 {
@@ -115,6 +116,14 @@ namespace SandBlocks.Gameplay
             {
                 targetCamera = GetComponent<Camera>();
                 if (targetCamera == null) targetCamera = Camera.main;
+            }
+            if (targetCamera != null)
+            {
+                var camData = targetCamera.GetComponent<UniversalAdditionalCameraData>();
+                if (camData != null && !camData.renderPostProcessing)
+                {
+                    camData.renderPostProcessing = true;
+                }
             }
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<PuzzleGrid>();

@@ -128,6 +128,23 @@ namespace SandBlocks.Gameplay
         [Tooltip("Optional in-game HUD root GameObject to toggle")]
         [SerializeField] private GameObject inGameUI;
 
+        [Header("Settings Screen UI")]
+        [Tooltip("The Settings Screen canvas panel/root object")]
+        [SerializeField] private GameObject settingsScreen;
+
+        [Tooltip("The Settings button on the Home Screen")]
+        [SerializeField] private Button settingsButton;
+
+        [Tooltip("Optional in-game Settings button in HUD")]
+        [SerializeField] private Button inGameSettingsButton;
+
+        [Tooltip("Optional Close/Back button on Settings Screen")]
+        [SerializeField] private Button settingsCloseButton;
+
+        public GameObject SettingsScreen => settingsScreen;
+        public Button SettingsButton => settingsButton;
+
+
         private bool isGameStarted = true;
 
         public bool IsGameStarted => isGameStarted;
@@ -255,6 +272,42 @@ namespace SandBlocks.Gameplay
                 playButton.onClick.AddListener(StartGame);
             }
 
+            if (settingsScreen == null)
+            {
+                var foundSettings = GameObject.Find("SettingsScreen");
+                if (foundSettings != null) settingsScreen = foundSettings;
+            }
+
+            if (settingsButton == null)
+            {
+                var foundBtn = GameObject.Find("SettingsButton");
+                if (foundBtn != null) settingsButton = foundBtn.GetComponent<Button>();
+            }
+
+            if (settingsButton != null)
+            {
+                settingsButton.onClick.RemoveListener(OpenSettings);
+                settingsButton.onClick.AddListener(OpenSettings);
+            }
+
+            if (inGameSettingsButton != null)
+            {
+                inGameSettingsButton.onClick.RemoveListener(OpenSettings);
+                inGameSettingsButton.onClick.AddListener(OpenSettings);
+            }
+
+            if (settingsCloseButton != null)
+            {
+                settingsCloseButton.onClick.RemoveListener(CloseSettings);
+                settingsCloseButton.onClick.AddListener(CloseSettings);
+            }
+
+            if (settingsScreen != null)
+            {
+                settingsScreen.SetActive(false);
+            }
+
+
             if (homeScreen != null)
             {
                 isGameStarted = false;
@@ -307,6 +360,11 @@ namespace SandBlocks.Gameplay
             {
                 restartButton.onClick.RemoveListener(RestartGame);
             }
+
+            if (settingsButton != null) settingsButton.onClick.RemoveListener(OpenSettings);
+            if (inGameSettingsButton != null) inGameSettingsButton.onClick.RemoveListener(OpenSettings);
+            if (settingsCloseButton != null) settingsCloseButton.onClick.RemoveListener(CloseSettings);
+
         }
 
         private void SetupPaletteIfNull()
@@ -664,6 +722,49 @@ namespace SandBlocks.Gameplay
                 CheckLevelCompletion();
             }
         }
+        /// <summary>
+        /// Opens the SettingsScreen dialog (can be wired directly to Button.OnClick in Inspector).
+        /// </summary>
+        public void OpenSettings()
+        {
+            if (settingsScreen != null)
+            {
+                settingsScreen.SetActive(true);
+                var ui = settingsScreen.GetComponent<SettingsScreenUI>();
+                if (ui != null) ui.Open();
+            }
+            else
+            {
+                Debug.LogWarning("[GameManager] SettingsScreen reference is not assigned.");
+            }
+        }
+
+        /// <summary>
+        /// Closes the SettingsScreen dialog.
+        /// </summary>
+        public void CloseSettings()
+        {
+            if (settingsScreen != null)
+            {
+                var ui = settingsScreen.GetComponent<SettingsScreenUI>();
+                if (ui != null) ui.Close();
+                else settingsScreen.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// Toggles open/close of SettingsScreen dialog.
+        /// </summary>
+        public void ToggleSettings()
+        {
+            if (settingsScreen != null)
+            {
+                if (settingsScreen.activeSelf) CloseSettings();
+                else OpenSettings();
+            }
+        }
+
+
 
         /// <summary>
         /// Starts the game when PlayButton on HomeScreen is clicked.
@@ -672,7 +773,7 @@ namespace SandBlocks.Gameplay
         public void StartGame()
         {
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
 
             if (homeScreen != null)
             {
@@ -928,7 +1029,7 @@ namespace SandBlocks.Gameplay
             }
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.Success();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
 
             StartCoroutine(VictorySequenceRoutine());
         }

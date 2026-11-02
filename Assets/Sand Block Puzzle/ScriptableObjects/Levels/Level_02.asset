@@ -15,7 +15,7 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 2
   particleRadius: 0.1795
-  characterScale: 0.65
+  characterScale: 0
   verticalSpacingMultiplier: 0
   maxParticles: 462
   containerShape: 0

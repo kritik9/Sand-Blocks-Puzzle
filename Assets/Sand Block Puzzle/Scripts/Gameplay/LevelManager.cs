@@ -193,7 +193,7 @@ namespace SandBlocks.Gameplay
         public void NextLevel()
         {
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
 
             if (levels.Count == 0)
             {
@@ -211,6 +211,7 @@ namespace SandBlocks.Gameplay
                 else
                 {
                     Debug.Log("<color=yellow>[LevelManager]</color> Already at the last level.");
+                    ToastManager.Show("Already at the last level!");
                     return;
                 }
             }
@@ -224,7 +225,7 @@ namespace SandBlocks.Gameplay
         public void PreviousLevel()
         {
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
 
             if (levels.Count == 0)
             {
@@ -242,6 +243,7 @@ namespace SandBlocks.Gameplay
                 else
                 {
                     Debug.Log("<color=yellow>[LevelManager]</color> Already at the first level.");
+                    ToastManager.Show("Already at Level 1!");
                     return;
                 }
             }
@@ -256,7 +258,7 @@ namespace SandBlocks.Gameplay
         {
             if (CurrentLevel == null) return;
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
             Debug.Log($"<color=cyan>[LevelManager]</color> Restarting Level {currentLevelIndex + 1} ({CurrentLevel.name})");
             SetupScreenForLevel(CurrentLevel);
         }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -37,6 +38,87 @@ namespace SandBlocks.Puzzle.Vehicles
         [SerializeField] private Transform seatsParent;
         [SerializeField] private GameObject passengerPrefab;
 
+        [Header("Body Material Settings")]
+        [Tooltip("Optional custom material to use for the bus body (e.g. toon shader material). If assigned, this material will replace the 'Bus Color' material slot.")]
+        [SerializeField] private Material customBodyMaterial;
+
+        [Tooltip("Material slot index of the bus body to be colored (default 0 for 'Bus Color'). Only this slot will be tinted, keeping Glass, dark trim, and lights intact!")]
+        [SerializeField] private int bodyMaterialIndex = 0;
+
+        [Tooltip("Name of the material slot to color (default: 'Bus Color'). Used to find the slot automatically.")]
+        [SerializeField] private string bodyMaterialName = "Bus Color";
+
+        public Material CustomBodyMaterial
+        {
+            get => customBodyMaterial;
+            set
+            {
+                customBodyMaterial = value;
+                ApplyColor(colorPalette);
+            }
+        }
+
+        public int BodyMaterialIndex
+        {
+            get => bodyMaterialIndex;
+            set
+            {
+                bodyMaterialIndex = value;
+                ApplyColor(colorPalette);
+            }
+        }
+
+        [Header("Headlight Animation (Real Bus Feel)")]
+        [Tooltip("Enable realistic animated headlights that subtly dim, flicker, and highlight randomly per bus.")]
+        [SerializeField] private bool enableHeadlightAnimation = true;
+
+        [Tooltip("Slot index of the headlight material on the bus body (default 4 for 'cheragh_').")]
+        [SerializeField] private int headlightMaterialIndex = 4;
+
+        [Tooltip("Name of the headlight material to detect automatically (default: 'cheragh_').")]
+        [SerializeField] private string headlightMaterialName = "cheragh_";
+
+        [Tooltip("Renderer holding the bus materials. If null, auto-detected from bus body.")]
+        [SerializeField] private Renderer headlightRenderer;
+
+        [Tooltip("Minimum emission multiplier during random light dips.")]
+        [Range(0.01f, 1.0f)]
+        [SerializeField] private float minIntensityMultiplier = 0.55f;
+
+        [Tooltip("Maximum emission multiplier during random light surges / highlights.")]
+        [Range(0.1f, 3.0f)]
+        [SerializeField] private float maxIntensityMultiplier = 1.45f;
+
+        [Tooltip("Base speed of the engine alternator noise and shimmer.")]
+        [Range(0.02f, 5.0f)]
+        [SerializeField] private float baseFlickerSpeed = 1.8f;
+
+        [Tooltip("Minimum time (in seconds) between random dim/highlight events.")]
+        [SerializeField] private float dimHighlightIntervalMin = 1.2f;
+
+        [Tooltip("Maximum time (in seconds) between random dim/highlight events.")]
+        [SerializeField] private float dimHighlightIntervalMax = 3.8f;
+
+        [Tooltip("Boost headlights to bright high-beam when the bus is selected.")]
+        [SerializeField] private bool highlightWhenSelected = true;
+
+        [Tooltip("Boost headlights to full bright when the bus is driving away.")]
+        [SerializeField] private bool highlightWhenMoving = true;
+
+        [Tooltip("Optional custom override for base emission color. Leave clear (alpha 0) to use material default.")]
+        [SerializeField] private Color customHeadlightEmissionColor = Color.clear;
+
+        [Header("Optional Taillight Settings")]
+        [Tooltip("Enable subtle breathing/glow on red taillights (red lightr).")]
+        [SerializeField] private bool enableTaillightAnimation = false;
+
+        [Tooltip("Slot index of the taillight material (default 6 for 'red lightr').")]
+        [SerializeField] private int taillightMaterialIndex = 6;
+
+        [Tooltip("Name of the taillight material to detect automatically (default: 'red lightr').")]
+        [SerializeField] private string taillightMaterialName = "red lightr";
+
+
         [Header("Seats Configuration")]
         [Tooltip("Physical seat transforms on this bus model. Visible characters will be positioned and oriented on these seats.")]
         [SerializeField] private List<Transform> seatTransforms = new List<Transform>();
@@ -73,6 +155,27 @@ namespace SandBlocks.Puzzle.Vehicles
         private CrowdColorPalette colorPalette;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId_Prop = Shader.PropertyToID("_Color");
+        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+
+        private MaterialPropertyBlock headlightPropBlock;
+        private int headlightSlot = -1;
+        private Color baseHeadlightEmission = new Color(23.28f, 17.63f, 0f, 1f);
+        private Color baseHeadlightAlbedo = new Color(0.9f, 0.8f, 0.2f, 1f);
+        private float busNoiseSeed;
+        private float busTimeOffset;
+        private float busSpeedMultiplier = 1.0f;
+        private float currentIntensityMultiplier = 1.0f;
+        private float targetIntensityMultiplier = 1.0f;
+        private float intensitySmoothVelocity = 0f;
+        private float nextEventTime = 0f;
+        private bool isEventActive = false;
+        private bool isDrivingAway = false;
+        private bool headlightsInitialized = false;
+
+        private MaterialPropertyBlock taillightPropBlock;
+        private int taillightSlot = -1;
+        private Color baseTaillightEmission = new Color(24f, 0.05f, 0f, 1f);
+        private Color baseTaillightAlbedo = new Color(0.9f, 0.9f, 0.9f, 1f);
 
         private Coroutine activePopRoutine;
         private Coroutine activeShakeRoutine;
@@ -123,6 +226,8 @@ namespace SandBlocks.Puzzle.Vehicles
             AutoDetectHierarchyAndSeats();
             InitializeSeatPassengers();
             UpdatePassengerCountUI();
+            ApplyColor(colorPalette);
+            InitializeHeadlights();
         }
 
         public void InitializeSeatPassengers()
@@ -217,6 +322,11 @@ namespace SandBlocks.Puzzle.Vehicles
             ApplyRotation();
             AutoDetectHierarchyAndSeats();
             UpdatePassengerCountUI();
+            ApplyColor(colorPalette);
+            if (enableHeadlightAnimation)
+            {
+                InitializeHeadlights();
+            }
         }
 
         [ContextMenu("Setup Passenger Slots")]
@@ -392,6 +502,7 @@ namespace SandBlocks.Puzzle.Vehicles
             boardedPassengerCount = 0;
             passengerCount = 0;
             UpdatePassengerCountUI();
+            ApplyColor(colorPalette);
         }
 
         public override void Initialize(int id, int cap, int len, bool vertical, Vector2Int startPos)
@@ -463,8 +574,26 @@ namespace SandBlocks.Puzzle.Vehicles
 #endif
             Color targetColor = colorPalette != null ? colorPalette.GetColor(colorId) : GetColorFallback(colorId);
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
+            propBlock.Clear();
             propBlock.SetColor(BaseColorId, targetColor);
             propBlock.SetColor(ColorId_Prop, targetColor);
+            propBlock.SetColor(Shader.PropertyToID("_1st_ShadeColor"), targetColor * 0.85f);
+            propBlock.SetColor(Shader.PropertyToID("_2nd_ShadeColor"), targetColor * 0.70f);
+
+            // Auto-detect bodyRenderer if not assigned
+            if (bodyRenderer == null)
+            {
+                var renderers = GetComponentsInChildren<MeshRenderer>(true);
+                foreach (var mr in renderers)
+                {
+                    string nm = mr.gameObject.name.ToLower();
+                    if (nm == "bus" || nm.Contains("body"))
+                    {
+                        bodyRenderer = mr;
+                        break;
+                    }
+                }
+            }
 
             var allRenderers = GetComponentsInChildren<Renderer>(true);
             foreach (var r in allRenderers)
@@ -472,7 +601,35 @@ namespace SandBlocks.Puzzle.Vehicles
                 if (r == null) continue;
                 string n = r.gameObject.name.ToLower();
                 if (n.Contains("chair") || n.Contains("seat") || n.Contains("passenger") || n.Contains("text") || n.Contains("canvas")) continue;
-                r.SetPropertyBlock(propBlock);
+
+                // For the main bus body renderer (which has multiple materials: Bus Color, Glass, dark, lights)
+                if (r == bodyRenderer || r.gameObject.name.Equals("BUS", StringComparison.OrdinalIgnoreCase))
+                {
+                    int slot = GetBodyMaterialSlot(r);
+
+                    // If a custom material was provided by user in Inspector, apply it to the body slot
+                    if (customBodyMaterial != null)
+                    {
+                        var mats = r.sharedMaterials;
+                        if (mats != null && slot >= 0 && slot < mats.Length && mats[slot] != customBodyMaterial)
+                        {
+                            var newMats = (Material[])mats.Clone();
+                            newMats[slot] = customBodyMaterial;
+                            r.sharedMaterials = newMats;
+                        }
+                    }
+
+                    // Apply the color ONLY to the body material slot (leaves Glass, dark trim, lights intact!)
+                    r.SetPropertyBlock(propBlock, slot);
+                }
+                else if (r.sharedMaterials != null && r.sharedMaterials.Length == 1)
+                {
+                    // Single-material accessory or body trim piece (exclude glass, wheels, lights)
+                    if (!n.Contains("glass") && !n.Contains("wheel") && !n.Contains("light") && !n.Contains("tire") && !n.Contains("dark"))
+                    {
+                        r.SetPropertyBlock(propBlock);
+                    }
+                }
             }
 
             if (seatPassengers != null)
@@ -485,6 +642,31 @@ namespace SandBlocks.Puzzle.Vehicles
                     }
                 }
             }
+        }
+
+        private int GetBodyMaterialSlot(Renderer r)
+        {
+            if (r == null) return bodyMaterialIndex;
+            var mats = r.sharedMaterials;
+            if (mats == null || mats.Length == 0) return 0;
+
+            // Search by material name if configured (e.g. "Bus Color")
+            if (!string.IsNullOrEmpty(bodyMaterialName))
+            {
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] != null)
+                    {
+                        if (mats[i].name.Equals(bodyMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                            mats[i].name.IndexOf("bus color", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return i;
+                        }
+                    }
+                }
+            }
+
+            return Mathf.Clamp(bodyMaterialIndex, 0, mats.Length - 1);
         }
 
 
@@ -555,7 +737,7 @@ namespace SandBlocks.Puzzle.Vehicles
             }
         }
 
-        private static void SafeDestroy(Object obj)
+        private static void SafeDestroy(UnityEngine.Object obj)
         {
             if (obj == null) return;
             if (Application.isPlaying) Destroy(obj);
@@ -662,7 +844,8 @@ namespace SandBlocks.Puzzle.Vehicles
             lastShakeTime = Time.time;
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.HeavyImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
+            SandBlocks.Gameplay.ToastManager.Show("Path is blocked!");
 
             if (activeShakeRoutine != null) StopCoroutine(activeShakeRoutine);
             activeShakeRoutine = StartCoroutine(BlockedShakeRoutine(dragDirection));
@@ -761,7 +944,7 @@ namespace SandBlocks.Puzzle.Vehicles
             PlayPassengerBoardPop();
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayPassengerBoard();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerPassengerBoard();
 
             if (boardedPassengerCount >= capacity)
             {
@@ -905,7 +1088,7 @@ namespace SandBlocks.Puzzle.Vehicles
         public override void OnFull()
         {
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusFull();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
 
             if (OnBusFullOverride != null)
             {
@@ -940,10 +1123,11 @@ namespace SandBlocks.Puzzle.Vehicles
 
         private IEnumerator DriveAwayRoutine()
         {
+            isDrivingAway = true;
             yield return new WaitForSeconds(0.4f);
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
 
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             Vector3 driveDir;
@@ -986,6 +1170,362 @@ namespace SandBlocks.Puzzle.Vehicles
             }
 
             Destroy(gameObject);
+        }
+
+        public override void SetSelected(bool selected)
+        {
+            base.SetSelected(selected);
+            if (selected && enableHeadlightAnimation && highlightWhenSelected)
+            {
+                currentIntensityMultiplier = Mathf.Max(currentIntensityMultiplier, 1.45f);
+                targetIntensityMultiplier = 1.6f;
+                isEventActive = true;
+                nextEventTime = Time.time + 0.6f;
+            }
+        }
+
+        private void Update()
+        {
+            if (enableHeadlightAnimation)
+            {
+                UpdateHeadlightAnimation();
+            }
+        }
+
+        public void InitializeHeadlights()
+        {
+            if (!enableHeadlightAnimation) return;
+
+            if (headlightRenderer == null)
+            {
+                if (bodyRenderer != null)
+                {
+                    headlightRenderer = bodyRenderer;
+                }
+                else
+                {
+                    var renderers = GetComponentsInChildren<MeshRenderer>(true);
+                    foreach (var mr in renderers)
+                    {
+                        string nm = mr.gameObject.name.ToLower();
+                        if (nm == "bus" || nm.Contains("body"))
+                        {
+                            headlightRenderer = mr;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (headlightRenderer == null) return;
+
+            headlightSlot = GetHeadlightMaterialSlot(headlightRenderer);
+            if (headlightSlot >= 0)
+            {
+                var mats = headlightRenderer.sharedMaterials;
+                if (mats != null && headlightSlot < mats.Length && mats[headlightSlot] != null)
+                {
+                    var mat = mats[headlightSlot];
+                    if (!mat.IsKeywordEnabled("_EMISSION"))
+                    {
+                        mat.EnableKeyword("_EMISSION");
+                    }
+
+                    if (customHeadlightEmissionColor.a > 0.001f)
+                    {
+                        baseHeadlightEmission = customHeadlightEmissionColor;
+                    }
+                    else if (mat.HasProperty(EmissionColorId))
+                    {
+                        Color c = mat.GetColor(EmissionColorId);
+                        if (c.maxColorComponent > 0.05f)
+                        {
+                            baseHeadlightEmission = c;
+                        }
+                        else
+                        {
+                            baseHeadlightEmission = new Color(23.28f, 17.63f, 0f, 1f);
+                        }
+                    }
+
+                    if (mat.HasProperty(BaseColorId))
+                    {
+                        baseHeadlightAlbedo = mat.GetColor(BaseColorId);
+                    }
+                    else if (mat.HasProperty(ColorId_Prop))
+                    {
+                        baseHeadlightAlbedo = mat.GetColor(ColorId_Prop);
+                    }
+                }
+            }
+
+            if (enableTaillightAnimation)
+            {
+                taillightSlot = GetTaillightMaterialSlot(headlightRenderer);
+                if (taillightSlot >= 0)
+                {
+                    var mats = headlightRenderer.sharedMaterials;
+                    if (mats != null && taillightSlot < mats.Length && mats[taillightSlot] != null)
+                    {
+                        var mat = mats[taillightSlot];
+                        if (!mat.IsKeywordEnabled("_EMISSION"))
+                        {
+                            mat.EnableKeyword("_EMISSION");
+                        }
+                        if (mat.HasProperty(EmissionColorId))
+                        {
+                            Color c = mat.GetColor(EmissionColorId);
+                            if (c.maxColorComponent > 0.05f) baseTaillightEmission = c;
+                        }
+                        if (mat.HasProperty(BaseColorId))
+                        {
+                            baseTaillightAlbedo = mat.GetColor(BaseColorId);
+                        }
+                    }
+                }
+            }
+
+            if (headlightPropBlock == null) headlightPropBlock = new MaterialPropertyBlock();
+            if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
+
+            // Randomize per-bus seed and timing so each bus has its own unique, non-repeating pattern
+            busNoiseSeed = UnityEngine.Random.Range(10f, 1000f);
+            busTimeOffset = UnityEngine.Random.Range(0f, 500f);
+            busSpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.25f);
+            nextEventTime = Time.time + UnityEngine.Random.Range(0.2f, dimHighlightIntervalMax);
+            currentIntensityMultiplier = 1.0f;
+            targetIntensityMultiplier = 1.0f;
+            headlightsInitialized = true;
+        }
+
+        private int GetHeadlightMaterialSlot(Renderer r)
+        {
+            if (r == null) return headlightMaterialIndex;
+            var mats = r.sharedMaterials;
+            if (mats == null || mats.Length == 0) return -1;
+
+            if (!string.IsNullOrEmpty(headlightMaterialName))
+            {
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] != null)
+                    {
+                        if (mats[i].name.Equals(headlightMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                            mats[i].name.IndexOf(headlightMaterialName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return i;
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < mats.Length; i++)
+            {
+                if (mats[i] != null)
+                {
+                    string nm = mats[i].name.ToLower();
+                    if (nm.Contains("cheragh") || nm.Contains("headlight") || nm.Contains("front light") || nm.Contains("lamp"))
+                    {
+                        return i;
+                    }
+                }
+            }
+
+            if (headlightMaterialIndex >= 0 && headlightMaterialIndex < mats.Length)
+            {
+                return headlightMaterialIndex;
+            }
+
+            return -1;
+        }
+
+        private int GetTaillightMaterialSlot(Renderer r)
+        {
+            if (r == null) return taillightMaterialIndex;
+            var mats = r.sharedMaterials;
+            if (mats == null || mats.Length == 0) return -1;
+
+            if (!string.IsNullOrEmpty(taillightMaterialName))
+            {
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] != null)
+                    {
+                        if (mats[i].name.Equals(taillightMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                            mats[i].name.IndexOf(taillightMaterialName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return i;
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < mats.Length; i++)
+            {
+                if (mats[i] != null)
+                {
+                    string nm = mats[i].name.ToLower();
+                    if (nm.Contains("red light") || nm.Contains("taillight") || nm.Contains("brake"))
+                    {
+                        return i;
+                    }
+                }
+            }
+
+            if (taillightMaterialIndex >= 0 && taillightMaterialIndex < mats.Length)
+            {
+                return taillightMaterialIndex;
+            }
+
+            return -1;
+        }
+
+        private void UpdateHeadlightAnimation()
+        {
+            if (!headlightsInitialized || headlightRenderer == null || headlightSlot < 0)
+            {
+                InitializeHeadlights();
+                if (headlightRenderer == null || headlightSlot < 0) return;
+            }
+
+            // 1. Organic engine alternator idling flutter (smooth multi-layer Perlin noise)
+            float busTime = (Time.time + busTimeOffset) * baseFlickerSpeed * busSpeedMultiplier;
+            float slowDrift = (Mathf.PerlinNoise(busTime * 0.75f, busNoiseSeed) - 0.5f) * 0.24f;
+            float fastVibe = (Mathf.PerlinNoise(busTime * 3.8f, busNoiseSeed + 33.1f) - 0.5f) * 0.10f;
+            float organicFlutter = slowDrift + fastVibe;
+
+            // 2. Random discrete dim / highlight event state machine
+            float now = Time.time;
+            if (now >= nextEventTime)
+            {
+                if (isEventActive)
+                {
+                    // Return back to baseline idling intensity
+                    targetIntensityMultiplier = 1.0f;
+                    isEventActive = false;
+                    nextEventTime = now + UnityEngine.Random.Range(dimHighlightIntervalMin, dimHighlightIntervalMax);
+                }
+                else
+                {
+                    // Pick a random event:
+                    // < 0.40 = Dimming dip (voltage drop / alternator load)
+                    // < 0.75 = Highlighting surge (generator surge / high-beam burst)
+                    // < 0.90 = Micro-jitter (quick double-flicker)
+                    // >= 0.90 = Calm steady idle
+                    float roll = UnityEngine.Random.value;
+                    if (roll < 0.40f)
+                    {
+                        targetIntensityMultiplier = UnityEngine.Random.Range(minIntensityMultiplier, 0.75f);
+                        float duration = UnityEngine.Random.Range(0.4f, 1.2f);
+                        nextEventTime = now + duration;
+                        isEventActive = true;
+                    }
+                    else if (roll < 0.75f)
+                    {
+                        targetIntensityMultiplier = UnityEngine.Random.Range(1.20f, maxIntensityMultiplier);
+                        float duration = UnityEngine.Random.Range(0.35f, 1.0f);
+                        nextEventTime = now + duration;
+                        isEventActive = true;
+                    }
+                    else if (roll < 0.90f)
+                    {
+                        targetIntensityMultiplier = minIntensityMultiplier * 0.85f;
+                        float duration = UnityEngine.Random.Range(0.12f, 0.25f);
+                        nextEventTime = now + duration;
+                        isEventActive = true;
+                    }
+                    else
+                    {
+                        targetIntensityMultiplier = 1.0f;
+                        float duration = UnityEngine.Random.Range(1.2f, 2.5f);
+                        nextEventTime = now + duration;
+                        isEventActive = false;
+                    }
+                }
+            }
+
+            // 3. Smooth thermal inertia damping
+            float smoothLag = isEventActive ? 0.08f : 0.16f;
+            currentIntensityMultiplier = Mathf.SmoothDamp(
+                currentIntensityMultiplier,
+                targetIntensityMultiplier,
+                ref intensitySmoothVelocity,
+                smoothLag
+            );
+
+            // 4. Combine base smoothed multiplier with organic engine flutter
+            float finalMultiplier = currentIntensityMultiplier + organicFlutter;
+
+            // 5. Game state overrides
+            if (highlightWhenMoving && isDrivingAway)
+            {
+                finalMultiplier = Mathf.Max(finalMultiplier, 1.75f);
+            }
+            else if (highlightWhenSelected && isSelected)
+            {
+                finalMultiplier = Mathf.Max(finalMultiplier, 1.55f);
+            }
+
+            if (visualShakeOffset.sqrMagnitude > 0.0001f)
+            {
+                finalMultiplier *= (Mathf.Sin(Time.time * 30f) > 0f ? 1.4f : 0.6f);
+            }
+
+            finalMultiplier = Mathf.Clamp(finalMultiplier, minIntensityMultiplier * 0.7f, maxIntensityMultiplier * 1.5f);
+
+            // 6. Apply to material property block on the headlight slot
+            Color currentEmission = baseHeadlightEmission * finalMultiplier;
+            float normalizedT = Mathf.InverseLerp(minIntensityMultiplier, maxIntensityMultiplier, finalMultiplier);
+            Color currentAlbedo = Color.Lerp(baseHeadlightAlbedo * 0.75f, baseHeadlightAlbedo * 1.25f, normalizedT);
+
+            if (headlightPropBlock == null) headlightPropBlock = new MaterialPropertyBlock();
+            headlightPropBlock.SetColor(EmissionColorId, currentEmission);
+            headlightPropBlock.SetColor(BaseColorId, currentAlbedo);
+            headlightPropBlock.SetColor(ColorId_Prop, currentAlbedo);
+
+            headlightRenderer.SetPropertyBlock(headlightPropBlock, headlightSlot);
+
+            // Optional taillights
+            if (enableTaillightAnimation && taillightSlot >= 0 && headlightRenderer != null)
+            {
+                UpdateTaillightAnimation();
+            }
+        }
+
+        private void UpdateTaillightAnimation()
+        {
+            if (headlightRenderer == null || taillightSlot < 0) return;
+
+            float t = (Time.time + busTimeOffset * 0.7f) * 1.2f;
+            float pulse = Mathf.Sin(t) * 0.15f + 0.85f;
+            float brakeMultiplier = isDrivingAway ? 0.7f : 1.15f;
+            float finalMultiplier = pulse * brakeMultiplier;
+
+            Color currentEmission = baseTaillightEmission * finalMultiplier;
+            Color currentAlbedo = baseTaillightAlbedo * Mathf.Clamp(finalMultiplier, 0.7f, 1.3f);
+
+            if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
+            taillightPropBlock.SetColor(EmissionColorId, currentEmission);
+            taillightPropBlock.SetColor(BaseColorId, currentAlbedo);
+            taillightPropBlock.SetColor(ColorId_Prop, currentAlbedo);
+
+            headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
+        }
+
+        [ContextMenu("Trigger Headlight Flare (Test)")]
+        public void TriggerHeadlightFlareTest()
+        {
+            targetIntensityMultiplier = maxIntensityMultiplier;
+            nextEventTime = Time.time + 1.2f;
+            isEventActive = true;
+        }
+
+        [ContextMenu("Trigger Headlight Dip (Test)")]
+        public void TriggerHeadlightDipTest()
+        {
+            targetIntensityMultiplier = minIntensityMultiplier;
+            nextEventTime = Time.time + 1.2f;
+            isEventActive = true;
         }
     }
 }

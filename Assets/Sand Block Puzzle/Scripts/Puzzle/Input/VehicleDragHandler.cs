@@ -131,7 +131,7 @@ namespace SandBlocks.Puzzle.Input
                     lastTargetDestination = new Vector2Int(-999, -999);
 
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
-                    SandBlocks.Core.Haptics.HapticManager.Instance?.Selection();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleSelect();
 
                     // Temporarily remove vehicle from grid while dragging so its own cells are considered free
                     puzzleGrid.RemoveVehicle(selectedVehicle);
@@ -156,6 +156,7 @@ namespace SandBlocks.Puzzle.Input
                     if (reachablePositions.Count <= 1 && selectedVehicle is BusVehicle bus)
                     {
                         bus.PlayBlockedShake(Vector3.zero);
+                        SandBlocks.Gameplay.ToastManager.Show("Bus cannot be moved! Path is blocked.");
                     }
                 }
             }
@@ -255,7 +256,7 @@ namespace SandBlocks.Puzzle.Input
                             currentWaypointIndex++;
 
                             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
-                            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+                            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleDragStep();
                         }
                         else
                         {
@@ -313,7 +314,7 @@ namespace SandBlocks.Puzzle.Input
                 {
                     puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
-                    SandBlocks.Core.Haptics.HapticManager.Instance?.MediumImpact();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehiclePlace();
                 }
                 else
                 {
@@ -324,7 +325,8 @@ namespace SandBlocks.Puzzle.Input
                         bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up);
                     }
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
-                    SandBlocks.Core.Haptics.HapticManager.Instance?.HeavyImpact();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
+                    SandBlocks.Gameplay.ToastManager.Show("Cannot place bus here! Spot is blocked.");
                 }
 
                 selectedVehicle.SetSelected(false);

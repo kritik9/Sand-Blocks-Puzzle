@@ -15,11 +15,12 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 4
   particleRadius: 0.1822
-  characterScale: 0.42
-  maxParticles: 154
+  characterScale: 0
+  verticalSpacingMultiplier: 0
+  maxParticles: 400
   containerShape: 0
-  containerWidth: 4.67
-  containerHeight: 5.27
+  containerWidth: 8.5
+  containerHeight: 7
   containerCenter: {x: 0, y: 0}
   leftBorderOffset: 0
   rightBorderOffset: 0

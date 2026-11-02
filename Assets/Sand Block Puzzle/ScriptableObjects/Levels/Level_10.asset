@@ -15,12 +15,12 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 10
   particleRadius: 0.1883
-  characterScale: 1
-  verticalSpacingMultiplier: 1.3
-  maxParticles: 304
+  characterScale: 0
+  verticalSpacingMultiplier: 0
+  maxParticles: 462
   containerShape: 0
-  containerWidth: 8
-  containerHeight: 6
+  containerWidth: 5.5
+  containerHeight: 4.25
   containerCenter: {x: 0, y: 0}
   leftBorderOffset: 0
   rightBorderOffset: 0

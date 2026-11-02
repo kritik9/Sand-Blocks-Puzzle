@@ -15,11 +15,11 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 9
   particleRadius: 0.1795
-  characterScale: 0.75
-  verticalSpacingMultiplier: 1.45
+  characterScale: 0
+  verticalSpacingMultiplier: 0
   maxParticles: 306
   containerShape: 0
-  containerWidth: 7.5074997
+  containerWidth: 6.5
   containerHeight: 6.1793337
   containerCenter: {x: 0, y: 0}
   leftBorderOffset: 0

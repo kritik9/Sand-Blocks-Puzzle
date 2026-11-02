@@ -15,7 +15,8 @@ MonoBehaviour:
   gameplayMode: 0
   levelName: Level 3
   particleRadius: 0.1795
-  characterScale: 0.71
+  characterScale: 0
+  verticalSpacingMultiplier: 0
   maxParticles: 462
   containerShape: 0
   containerWidth: 8.58

@@ -1040,7 +1040,7 @@ private void SpawnPassengerCell(UnifiedCellData data)
 
             activeInFlightCount--;
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayPassengerDropOff();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.LightImpact();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerPassengerBoard();
             onArrived?.Invoke(flyer);
         }
 
@@ -1124,7 +1124,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             Debug.Log("<color=gold>[UnifiedGridManager]</color> LEVEL COMPLETED! All passengers transferred to destination.");
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.Success();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
 
             StartCoroutine(VictorySequenceRoutine());
         }
