@@ -52,6 +52,30 @@ namespace SandBlocks.Puzzle.Grid
 
         [SerializeField] private Color tileColor = new Color(0.98f, 0.94f, 0.94f, 1f);
 
+        [Header("Tile Hover Highlighting")]
+        [Tooltip("If true, highlights grid tiles under a bus when selected and dragged.")]
+        [SerializeField] private bool enableTileHoverHighlight = true;
+
+        [Tooltip("If true, tints the hovered tiles with the bus's color. If false, uses defaultHoverTileColor.")]
+        [SerializeField] private bool useBusColorForTileHover = true;
+
+        [Tooltip("Default color for tile hover highlighting if bus color is not used or available.")]
+        [SerializeField] private Color defaultHoverTileColor = new Color(0.35f, 0.75f, 1.0f, 1f);
+
+        [Tooltip("How strongly the bus color blends with the tile (0 = tile color, 1 = full bus color).")]
+        [Range(0.1f, 1.0f)]
+        [SerializeField] private float tileHoverColorIntensity = 0.90f;
+
+        [Tooltip("Optional emission glow boost for hovered tiles.")]
+        [Range(0.0f, 2.0f)]
+        [SerializeField] private float tileHoverEmissionBoost = 0.40f;
+
+        public bool EnableTileHoverHighlight { get => enableTileHoverHighlight; set => enableTileHoverHighlight = value; }
+        public bool UseBusColorForTileHover { get => useBusColorForTileHover; set => useBusColorForTileHover = value; }
+        public Color DefaultHoverTileColor { get => defaultHoverTileColor; set => defaultHoverTileColor = value; }
+        public float TileHoverColorIntensity { get => tileHoverColorIntensity; set => tileHoverColorIntensity = value; }
+        public float TileHoverEmissionBoost { get => tileHoverEmissionBoost; set => tileHoverEmissionBoost = value; }
+
         [Header("Board Backing Tray Customization")]
         [Tooltip("If true, automatically creates and manages the BoardTray backing plate under the grid blocks")]
         [SerializeField] private bool showBoardTray = true;
@@ -101,6 +125,12 @@ namespace SandBlocks.Puzzle.Grid
         private List<VehicleBase> registeredVehicles = new List<VehicleBase>();
 
         private GameObject visualRoot;
+        private readonly Dictionary<Vector2Int, Renderer> tileRendererCache = new Dictionary<Vector2Int, Renderer>();
+        private readonly List<Vector2Int> currentHighlightedCells = new List<Vector2Int>();
+        private MaterialPropertyBlock hoverTilePropBlock;
+        private static readonly int TileBaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int TileColorId = Shader.PropertyToID("_Color");
+        private static readonly int TileEmissionColorId = Shader.PropertyToID("_EmissionColor");
 
 
 
@@ -445,6 +475,8 @@ namespace SandBlocks.Puzzle.Grid
                 BuildVisualGrid();
             }
 
+            RefreshTileCache();
+
         }
 
 
@@ -610,11 +642,16 @@ namespace SandBlocks.Puzzle.Grid
                     }
                 }
             }
+
+            RefreshTileCache();
         }
 
         [ContextMenu("Clear Visual Grid")]
         public void ClearVisualGrid()
         {
+            tileRendererCache.Clear();
+            currentHighlightedCells.Clear();
+
             for (int i = transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = transform.GetChild(i);
@@ -624,6 +661,195 @@ namespace SandBlocks.Puzzle.Grid
                 }
             }
             visualRoot = null;
+        }
+
+        public Renderer GetTileRenderer(int x, int y)
+        {
+            Vector2Int key = new Vector2Int(x, y);
+            if (tileRendererCache.TryGetValue(key, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            if (visualRoot == null)
+            {
+                Transform existing = transform.Find("[VisualGrid]");
+                if (existing != null) visualRoot = existing.gameObject;
+            }
+
+            if (visualRoot != null)
+            {
+                Transform tileTrans = visualRoot.transform.Find($"Tile_{x}_{y}") ?? visualRoot.transform.Find($"BlockedTile_{x}_{y}");
+                if (tileTrans != null)
+                {
+                    var rend = tileTrans.GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        tileRendererCache[key] = rend;
+                        return rend;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public void RefreshTileCache()
+        {
+            tileRendererCache.Clear();
+            if (visualRoot == null)
+            {
+                Transform existing = transform.Find("[VisualGrid]");
+                if (existing != null) visualRoot = existing.gameObject;
+            }
+
+            if (visualRoot != null)
+            {
+                for (int x = 0; x < columns; x++)
+                {
+                    for (int y = 0; y < rows; y++)
+                    {
+                        Transform t = visualRoot.transform.Find($"Tile_{x}_{y}") ?? visualRoot.transform.Find($"BlockedTile_{x}_{y}");
+                        if (t != null)
+                        {
+                            var rend = t.GetComponent<Renderer>();
+                            if (rend != null)
+                            {
+                                tileRendererCache[new Vector2Int(x, y)] = rend;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Highlights the tiles currently hovered/occupied by a vehicle during selection/dragging.
+        /// </summary>
+        public void HighlightHoverTiles(VehicleBase vehicle, Vector2Int gridPos)
+        {
+            if (!enableTileHoverHighlight || vehicle == null)
+            {
+                ClearHoverTileHighlights();
+                return;
+            }
+
+            Color highlightColor = defaultHoverTileColor;
+            if (useBusColorForTileHover)
+            {
+                Color vColor = vehicle.VehicleColor;
+                if (vColor.a > 0.01f)
+                {
+                    // Check if the bus is white (or very light near-white)
+                    if (vColor.r > 0.85f && vColor.g > 0.85f && vColor.b > 0.85f)
+                    {
+                        highlightColor = Color.white;
+                    }
+                    else
+                    {
+                        highlightColor = Color.Lerp(tileColor, vColor, tileHoverColorIntensity);
+                    }
+                }
+                else
+                {
+                    highlightColor = defaultHoverTileColor;
+                }
+            }
+
+            HighlightHoverTiles(gridPos, vehicle.Length, vehicle.IsVertical, highlightColor);
+        }
+
+        public void HighlightHoverTiles(Vector2Int gridPos, int length, bool isVertical, Color highlightColor)
+        {
+            if (!enableTileHoverHighlight) return;
+
+            List<Vector2Int> newCells = new List<Vector2Int>(length);
+            for (int i = 0; i < length; i++)
+            {
+                int cx = isVertical ? gridPos.x : (gridPos.x + i);
+                int cy = isVertical ? (gridPos.y + i) : gridPos.y;
+                if (cx >= 0 && cx < columns && cy >= 0 && cy < rows)
+                {
+                    newCells.Add(new Vector2Int(cx, cy));
+                }
+            }
+
+            // Quick exit if hovered cells have not changed
+            if (AreCellsEqual(currentHighlightedCells, newCells))
+            {
+                return;
+            }
+
+            // Reset previous cells that are no longer hovered
+            for (int i = 0; i < currentHighlightedCells.Count; i++)
+            {
+                Vector2Int oldCell = currentHighlightedCells[i];
+                if (!newCells.Contains(oldCell))
+                {
+                    ResetTileColor(oldCell);
+                }
+            }
+
+            // Apply highlight to new cells
+            if (hoverTilePropBlock == null) hoverTilePropBlock = new MaterialPropertyBlock();
+            hoverTilePropBlock.SetColor(TileBaseColorId, highlightColor);
+            hoverTilePropBlock.SetColor(TileColorId, highlightColor);
+
+            // Give white/light highlights an elevated emission boost so they clearly pop against the tile floor
+            bool isWhiteOrLight = (highlightColor.r > 0.85f && highlightColor.g > 0.85f && highlightColor.b > 0.85f);
+            float emissionBoost = isWhiteOrLight 
+                ? Mathf.Max(tileHoverEmissionBoost, 0.55f) 
+                : tileHoverEmissionBoost;
+
+            if (emissionBoost > 0.001f)
+            {
+                hoverTilePropBlock.SetColor(TileEmissionColorId, highlightColor * emissionBoost);
+            }
+
+            for (int i = 0; i < newCells.Count; i++)
+            {
+                Vector2Int cell = newCells[i];
+                var rend = GetTileRenderer(cell.x, cell.y);
+                if (rend != null)
+                {
+                    rend.SetPropertyBlock(hoverTilePropBlock);
+                }
+            }
+
+            currentHighlightedCells.Clear();
+            currentHighlightedCells.AddRange(newCells);
+        }
+
+        /// <summary>
+        /// Clears all active tile hover highlights back to their default appearance.
+        /// </summary>
+        public void ClearHoverTileHighlights()
+        {
+            for (int i = 0; i < currentHighlightedCells.Count; i++)
+            {
+                ResetTileColor(currentHighlightedCells[i]);
+            }
+            currentHighlightedCells.Clear();
+        }
+
+        private void ResetTileColor(Vector2Int cell)
+        {
+            var rend = GetTileRenderer(cell.x, cell.y);
+            if (rend != null)
+            {
+                rend.SetPropertyBlock(null);
+            }
+        }
+
+        private bool AreCellsEqual(List<Vector2Int> a, List<Vector2Int> b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         public Vector3 GridToWorld(Vector2Int gridPos, int length, bool isVertical)

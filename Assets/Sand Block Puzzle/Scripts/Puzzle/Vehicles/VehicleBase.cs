@@ -16,6 +16,7 @@ namespace SandBlocks.Puzzle.Vehicles
         protected Vector2Int gridPosition;
 
         public int ColorId => colorId;
+        public virtual Color VehicleColor => Color.clear;
         public int Capacity => capacity;
         public int PassengerCount => passengerCount;
         public bool IsFull => passengerCount >= capacity;

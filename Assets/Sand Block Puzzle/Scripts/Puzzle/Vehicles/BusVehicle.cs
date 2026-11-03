@@ -68,8 +68,8 @@ namespace SandBlocks.Puzzle.Vehicles
             }
         }
 
-        [Header("Headlight Animation (Real Bus Feel)")]
-        [Tooltip("Enable realistic animated headlights that subtly dim, flicker, and highlight randomly per bus.")]
+        [Header("Headlight Settings")]
+        [Tooltip("Enable realistic headlights that glow only when selected, blink on passenger fill, and light up during departure.")]
         [SerializeField] private bool enableHeadlightAnimation = true;
 
         [Tooltip("Slot index of the headlight material on the bus body (default 4 for 'cheragh_').")]
@@ -81,28 +81,34 @@ namespace SandBlocks.Puzzle.Vehicles
         [Tooltip("Renderer holding the bus materials. If null, auto-detected from bus body.")]
         [SerializeField] private Renderer headlightRenderer;
 
-        [Tooltip("Minimum emission multiplier during random light dips.")]
-        [Range(0.01f, 1.0f)]
-        [SerializeField] private float minIntensityMultiplier = 0.55f;
+        [Tooltip("Maximum emission multiplier for headlight effects.")]
+        [Range(0.1f, 4.0f)]
+        [SerializeField] private float maxIntensityMultiplier = 2.5f;
 
-        [Tooltip("Maximum emission multiplier during random light surges / highlights.")]
-        [Range(0.1f, 3.0f)]
-        [SerializeField] private float maxIntensityMultiplier = 1.45f;
-
-        [Tooltip("Base speed of the engine alternator noise and shimmer.")]
+        [Tooltip("Base speed of the subtle engine alternator noise while glowing.")]
         [Range(0.02f, 5.0f)]
         [SerializeField] private float baseFlickerSpeed = 1.8f;
 
-        [Tooltip("Minimum time (in seconds) between random dim/highlight events.")]
-        [SerializeField] private float dimHighlightIntervalMin = 1.2f;
-
-        [Tooltip("Maximum time (in seconds) between random dim/highlight events.")]
-        [SerializeField] private float dimHighlightIntervalMax = 3.8f;
-
-        [Tooltip("Boost headlights to bright high-beam when the bus is selected.")]
+        [Header("Selection & Crowd Fill Timings")]
+        [Tooltip("Headlights glow when the bus is selected.")]
         [SerializeField] private bool highlightWhenSelected = true;
 
-        [Tooltip("Boost headlights to full bright when the bus is driving away.")]
+        [Tooltip("Target glow intensity when the bus is selected.")]
+        [Range(0.1f, 3.0f)]
+        [SerializeField] private float selectedGlowIntensity = 1.45f;
+
+        [Tooltip("Blink the headlights when a crowd passenger fills into the bus.")]
+        [SerializeField] private bool blinkOnPassengerFill = true;
+
+        [Tooltip("Peak intensity multiplier during a passenger fill headlight blink.")]
+        [Range(0.1f, 4.0f)]
+        [SerializeField] private float passengerFillBlinkIntensity = 2.2f;
+
+        [Tooltip("Duration in seconds of the headlight blink on passenger fill.")]
+        [Range(0.04f, 0.5f)]
+        [SerializeField] private float passengerFillBlinkDuration = 0.14f;
+
+        [Tooltip("Boost headlights to bright when the bus is driving away.")]
         [SerializeField] private bool highlightWhenMoving = true;
 
         [Tooltip("Optional custom override for base emission color. Leave clear (alpha 0) to use material default.")]
@@ -169,13 +175,14 @@ namespace SandBlocks.Puzzle.Vehicles
         private float busNoiseSeed;
         private float busTimeOffset;
         private float busSpeedMultiplier = 1.0f;
-        private float currentIntensityMultiplier = 1.0f;
-        private float targetIntensityMultiplier = 1.0f;
+        private float currentIntensityMultiplier = 0.0f;
+        private float targetIntensityMultiplier = 0.0f;
         private float intensitySmoothVelocity = 0f;
-        private float nextEventTime = 0f;
-        private bool isEventActive = false;
         private bool isDrivingAway = false;
         private bool headlightsInitialized = false;
+        private bool isHeadlightFullyOff = false;
+        private Coroutine activeBlinkRoutine;
+        private float blinkIntensityBonus = 0f;
 
         private MaterialPropertyBlock taillightPropBlock;
         private int taillightSlot = -1;
@@ -191,6 +198,18 @@ namespace SandBlocks.Puzzle.Vehicles
         private float lastShakeTime = -1f;
 
         public Vector3 VisualShakeOffset => visualShakeOffset;
+        public override Color VehicleColor
+        {
+            get
+            {
+                if (colorPalette == null)
+                {
+                    var gm = SandBlocks.Gameplay.GameManager.Instance;
+                    if (gm != null && gm.Palette != null) colorPalette = gm.Palette;
+                }
+                return colorPalette != null ? colorPalette.GetColor(colorId) : GetColorFallback(colorId);
+            }
+        }
         public System.Action<BusVehicle> OnBusFullOverride;
         public Transform PassengerParent { get => passengerParent != null ? passengerParent : charactersParent; set => passengerParent = value; }
         public Transform CharactersParent => PassengerParent;
@@ -965,6 +984,11 @@ namespace SandBlocks.Puzzle.Vehicles
             UpdatePassengerVisuals();
             PlayPassengerBoardPop();
 
+            if (blinkOnPassengerFill)
+            {
+                TriggerHeadlightBlink();
+            }
+
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayPassengerBoard();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerPassengerBoard();
 
@@ -1197,12 +1221,9 @@ namespace SandBlocks.Puzzle.Vehicles
         public override void SetSelected(bool selected)
         {
             base.SetSelected(selected);
-            if (selected && enableHeadlightAnimation && highlightWhenSelected)
+            if (enableHeadlightAnimation && highlightWhenSelected)
             {
-                currentIntensityMultiplier = Mathf.Max(currentIntensityMultiplier, 1.45f);
-                targetIntensityMultiplier = 1.6f;
-                isEventActive = true;
-                nextEventTime = Time.time + 0.6f;
+                targetIntensityMultiplier = selected ? selectedGlowIntensity : 0f;
             }
         }
 
@@ -1314,10 +1335,14 @@ namespace SandBlocks.Puzzle.Vehicles
             busNoiseSeed = UnityEngine.Random.Range(10f, 1000f);
             busTimeOffset = UnityEngine.Random.Range(0f, 500f);
             busSpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.25f);
-            nextEventTime = Time.time + UnityEngine.Random.Range(0.2f, dimHighlightIntervalMax);
-            currentIntensityMultiplier = 1.0f;
-            targetIntensityMultiplier = 1.0f;
+            currentIntensityMultiplier = 0.0f;
+            targetIntensityMultiplier = 0.0f;
+            blinkIntensityBonus = 0f;
+            isHeadlightFullyOff = false;
             headlightsInitialized = true;
+
+            // Ensure headlights start completely dark / unlit
+            ApplyHeadlightIntensity(0f);
         }
 
         private int GetHeadlightMaterialSlot(Renderer r)
@@ -1402,6 +1427,67 @@ namespace SandBlocks.Puzzle.Vehicles
             return -1;
         }
 
+        /// <summary>
+        /// Triggers an energetic automotive blink on the bus headlights (called when passengers board).
+        /// </summary>
+        public void TriggerHeadlightBlink(float? customDuration = null, float? customIntensity = null)
+        {
+            if (!enableHeadlightAnimation) return;
+
+            float duration = customDuration ?? passengerFillBlinkDuration;
+            float intensity = customIntensity ?? passengerFillBlinkIntensity;
+
+            if (activeBlinkRoutine != null)
+            {
+                StopCoroutine(activeBlinkRoutine);
+            }
+            activeBlinkRoutine = StartCoroutine(HeadlightBlinkRoutine(duration, intensity));
+        }
+
+        private IEnumerator HeadlightBlinkRoutine(float duration, float peakIntensity)
+        {
+            float elapsed = 0f;
+            duration = Mathf.Max(0.04f, duration);
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // Quick attack (first 20% of duration), smooth power decay (remaining 80%)
+                float curve = (t < 0.20f)
+                    ? (t / 0.20f)
+                    : Mathf.Pow(1f - ((t - 0.20f) / 0.80f), 1.6f);
+
+                blinkIntensityBonus = peakIntensity * curve;
+                yield return null;
+            }
+
+            blinkIntensityBonus = 0f;
+            activeBlinkRoutine = null;
+        }
+
+        private void ApplyHeadlightIntensity(float multiplier)
+        {
+            if (headlightRenderer == null || headlightSlot < 0) return;
+
+            multiplier = Mathf.Max(0f, multiplier);
+
+            Color currentEmission = (multiplier > 0.001f)
+                ? (baseHeadlightEmission * multiplier)
+                : Color.black;
+
+            float normalizedT = Mathf.InverseLerp(0f, maxIntensityMultiplier, multiplier);
+            Color currentAlbedo = Color.Lerp(baseHeadlightAlbedo * 0.70f, baseHeadlightAlbedo * 1.25f, normalizedT);
+
+            if (headlightPropBlock == null) headlightPropBlock = new MaterialPropertyBlock();
+            headlightPropBlock.SetColor(EmissionColorId, currentEmission);
+            headlightPropBlock.SetColor(BaseColorId, currentAlbedo);
+            headlightPropBlock.SetColor(ColorId_Prop, currentAlbedo);
+
+            headlightRenderer.SetPropertyBlock(headlightPropBlock, headlightSlot);
+        }
+
         private void UpdateHeadlightAnimation()
         {
             if (!headlightsInitialized || headlightRenderer == null || headlightSlot < 0)
@@ -1410,104 +1496,68 @@ namespace SandBlocks.Puzzle.Vehicles
                 if (headlightRenderer == null || headlightSlot < 0) return;
             }
 
-            // 1. Organic engine alternator idling flutter (smooth multi-layer Perlin noise)
-            float busTime = (Time.time + busTimeOffset) * baseFlickerSpeed * busSpeedMultiplier;
-            float slowDrift = (Mathf.PerlinNoise(busTime * 0.75f, busNoiseSeed) - 0.5f) * 0.24f;
-            float fastVibe = (Mathf.PerlinNoise(busTime * 3.8f, busNoiseSeed + 33.1f) - 0.5f) * 0.10f;
-            float organicFlutter = slowDrift + fastVibe;
-
-            // 2. Random discrete dim / highlight event state machine
-            float now = Time.time;
-            if (now >= nextEventTime)
+            // 1. Determine baseline target intensity based on selection and departure
+            float targetIntensity = 0f;
+            if (isDrivingAway && highlightWhenMoving)
             {
-                if (isEventActive)
-                {
-                    // Return back to baseline idling intensity
-                    targetIntensityMultiplier = 1.0f;
-                    isEventActive = false;
-                    nextEventTime = now + UnityEngine.Random.Range(dimHighlightIntervalMin, dimHighlightIntervalMax);
-                }
-                else
-                {
-                    // Pick a random event:
-                    // < 0.40 = Dimming dip (voltage drop / alternator load)
-                    // < 0.75 = Highlighting surge (generator surge / high-beam burst)
-                    // < 0.90 = Micro-jitter (quick double-flicker)
-                    // >= 0.90 = Calm steady idle
-                    float roll = UnityEngine.Random.value;
-                    if (roll < 0.40f)
-                    {
-                        targetIntensityMultiplier = UnityEngine.Random.Range(minIntensityMultiplier, 0.75f);
-                        float duration = UnityEngine.Random.Range(0.4f, 1.2f);
-                        nextEventTime = now + duration;
-                        isEventActive = true;
-                    }
-                    else if (roll < 0.75f)
-                    {
-                        targetIntensityMultiplier = UnityEngine.Random.Range(1.20f, maxIntensityMultiplier);
-                        float duration = UnityEngine.Random.Range(0.35f, 1.0f);
-                        nextEventTime = now + duration;
-                        isEventActive = true;
-                    }
-                    else if (roll < 0.90f)
-                    {
-                        targetIntensityMultiplier = minIntensityMultiplier * 0.85f;
-                        float duration = UnityEngine.Random.Range(0.12f, 0.25f);
-                        nextEventTime = now + duration;
-                        isEventActive = true;
-                    }
-                    else
-                    {
-                        targetIntensityMultiplier = 1.0f;
-                        float duration = UnityEngine.Random.Range(1.2f, 2.5f);
-                        nextEventTime = now + duration;
-                        isEventActive = false;
-                    }
-                }
+                targetIntensity = 1.75f;
+            }
+            else if (isSelected && highlightWhenSelected)
+            {
+                targetIntensity = selectedGlowIntensity;
             }
 
-            // 3. Smooth thermal inertia damping
-            float smoothLag = isEventActive ? 0.08f : 0.16f;
+            // 2. Smooth transition toward target
+            float smoothTime = (targetIntensity > currentIntensityMultiplier) ? 0.05f : 0.10f;
             currentIntensityMultiplier = Mathf.SmoothDamp(
                 currentIntensityMultiplier,
-                targetIntensityMultiplier,
+                targetIntensity,
                 ref intensitySmoothVelocity,
-                smoothLag
+                smoothTime
             );
 
-            // 4. Combine base smoothed multiplier with organic engine flutter
-            float finalMultiplier = currentIntensityMultiplier + organicFlutter;
-
-            // 5. Game state overrides
-            if (highlightWhenMoving && isDrivingAway)
+            if (targetIntensity <= 0.001f && currentIntensityMultiplier < 0.01f)
             {
-                finalMultiplier = Mathf.Max(finalMultiplier, 1.75f);
-            }
-            else if (highlightWhenSelected && isSelected)
-            {
-                finalMultiplier = Mathf.Max(finalMultiplier, 1.55f);
+                currentIntensityMultiplier = 0f;
             }
 
-            if (visualShakeOffset.sqrMagnitude > 0.0001f)
+            // 3. Organic alternator idle shimmer (only active when lights are glowing)
+            float organicFlutter = 0f;
+            if (currentIntensityMultiplier > 0.05f)
+            {
+                float busTime = (Time.time + busTimeOffset) * baseFlickerSpeed * busSpeedMultiplier;
+                float slowDrift = (Mathf.PerlinNoise(busTime * 0.75f, busNoiseSeed) - 0.5f) * 0.20f;
+                float fastVibe = (Mathf.PerlinNoise(busTime * 3.8f, busNoiseSeed + 33.1f) - 0.5f) * 0.08f;
+                organicFlutter = (slowDrift + fastVibe) * Mathf.Clamp01(currentIntensityMultiplier);
+            }
+
+            // 4. Combine base smoothed intensity, alternator flutter, and passenger fill blink bonus
+            float finalMultiplier = currentIntensityMultiplier + organicFlutter + blinkIntensityBonus;
+
+            // 5. Impact wall shake modulation (flicker on collision if lights are glowing)
+            if (visualShakeOffset.sqrMagnitude > 0.0001f && finalMultiplier > 0.1f)
             {
                 finalMultiplier *= (Mathf.Sin(Time.time * 30f) > 0f ? 1.4f : 0.6f);
             }
 
-            finalMultiplier = Mathf.Clamp(finalMultiplier, minIntensityMultiplier * 0.7f, maxIntensityMultiplier * 1.5f);
+            finalMultiplier = Mathf.Max(0f, finalMultiplier);
 
-            // 6. Apply to material property block on the headlight slot
-            Color currentEmission = baseHeadlightEmission * finalMultiplier;
-            float normalizedT = Mathf.InverseLerp(minIntensityMultiplier, maxIntensityMultiplier, finalMultiplier);
-            Color currentAlbedo = Color.Lerp(baseHeadlightAlbedo * 0.75f, baseHeadlightAlbedo * 1.25f, normalizedT);
+            // 6. Apply to renderer (with zero-emission early-out when fully off)
+            if (finalMultiplier <= 0.001f)
+            {
+                if (!isHeadlightFullyOff)
+                {
+                    ApplyHeadlightIntensity(0f);
+                    isHeadlightFullyOff = true;
+                }
+            }
+            else
+            {
+                isHeadlightFullyOff = false;
+                ApplyHeadlightIntensity(finalMultiplier);
+            }
 
-            if (headlightPropBlock == null) headlightPropBlock = new MaterialPropertyBlock();
-            headlightPropBlock.SetColor(EmissionColorId, currentEmission);
-            headlightPropBlock.SetColor(BaseColorId, currentAlbedo);
-            headlightPropBlock.SetColor(ColorId_Prop, currentAlbedo);
-
-            headlightRenderer.SetPropertyBlock(headlightPropBlock, headlightSlot);
-
-            // Optional taillights
+            // 7. Optional taillights
             if (enableTaillightAnimation && taillightSlot >= 0 && headlightRenderer != null)
             {
                 UpdateTaillightAnimation();
@@ -1517,6 +1567,14 @@ namespace SandBlocks.Puzzle.Vehicles
         private void UpdateTaillightAnimation()
         {
             if (headlightRenderer == null || taillightSlot < 0) return;
+
+            if (!isSelected && !isDrivingAway && blinkIntensityBonus <= 0.001f)
+            {
+                if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
+                taillightPropBlock.SetColor(EmissionColorId, Color.black);
+                headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
+                return;
+            }
 
             float t = (Time.time + busTimeOffset * 0.7f) * 1.2f;
             float pulse = Mathf.Sin(t) * 0.15f + 0.85f;
@@ -1534,20 +1592,16 @@ namespace SandBlocks.Puzzle.Vehicles
             headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
         }
 
-        [ContextMenu("Trigger Headlight Highlight (Test)")]
-        public void TriggerHeadlightHighlightTest()
+        [ContextMenu("Trigger Headlight Blink (Test)")]
+        public void TriggerHeadlightBlinkTest()
         {
-            targetIntensityMultiplier = maxIntensityMultiplier;
-            nextEventTime = Time.time + 1.2f;
-            isEventActive = true;
+            TriggerHeadlightBlink();
         }
 
-        [ContextMenu("Trigger Headlight Dip (Test)")]
-        public void TriggerHeadlightDipTest()
+        [ContextMenu("Toggle Headlight Selection Glow (Test)")]
+        public void ToggleHeadlightSelectionTest()
         {
-            targetIntensityMultiplier = minIntensityMultiplier;
-            nextEventTime = Time.time + 1.2f;
-            isEventActive = true;
+            SetSelected(!isSelected);
         }
     }
 }

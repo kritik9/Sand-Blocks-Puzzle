@@ -34,12 +34,47 @@ namespace SandBlocks.Gameplay
         }
 
         [Header("Transfer Tuning")]
-        [SerializeField] private float transferInterval = 0.08f;
-        [SerializeField] private float flightDuration = 0.35f;
+        [SerializeField] private float transferInterval = 0.09f;
+        [SerializeField] private float flightDuration = 0.28f;
         [Tooltip("Depth / range along Z-axis (in Horizontal_XZ) into the crowd that can be collected by buses at the collection line.")]
         [Range(0.05f, 2.5f)]
         [SerializeField] private float boundaryLayerTolerance = 0.7f;
         [SerializeField] private float commuterScale = 0.08f;
+
+        [Header("Dynamic Stream Acceleration (Large Group Speed-up)")]
+        [Tooltip("Progressively accelerate crowd fill speed over time when a continuous group of crowd fills into a bus.")]
+        [SerializeField] private bool enableFillAcceleration = true;
+
+        [Tooltip("Initial launch interval in seconds when a stream starts.")]
+        [Range(0.04f, 0.25f)]
+        [SerializeField] private float baseTransferInterval = 0.10f;
+
+        [Tooltip("Fastest launch interval in seconds at maximum stream speed (capped for good visibility).")]
+        [Range(0.03f, 0.15f)]
+        [SerializeField] private float minTransferInterval = 0.052f;
+
+        [Tooltip("Initial flight duration in seconds for commuters when a stream starts.")]
+        [Range(0.15f, 0.60f)]
+        [SerializeField] private float baseFlightDuration = 0.32f;
+
+        [Tooltip("Fastest flight duration in seconds at maximum stream speed (capped for clear jump arc visibility).")]
+        [Range(0.12f, 0.45f)]
+        [SerializeField] private float minFlightDuration = 0.20f;
+
+        [Tooltip("Number of consecutive passengers required to reach maximum fill speed.")]
+        [Range(3, 30)]
+        [SerializeField] private int accelerationRampTransfers = 12;
+
+        [Tooltip("Time in seconds without transfers before the stream acceleration resets back to initial baseline speed.")]
+        [Range(0.1f, 1.0f)]
+        [SerializeField] private float streamResetGracePeriod = 0.35f;
+
+        public bool EnableFillAcceleration { get => enableFillAcceleration; set => enableFillAcceleration = value; }
+        public float BaseTransferInterval { get => baseTransferInterval; set => baseTransferInterval = value; }
+        public float MinTransferInterval { get => minTransferInterval; set => minTransferInterval = value; }
+        public float BaseFlightDuration { get => baseFlightDuration; set => baseFlightDuration = value; }
+        public float MinFlightDuration { get => minFlightDuration; set => minFlightDuration = value; }
+        public int AccelerationRampTransfers { get => accelerationRampTransfers; set => accelerationRampTransfers = value; }
 
         [Header("Jump Flight Arc & Camera Visibility")]
         [Tooltip("Vertical height added to the jump flight trajectory curve")]
@@ -61,11 +96,19 @@ namespace SandBlocks.Gameplay
 
         private float transferTimer;
         private readonly List<GameObject> inFlightCommuters = new List<GameObject>();
+        private int consecutiveTransfers = 0;
+        private float lastTransferTime = -1f;
+        private VehicleBase lastCollectingBus = null;
 
         /// <summary>
         /// The number of commuters currently flying from the container crowd to the buses.
         /// </summary>
         public int InFlightCount => inFlightCommuters.Count;
+
+        /// <summary>
+        /// Current number of consecutive passengers transferred in the active stream.
+        /// </summary>
+        public int ConsecutiveTransfers => consecutiveTransfers;
 
         public void SetCharacterScale(float scale)
         {
@@ -83,6 +126,39 @@ namespace SandBlocks.Gameplay
                 }
             }
             inFlightCommuters.Clear();
+            consecutiveTransfers = 0;
+            lastCollectingBus = null;
+        }
+
+        public float GetActiveTransferInterval()
+        {
+            if (!enableFillAcceleration) return transferInterval;
+
+            float progress = Mathf.Clamp01((float)consecutiveTransfers / Mathf.Max(1, accelerationRampTransfers));
+            // SmoothStep provides gentle initial ramp and eases off at top speed so it doesn't overshoot
+            float smooth = Mathf.SmoothStep(0f, 1f, progress);
+            return Mathf.Lerp(baseTransferInterval, minTransferInterval, smooth);
+        }
+
+        public float GetActiveFlightDuration()
+        {
+            if (!enableFillAcceleration) return flightDuration;
+
+            float progress = Mathf.Clamp01((float)consecutiveTransfers / Mathf.Max(1, accelerationRampTransfers));
+            float smooth = Mathf.SmoothStep(0f, 1f, progress);
+            return Mathf.Lerp(baseFlightDuration, minFlightDuration, smooth);
+        }
+
+        private void RegisterSuccessfulTransfer(VehicleBase bus)
+        {
+            if (lastCollectingBus != bus)
+            {
+                consecutiveTransfers = 0;
+                lastCollectingBus = bus;
+            }
+
+            consecutiveTransfers++;
+            lastTransferTime = Time.time;
         }
 
         private void Awake()
@@ -104,8 +180,19 @@ namespace SandBlocks.Gameplay
                 return;
             }
 
+            if (enableFillAcceleration)
+            {
+                // Reset stream streak if no transfer has occurred within grace period
+                if (consecutiveTransfers > 0 && Time.time - lastTransferTime > streamResetGracePeriod)
+                {
+                    consecutiveTransfers = 0;
+                    lastCollectingBus = null;
+                }
+            }
+
+            float activeInterval = GetActiveTransferInterval();
             transferTimer += Time.deltaTime;
-            if (transferTimer >= transferInterval)
+            if (transferTimer >= activeInterval)
             {
                 transferTimer = 0f;
                 ProcessTransfer();
@@ -148,7 +235,8 @@ namespace SandBlocks.Gameplay
                     {
                         if (busVehicle.TryReserveSeat(out Vector3 seatPos))
                         {
-                            StartCoroutine(AnimateCommuterFlight(startPos, busVehicle, seatPos, bus.ColorId));
+                            RegisterSuccessfulTransfer(bus);
+                            StartCoroutine(AnimateCommuterFlight(startPos, busVehicle, seatPos, bus.ColorId, GetActiveFlightDuration()));
                             break;
                         }
                     }
@@ -156,7 +244,8 @@ namespace SandBlocks.Gameplay
                     {
                         if (bus.TryAddPassenger(out Vector3 seatPos))
                         {
-                            StartCoroutine(AnimateCommuterFlightLegacy(startPos, bus, seatPos, bus.ColorId));
+                            RegisterSuccessfulTransfer(bus);
+                            StartCoroutine(AnimateCommuterFlightLegacy(startPos, bus, seatPos, bus.ColorId, GetActiveFlightDuration()));
                             break;
                         }
                     }
@@ -313,8 +402,9 @@ namespace SandBlocks.Gameplay
             return false;
         }
 
-        private IEnumerator AnimateCommuterFlight(Vector3 start, BusVehicle targetBus, Vector3 targetSeatPos, int colorId)
+        private IEnumerator AnimateCommuterFlight(Vector3 start, BusVehicle targetBus, Vector3 targetSeatPos, int colorId, float customDuration = -1f)
         {
+            float activeFlightDuration = (customDuration > 0.01f) ? customDuration : GetActiveFlightDuration();
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
             Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
@@ -357,10 +447,10 @@ namespace SandBlocks.Gameplay
                 Vector3 endPos = (targetBus != null) ? targetBus.transform.TransformPoint(localSeatOffset) : targetSeatPos;
                 float elapsed = 0f;
 
-                while (elapsed < flightDuration)
+                while (elapsed < activeFlightDuration)
                 {
                     elapsed += Time.deltaTime;
-                    float t = Mathf.Clamp01(elapsed / flightDuration);
+                    float t = Mathf.Clamp01(elapsed / activeFlightDuration);
 
                     // Dynamically track the target bus as it moves / hovers
                     if (targetBus != null)
@@ -399,8 +489,9 @@ namespace SandBlocks.Gameplay
             }
         }
 
-        private IEnumerator AnimateCommuterFlightLegacy(Vector3 start, VehicleBase targetBus, Vector3 localSeat, int colorId)
+        private IEnumerator AnimateCommuterFlightLegacy(Vector3 start, VehicleBase targetBus, Vector3 localSeat, int colorId, float customDuration = -1f)
         {
+            float activeFlightDuration = (customDuration > 0.01f) ? customDuration : GetActiveFlightDuration();
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
             Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
 
@@ -441,10 +532,10 @@ namespace SandBlocks.Gameplay
                 : (start + endPos) * 0.5f + Vector3.up * 1.4f - Vector3.forward * 0.5f;
             float elapsed = 0f;
 
-            while (elapsed < flightDuration)
+            while (elapsed < activeFlightDuration)
             {
                 elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / flightDuration);
+                float t = Mathf.Clamp01(elapsed / activeFlightDuration);
 
                 if (targetBus != null)
                 {

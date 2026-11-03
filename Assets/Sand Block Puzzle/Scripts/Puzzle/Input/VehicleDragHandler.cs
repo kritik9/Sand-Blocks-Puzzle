@@ -148,6 +148,12 @@ namespace SandBlocks.Puzzle.Input
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleSelect();
 
+                    // Highlight the tiles on which this bus is initially hovering
+                    if (puzzleGrid != null)
+                    {
+                        puzzleGrid.HighlightHoverTiles(selectedVehicle, currentHoveredGrid);
+                    }
+
                     // Temporarily remove vehicle from grid while dragging so its own cells are considered free
                     puzzleGrid.RemoveVehicle(selectedVehicle);
 
@@ -262,6 +268,12 @@ namespace SandBlocks.Puzzle.Input
                         SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
                     }
 
+                    // Update tile hover highlight to follow the bus's current hovered path
+                    if (puzzleGrid != null)
+                    {
+                        puzzleGrid.HighlightHoverTiles(selectedVehicle, currentHoveredGrid);
+                    }
+
                     // 2. Continuous sub-cell visual tracking with directional obstacle resistance
                     Vector3 anchorWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
                     Vector2 anchorFlat = isHorizontal ? new Vector2(anchorWorld.x, anchorWorld.z) : new Vector2(anchorWorld.x, anchorWorld.y);
@@ -319,6 +331,7 @@ namespace SandBlocks.Puzzle.Input
             {
                 if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
                 {
+                    if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
                     selectedVehicle.SetSelected(false);
                     selectedVehicle = null;
                     return;
@@ -356,6 +369,7 @@ namespace SandBlocks.Puzzle.Input
                     }
                 }
 
+                if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
                 selectedVehicle.SetSelected(false);
                 selectedVehicle = null;
             }
@@ -425,9 +439,22 @@ namespace SandBlocks.Puzzle.Input
                 selectedVehicle.SetSelected(false);
             }
 
+            if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
             selectedVehicle = null;
             reachablePositions.Clear();
             currentHoveredGrid = new Vector2Int(-999, -999);
+        }
+
+        private void OnDisable()
+        {
+            if (selectedVehicle != null)
+            {
+                CancelDrag();
+            }
+            if (puzzleGrid != null)
+            {
+                puzzleGrid.ClearHoverTileHighlights();
+            }
         }
 
         public void RefreshReachablePositions()

@@ -123,13 +123,14 @@ MonoBehaviour:
   headlightMaterialIndex: 4
   headlightMaterialName: cheragh_
   headlightRenderer: {fileID: 8426137325776756195}
-  minIntensityMultiplier: 0.01
   maxIntensityMultiplier: 0.2
   baseFlickerSpeed: 1
-  dimHighlightIntervalMin: 5
-  dimHighlightIntervalMax: 15
   highlightWhenSelected: 1
-  highlightWhenMoving: 1
+  selectedGlowIntensity: 0.2
+  blinkOnPassengerFill: 1
+  passengerFillBlinkIntensity: 0.2
+  passengerFillBlinkDuration: 0.14
+  highlightWhenMoving: 0
   customHeadlightEmissionColor: {r: 0, g: 0, b: 0, a: 0}
   enableTaillightAnimation: 1
   taillightMaterialIndex: 6
@@ -141,6 +142,7 @@ MonoBehaviour:
   passengerScale: 0.009
   enablePassengerBoardPop: 0
   popScaleMultiplier: 1.14
+  passengerPopDuration: 0.2
   blockedShakeMagnitude: 0.16
   spawnBounceDuration: 0.35
   spawnOvershoot: 1.70158

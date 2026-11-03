@@ -142,6 +142,13 @@ namespace SandBlocks.Gameplay
         [Tooltip("Home Button inside the In-Game HUD to return to the home screen")]
         [SerializeField] private Button homeButton;
 
+        [Header("Play Button Pulse Animation")]
+        [Tooltip("Enable continuous breathing scale in-out pulse on the Play button while on HomeScreen")]
+        [SerializeField] private bool enablePlayButtonPulse = true;
+        [SerializeField] private float playButtonPulseSpeed = 2.4f;
+        [SerializeField] private float playButtonMinScale = 0.94f;
+        [SerializeField] private float playButtonMaxScale = 1.08f;
+
         [Header("Settings Screen UI")]
         [Tooltip("The Settings Screen canvas panel/root object")]
         [SerializeField] private GameObject settingsScreen;
@@ -287,19 +294,20 @@ namespace SandBlocks.Gameplay
             {
                 playButton.onClick.RemoveListener(StartGame);
                 playButton.onClick.AddListener(StartGame);
+                SetupPlayButtonPulse();
             }
 
-            if (settingsScreen == null)
-            {
-                var foundSettings = GameObject.Find("SettingsScreen");
-                if (foundSettings != null) settingsScreen = foundSettings;
-            }
+            //if (settingsScreen == null)
+            //{
+            //    var foundSettings = GameObject.Find("SettingsScreen");
+            //    if (foundSettings != null) settingsScreen = foundSettings;
+            //}
 
-            if (settingsButton == null)
-            {
-                var foundBtn = GameObject.Find("SettingsButton");
-                if (foundBtn != null) settingsButton = foundBtn.GetComponent<Button>();
-            }
+            //if (settingsButton == null)
+            //{
+            //    var foundBtn = GameObject.Find("SettingsButton");
+            //    if (foundBtn != null) settingsButton = foundBtn.GetComponent<Button>();
+            //}
 
             if (settingsButton != null)
             {
@@ -810,10 +818,23 @@ namespace SandBlocks.Gameplay
         /// Starts the game when PlayButton on HomeScreen is clicked.
         /// Hides HomeScreen, reveals in-game HUD, and launches the active level.
         /// </summary>
+        private void SetupPlayButtonPulse()
+        {
+            if (playButton == null) return;
+            var pulse = playButton.GetComponent<UIButtonPulse>() ?? playButton.gameObject.AddComponent<UIButtonPulse>();
+            pulse.Configure(playButtonPulseSpeed, playButtonMinScale, playButtonMaxScale, enablePlayButtonPulse);
+        }
+
         public void StartGame()
         {
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayButtonClick();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
+
+            if (playButton != null)
+            {
+                var pulse = playButton.GetComponent<UIButtonPulse>();
+                if (pulse != null) pulse.StopPulse();
+            }
 
             if (homeScreen != null)
             {
@@ -886,6 +907,15 @@ namespace SandBlocks.Gameplay
             if (homeScreen != null)
             {
                 homeScreen.SetActive(true);
+            }
+
+            if (playButton != null)
+            {
+                var pulse = playButton.GetComponent<UIButtonPulse>();
+                if (pulse != null && enablePlayButtonPulse)
+                {
+                    pulse.StartPulse();
+                }
             }
 
             SetInGameHUDActive(false);
