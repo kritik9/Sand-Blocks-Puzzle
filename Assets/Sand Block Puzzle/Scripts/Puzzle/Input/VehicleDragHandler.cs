@@ -186,14 +186,23 @@ namespace SandBlocks.Puzzle.Input
             }
             else if (isHeld && selectedVehicle != null)
             {
-                Ray ray = gameCamera.ScreenPointToRay(screenPos);
+                if ((selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null) ||
+                    (selectedVehicle is BusVehicle busCheck && busCheck.IsDrivingAway))
+                {
+                    OnVehicleFullOrDeparting(selectedVehicle);
+                }
+                else
+                {
+                    Ray ray = gameCamera.ScreenPointToRay(screenPos);
                 if (dragPlane.Raycast(ray, out float enter))
                 {
                     Vector3 rawPointerWorld = ray.GetPoint(enter) + dragOffset;
                     Vector2 pointerFlat = isHorizontal ? new Vector2(rawPointerWorld.x, rawPointerWorld.z) : new Vector2(rawPointerWorld.x, rawPointerWorld.y);
 
-                    float cellSize = puzzleGrid.CellSize;
-                    float stepThreshold = cellSize * 0.50f;
+                    float stepX = puzzleGrid.StepX;
+                    float stepY = puzzleGrid.StepY;
+                    float stepThresholdX = stepX * 0.50f;
+                    float stepThresholdY = stepY * 0.50f;
 
                     // 1. Step-by-step neighbor advancement
                     // The bus can ONLY advance to directly adjacent cells along the path the finger is taking.
@@ -215,16 +224,16 @@ namespace SandBlocks.Puzzle.Input
 
                         if (Mathf.Abs(toPointer.x) >= Mathf.Abs(toPointer.y))
                         {
-                            if (Mathf.Abs(toPointer.x) > stepThreshold)
+                            if (Mathf.Abs(toPointer.x) > stepThresholdX)
                                 primaryStep = new Vector2Int(toPointer.x > 0 ? 1 : -1, 0);
-                            if (Mathf.Abs(toPointer.y) > stepThreshold)
+                            if (Mathf.Abs(toPointer.y) > stepThresholdY)
                                 secondaryStep = new Vector2Int(0, toPointer.y > 0 ? 1 : -1);
                         }
                         else
                         {
-                            if (Mathf.Abs(toPointer.y) > stepThreshold)
+                            if (Mathf.Abs(toPointer.y) > stepThresholdY)
                                 primaryStep = new Vector2Int(0, toPointer.y > 0 ? 1 : -1);
-                            if (Mathf.Abs(toPointer.x) > stepThreshold)
+                            if (Mathf.Abs(toPointer.x) > stepThresholdX)
                                 secondaryStep = new Vector2Int(toPointer.x > 0 ? 1 : -1, 0);
                         }
 
@@ -285,30 +294,32 @@ namespace SandBlocks.Puzzle.Input
                     bool canMoveUp    = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.up);
                     bool canMoveDown  = puzzleGrid.CanPlace(selectedVehicle, currentHoveredGrid + Vector2Int.down);
 
-                    float freeRange = cellSize * 0.48f;
-                    float elasticRange = cellSize * elasticEdgeResistance;
+                    float freeRangeX = stepX * 0.48f;
+                    float freeRangeY = stepY * 0.48f;
+                    float elasticRangeX = stepX * elasticEdgeResistance;
+                    float elasticRangeY = stepY * elasticEdgeResistance;
 
                     // Clamp X offset
                     if (dragOffsetFromCell.x > 0)
                     {
-                        float maxAllowed = canMoveRight ? freeRange : elasticRange;
+                        float maxAllowed = canMoveRight ? freeRangeX : elasticRangeX;
                         dragOffsetFromCell.x = Mathf.Min(dragOffsetFromCell.x, maxAllowed);
                     }
                     else if (dragOffsetFromCell.x < 0)
                     {
-                        float maxAllowed = canMoveLeft ? freeRange : elasticRange;
+                        float maxAllowed = canMoveLeft ? freeRangeX : elasticRangeX;
                         dragOffsetFromCell.x = Mathf.Max(dragOffsetFromCell.x, -maxAllowed);
                     }
 
                     // Clamp Y offset
                     if (dragOffsetFromCell.y > 0)
                     {
-                        float maxAllowed = canMoveUp ? freeRange : elasticRange;
+                        float maxAllowed = canMoveUp ? freeRangeY : elasticRangeY;
                         dragOffsetFromCell.y = Mathf.Min(dragOffsetFromCell.y, maxAllowed);
                     }
                     else if (dragOffsetFromCell.y < 0)
                     {
-                        float maxAllowed = canMoveDown ? freeRange : elasticRange;
+                        float maxAllowed = canMoveDown ? freeRangeY : elasticRangeY;
                         dragOffsetFromCell.y = Mathf.Max(dragOffsetFromCell.y, -maxAllowed);
                     }
 
@@ -326,16 +337,18 @@ namespace SandBlocks.Puzzle.Input
 
                     selectedVehicle.transform.position = Vector3.Lerp(selectedVehicle.transform.position, idealWorldPos, Time.deltaTime * 45f);
                 }
-            }
-            else if (isUp && selectedVehicle != null)
-            {
-                if (selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null)
-                {
-                    if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
-                    selectedVehicle.SetSelected(false);
-                    selectedVehicle = null;
-                    return;
                 }
+            }
+            else if (isUp)
+            {
+                if (selectedVehicle != null)
+                {
+                    if ((selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null) ||
+                        (selectedVehicle is BusVehicle busCheck && busCheck.IsDrivingAway))
+                    {
+                        OnVehicleFullOrDeparting(selectedVehicle);
+                        return;
+                    }
 
                 // Place the vehicle cleanly at the cell it reached step-by-step
                 Vector2Int finalGridPos = currentHoveredGrid;
@@ -372,6 +385,24 @@ namespace SandBlocks.Puzzle.Input
                 if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
                 selectedVehicle.SetSelected(false);
                 selectedVehicle = null;
+                reachablePositions.Clear();
+                currentHoveredGrid = new Vector2Int(-999, -999);
+            }
+            else
+            {
+                if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+                currentHoveredGrid = new Vector2Int(-999, -999);
+            }
+            }
+            else if (!isHeld && selectedVehicle != null)
+            {
+                OnVehicleFullOrDeparting(selectedVehicle);
+            }
+
+            if (selectedVehicle == null && currentHoveredGrid.x != -999)
+            {
+                if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+                currentHoveredGrid = new Vector2Int(-999, -999);
             }
         }
 
@@ -395,6 +426,36 @@ namespace SandBlocks.Puzzle.Input
                 vehicle.transform.position = targetPos;
             }
             activeSnapRoutine = null;
+        }
+
+        /// <summary>
+        /// Called when a vehicle becomes full or starts departing.
+        /// Immediately terminates any active drag, unselects the vehicle, and clears tile hover highlights.
+        /// </summary>
+        public void OnVehicleFullOrDeparting(VehicleBase vehicle)
+        {
+            if (activeSnapRoutine != null)
+            {
+                StopCoroutine(activeSnapRoutine);
+                activeSnapRoutine = null;
+            }
+
+            if (selectedVehicle != null)
+            {
+                if (selectedVehicle == vehicle || vehicle == null || selectedVehicle.IsFull)
+                {
+                    selectedVehicle.SetSelected(false);
+                    selectedVehicle = null;
+                }
+            }
+
+            if (puzzleGrid != null)
+            {
+                puzzleGrid.ClearHoverTileHighlights();
+            }
+
+            reachablePositions?.Clear();
+            currentHoveredGrid = new Vector2Int(-999, -999);
         }
 
         /// <summary>

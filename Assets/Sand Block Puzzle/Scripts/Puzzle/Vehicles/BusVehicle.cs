@@ -158,6 +158,18 @@ namespace SandBlocks.Puzzle.Vehicles
         [Range(1.0f, 3.0f)]
         [SerializeField] private float spawnOvershoot = 1.70158f;
 
+        [Header("Departure Animation")]
+        [Tooltip("Pause delay in seconds after the bus is full before it begins driving away")]
+        [Range(0.0f, 1.5f)]
+        [SerializeField] private float driveAwayDelay = 0.25f;
+
+        [Tooltip("Duration in seconds for the bus to drive off-screen (smaller = faster)")]
+        [Range(0.1f, 2.5f)]
+        [SerializeField] private float driveAwayDuration = 0.5f;
+
+        [Tooltip("Distance the bus travels off-screen during departure before being destroyed")]
+        [SerializeField] private float driveAwayDistance = 15f;
+
         private readonly List<GameObject> allRoofPassengers = new List<GameObject>();
         private List<Vector3> seatLocalOffsets = new List<Vector3>();
         private List<GameObject> spawnedPassengers = new List<GameObject>();
@@ -1136,6 +1148,14 @@ namespace SandBlocks.Puzzle.Vehicles
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusFull();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
 
+            SetSelected(false);
+
+            var dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
+            if (dragHandler != null)
+            {
+                dragHandler.OnVehicleFullOrDeparting(this);
+            }
+
             if (OnBusFullOverride != null)
             {
                 OnBusFullOverride.Invoke(this);
@@ -1154,6 +1174,7 @@ namespace SandBlocks.Puzzle.Vehicles
             if (grid != null)
             {
                 grid.RemoveVehicle(this);
+                grid.ClearHoverTileHighlights();
             }
             StartCoroutine(DriveAwayRoutine());
         }
@@ -1164,13 +1185,35 @@ namespace SandBlocks.Puzzle.Vehicles
             if (grid != null)
             {
                 grid.RemoveVehicle(this);
+                grid.ClearHoverTileHighlights();
+            }
+
+            var dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
+            if (dragHandler != null)
+            {
+                dragHandler.OnVehicleFullOrDeparting(this);
             }
         }
+
+        public float DriveAwayDelay { get => driveAwayDelay; set => driveAwayDelay = value; }
+        public float DriveAwayDuration { get => driveAwayDuration; set => driveAwayDuration = value; }
+        public float DriveAwayDistance { get => driveAwayDistance; set => driveAwayDistance = value; }
+        public bool IsDrivingAway => isDrivingAway;
 
         private IEnumerator DriveAwayRoutine()
         {
             isDrivingAway = true;
-            yield return new WaitForSeconds(0.4f);
+            SetSelected(false);
+
+            var dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
+            if (dragHandler != null)
+            {
+                dragHandler.OnVehicleFullOrDeparting(this);
+            }
+            if (driveAwayDelay > 0f)
+            {
+                yield return new WaitForSeconds(driveAwayDelay);
+            }
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
@@ -1202,9 +1245,9 @@ namespace SandBlocks.Puzzle.Vehicles
             Vector3 worldDriveDir = (grid != null) ? grid.transform.TransformDirection(driveDir) : driveDir;
 
             float elapsed = 0f;
-            float duration = 0.8f;
+            float duration = Mathf.Max(0.01f, driveAwayDuration);
             Vector3 startPos = transform.position;
-            Vector3 endPos = startPos + worldDriveDir * 15f;
+            Vector3 endPos = startPos + worldDriveDir * driveAwayDistance;
 
             while (elapsed < duration)
             {

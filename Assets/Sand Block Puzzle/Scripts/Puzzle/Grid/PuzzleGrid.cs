@@ -52,6 +52,86 @@ namespace SandBlocks.Puzzle.Grid
 
         [SerializeField] private Color tileColor = new Color(0.98f, 0.94f, 0.94f, 1f);
 
+        [Header("Tile Model & Spacing")]
+        [Tooltip("Prefab or model to use for the visual grid tiles (defaults to Tile_v1 from Models folder).")]
+        [SerializeField] private GameObject tilePrefab;
+
+        [Tooltip("Base dimension of the tile model mesh in local units (default 2.0 for Tile_v1). Used to normalize tile size to cellSize.")]
+        [SerializeField] private float tileBaseMeshSize = 2.0f;
+
+        [Tooltip("Optional custom scale multiplier applied to the visual tile model.")]
+        [SerializeField] private Vector3 tileScaleMultiplier = Vector3.one;
+
+        [Tooltip("Spacing between grid columns (X-axis). Defaults to 0 (no spacing).")]
+        [SerializeField] private float columnSpacing = 0f;
+
+        [Tooltip("Spacing between grid rows (Z-axis in Horizontal mode, Y-axis in Vertical mode). Defaults to 0 (no spacing).")]
+        [SerializeField] private float rowSpacing = 0f;
+
+        [Tooltip("Vertical elevation offset for tiles (Y in horizontal mode, Z in vertical mode).")]
+        [SerializeField] private float tileElevation = 0f;
+
+        [Tooltip("Optional additional position offset applied to visual tiles.")]
+        [SerializeField] private Vector3 tilePositionOffset = Vector3.zero;
+
+        [Tooltip("If true, applies tileColor to the visual tiles. Enabled by default.")]
+        [SerializeField] private bool applyColorToTilePrefab = true;
+
+        public GameObject TilePrefab
+        {
+            get => tilePrefab;
+            set { tilePrefab = value; if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public float ColumnSpacing
+        {
+            get => columnSpacing;
+            set { columnSpacing = Mathf.Max(0f, value); RecalculateOrigin(); if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public float RowSpacing
+        {
+            get => rowSpacing;
+            set { rowSpacing = Mathf.Max(0f, value); RecalculateOrigin(); if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public float StepX => cellSize + columnSpacing;
+        public float StepY => cellSize + rowSpacing;
+
+        public float TileElevation
+        {
+            get => tileElevation;
+            set { tileElevation = value; if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public Vector3 TilePositionOffset
+        {
+            get => tilePositionOffset;
+            set { tilePositionOffset = value; if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public Vector3 TileScaleMultiplier
+        {
+            get => tileScaleMultiplier;
+            set { tileScaleMultiplier = value; if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public bool ApplyColorToTilePrefab
+        {
+            get => applyColorToTilePrefab;
+            set { applyColorToTilePrefab = value; if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
+        public Color TileColor
+        {
+            get => tileColor;
+            set
+            {
+                tileColor = value;
+                if (autoBuildVisuals) BuildVisualGrid();
+            }
+        }
+
         [Header("Tile Hover Highlighting")]
         [Tooltip("If true, highlights grid tiles under a bus when selected and dragged.")]
         [SerializeField] private bool enableTileHoverHighlight = true;
@@ -338,46 +418,64 @@ namespace SandBlocks.Puzzle.Grid
 
 
 
-        public float Width => columns * cellSize;
+        public float Width => columns * cellSize + Mathf.Max(0, columns - 1) * columnSpacing;
 
-        public float Height => rows * cellSize;
+        public float Height => rows * cellSize + Mathf.Max(0, rows - 1) * rowSpacing;
 
-        public float TopY => origin.y + (rows - 1) * cellSize;
+        public float TopY => origin.y + (rows - 1) * StepY;
 
         public float BottomY => origin.y;
 
         public float LeftX => origin.x;
 
-        public float RightX => origin.x + (columns - 1) * cellSize;
+        public float RightX => origin.x + (columns - 1) * StepX;
 
-
-
-        public void RecalculateOrigin()
-
+        public void EnsureTilePrefab()
         {
-
-            if (centerGridAtZero)
-
+            if (tilePrefab == null)
             {
+#if UNITY_EDITOR
+                tilePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Models/Tile_v1/Tile_v1.fbx");
+#endif
+            }
+        }
 
-                origin.x = -(columns - 1) * 0.5f * cellSize;
-
-                origin.y = -(rows - 1) * 0.5f * cellSize;
-
+        public Vector3 GetTileScale(bool isBlocked, bool isHorizontal)
+        {
+            if (tilePrefab != null)
+            {
+                float baseSize = tileBaseMeshSize > 0.001f ? tileBaseMeshSize : 2.0f;
+                float scaleFactor = cellSize / baseSize;
+                float blockedScale = isBlocked ? 1.05f : 1.0f;
+                return new Vector3(
+                    scaleFactor * tileScaleMultiplier.x * blockedScale,
+                    scaleFactor * tileScaleMultiplier.y * (isBlocked ? 1.4f : 1.0f),
+                    scaleFactor * tileScaleMultiplier.z * blockedScale
+                );
             }
 
-            else if (useTopCenterAnchor)
+            return isHorizontal
+                ? (isBlocked ? new Vector3(cellSize * 0.95f, 0.22f, cellSize * 0.95f) : new Vector3(cellSize * 0.92f, 0.06f, cellSize * 0.92f))
+                : (isBlocked ? new Vector3(cellSize * 0.95f, cellSize * 0.95f, 0.22f) : new Vector3(cellSize * 0.92f, 0.08f, cellSize * 0.92f));
+        }
 
+        public void RecalculateOrigin()
+        {
+            float stepX = StepX;
+            float stepY = StepY;
+
+            if (centerGridAtZero)
             {
-
-                origin.x = centerX - (columns - 1) * 0.5f * cellSize;
-
-                origin.y = topAnchorY - (rows - 1) * cellSize;
-
+                origin.x = -(columns - 1) * 0.5f * stepX;
+                origin.y = -(rows - 1) * 0.5f * stepY;
+            }
+            else if (useTopCenterAnchor)
+            {
+                origin.x = centerX - (columns - 1) * 0.5f * stepX;
+                origin.y = topAnchorY - (rows - 1) * stepY;
             }
 
             OnGridDimensionsChanged?.Invoke();
-
         }
 
 
@@ -457,6 +555,7 @@ namespace SandBlocks.Puzzle.Grid
         private void Awake()
 
         {
+            EnsureTilePrefab();
 
             RecalculateOrigin();
 
@@ -484,6 +583,7 @@ namespace SandBlocks.Puzzle.Grid
         private void OnValidate()
 
         {
+            EnsureTilePrefab();
 
             RecalculateOrigin();
 
@@ -550,14 +650,19 @@ namespace SandBlocks.Puzzle.Grid
 
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
 
+            EnsureTilePrefab();
+
+            float stepX = StepX;
+            float stepY = StepY;
+
             // 1. Board Backing Tray
             if (showBoardTray && customBoardTray == null)
             {
-                float totalW = columns * cellSize + trayPadding.x;
-                float totalH = rows * cellSize + trayPadding.y;
+                float totalW = columns * cellSize + Mathf.Max(0, columns - 1) * columnSpacing + trayPadding.x;
+                float totalH = rows * cellSize + Mathf.Max(0, rows - 1) * rowSpacing + trayPadding.y;
                 Vector3 center = isHorizontal
-                    ? new Vector3(origin.x + (columns - 1) * 0.5f * cellSize + trayPositionOffset.x, trayElevationY + trayPositionOffset.y, origin.y + (rows - 1) * 0.5f * cellSize + trayPositionOffset.z)
-                    : new Vector3(origin.x + (columns - 1) * 0.5f * cellSize + trayPositionOffset.x, origin.y + (rows - 1) * 0.5f * cellSize + trayPositionOffset.y, 0.15f + trayPositionOffset.z);
+                    ? new Vector3(origin.x + (columns - 1) * 0.5f * stepX + trayPositionOffset.x, trayElevationY + trayPositionOffset.y, origin.y + (rows - 1) * 0.5f * stepY + trayPositionOffset.z)
+                    : new Vector3(origin.x + (columns - 1) * 0.5f * stepX + trayPositionOffset.x, origin.y + (rows - 1) * 0.5f * stepY + trayPositionOffset.y, 0.15f + trayPositionOffset.z);
 
                 var trayMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
                 trayMat.color = trayColor;
@@ -584,8 +689,8 @@ namespace SandBlocks.Puzzle.Grid
                             if (IsCellHidden(x, y)) continue;
 
                             Vector3 trayPos = isHorizontal
-                                ? new Vector3(origin.x + x * cellSize + trayPositionOffset.x, trayElevationY + trayPositionOffset.y, origin.y + y * cellSize + trayPositionOffset.z)
-                                : new Vector3(origin.x + x * cellSize + trayPositionOffset.x, origin.y + y * cellSize + trayPositionOffset.y, 0.15f + trayPositionOffset.z);
+                                ? new Vector3(origin.x + x * stepX + trayPositionOffset.x, trayElevationY + trayPositionOffset.y, origin.y + y * stepY + trayPositionOffset.z)
+                                : new Vector3(origin.x + x * stepX + trayPositionOffset.x, origin.y + y * stepY + trayPositionOffset.y, 0.15f + trayPositionOffset.z);
                             var traySeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
                             traySeg.name = $"TraySeg_{x}_{y}";
                             traySeg.transform.SetParent(visualRoot.transform);
@@ -602,6 +707,14 @@ namespace SandBlocks.Puzzle.Grid
 
             var tileMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
             tileMat.color = tileColor;
+            if (tileMat.HasProperty(TileBaseColorId)) tileMat.SetColor(TileBaseColorId, tileColor);
+            if (tileMat.HasProperty(TileColorId)) tileMat.SetColor(TileColorId, tileColor);
+
+            var blockedMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            Color bCol = new Color(0.25f, 0.25f, 0.3f, 1f);
+            blockedMat.color = bCol;
+            if (blockedMat.HasProperty(TileBaseColorId)) blockedMat.SetColor(TileBaseColorId, bCol);
+            if (blockedMat.HasProperty(TileColorId)) blockedMat.SetColor(TileColorId, bCol);
 
             // 2. Individual Grid Tiles
             for (int x = 0; x < columns; x++)
@@ -616,29 +729,39 @@ namespace SandBlocks.Puzzle.Grid
 
                     bool isBlocked = IsCellBlocked(x, y);
                     Vector3 tilePos = isHorizontal
-                        ? new Vector3(origin.x + x * cellSize, isBlocked ? 0.08f : 0.02f, origin.y + y * cellSize)
-                        : new Vector3(origin.x + x * cellSize, origin.y + y * cellSize, isBlocked ? 0.12f : 0.05f);
-                    var tile = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    tile.name = isBlocked ? $"BlockedTile_{x}_{y}" : $"Tile_{x}_{y}";
-                    tile.transform.SetParent(visualRoot.transform);
-                    tile.transform.localPosition = tilePos;
-                    tile.transform.localRotation = Quaternion.identity;
-                    tile.transform.localScale = isHorizontal
-                        ? (isBlocked ? new Vector3(cellSize * 0.95f, 0.22f, cellSize * 0.95f) : new Vector3(cellSize * 0.92f, 0.06f, cellSize * 0.92f))
-                        : (isBlocked ? new Vector3(cellSize * 0.95f, cellSize * 0.95f, 0.22f) : new Vector3(cellSize * 0.92f, 0.08f, cellSize * 0.92f));
+                        ? new Vector3(origin.x + x * stepX + tilePositionOffset.x, (isBlocked ? 0.08f : 0.02f) + tileElevation + tilePositionOffset.y, origin.y + y * stepY + tilePositionOffset.z)
+                        : new Vector3(origin.x + x * stepX + tilePositionOffset.x, origin.y + y * stepY + tilePositionOffset.y, (isBlocked ? 0.12f : 0.05f) + tileElevation + tilePositionOffset.z);
 
-                    var col = tile.GetComponent<Collider>();
-                    if (col != null) SafeDestroy(col);
-
-                    if (isBlocked)
+                    GameObject tile;
+                    if (tilePrefab != null)
                     {
-                        var blockedMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-                        blockedMat.color = new Color(0.25f, 0.25f, 0.3f, 1f);
-                        tile.GetComponent<Renderer>().sharedMaterial = blockedMat;
+                        tile = Instantiate(tilePrefab, visualRoot.transform);
+                        var cols = tile.GetComponentsInChildren<Collider>();
+                        for (int c = 0; c < cols.Length; c++) SafeDestroy(cols[c]);
                     }
                     else
                     {
-                        tile.GetComponent<Renderer>().sharedMaterial = tileMat;
+                        tile = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                        var col = tile.GetComponent<Collider>();
+                        if (col != null) SafeDestroy(col);
+                    }
+
+                    tile.name = isBlocked ? $"BlockedTile_{x}_{y}" : $"Tile_{x}_{y}";
+                    tile.transform.localPosition = tilePos;
+                    tile.transform.localRotation = isHorizontal ? Quaternion.identity : Quaternion.Euler(-90f, 0f, 0f);
+                    tile.transform.localScale = GetTileScale(isBlocked, isHorizontal);
+
+                    var rend = tile.GetComponentInChildren<Renderer>();
+                    if (rend != null)
+                    {
+                        if (isBlocked)
+                        {
+                            rend.sharedMaterial = blockedMat;
+                        }
+                        else if (applyColorToTilePrefab || tilePrefab == null)
+                        {
+                            rend.sharedMaterial = tileMat;
+                        }
                     }
                 }
             }
@@ -682,7 +805,7 @@ namespace SandBlocks.Puzzle.Grid
                 Transform tileTrans = visualRoot.transform.Find($"Tile_{x}_{y}") ?? visualRoot.transform.Find($"BlockedTile_{x}_{y}");
                 if (tileTrans != null)
                 {
-                    var rend = tileTrans.GetComponent<Renderer>();
+                    var rend = tileTrans.GetComponentInChildren<Renderer>();
                     if (rend != null)
                     {
                         tileRendererCache[key] = rend;
@@ -712,7 +835,7 @@ namespace SandBlocks.Puzzle.Grid
                         Transform t = visualRoot.transform.Find($"Tile_{x}_{y}") ?? visualRoot.transform.Find($"BlockedTile_{x}_{y}");
                         if (t != null)
                         {
-                            var rend = t.GetComponent<Renderer>();
+                            var rend = t.GetComponentInChildren<Renderer>();
                             if (rend != null)
                             {
                                 tileRendererCache[new Vector2Int(x, y)] = rend;
@@ -830,6 +953,15 @@ namespace SandBlocks.Puzzle.Grid
                 ResetTileColor(currentHighlightedCells[i]);
             }
             currentHighlightedCells.Clear();
+
+            // Safeguard: ensure every cached tile renderer has its property block reset
+            foreach (var kvp in tileRendererCache)
+            {
+                if (kvp.Value != null)
+                {
+                    kvp.Value.SetPropertyBlock(null);
+                }
+            }
         }
 
         private void ResetTileColor(Vector2Int cell)
@@ -857,8 +989,8 @@ namespace SandBlocks.Puzzle.Grid
             float xOffset = isVertical ? 0f : (length - 1) * 0.5f;
             float yOffset = isVertical ? (length - 1) * 0.5f : 0f;
 
-            float localX = origin.x + (gridPos.x + xOffset) * cellSize;
-            float localY = origin.y + (gridPos.y + yOffset) * cellSize;
+            float localX = origin.x + (gridPos.x + xOffset) * StepX;
+            float localY = origin.y + (gridPos.y + yOffset) * StepY;
 
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             if (isHorizontal)
@@ -881,8 +1013,8 @@ namespace SandBlocks.Puzzle.Grid
             float posX = local.x;
             float posY = isHorizontal ? local.z : local.y;
 
-            int gx = Mathf.RoundToInt((posX - origin.x) / cellSize - xOffset);
-            int gy = Mathf.RoundToInt((posY - origin.y) / cellSize - yOffset);
+            int gx = Mathf.RoundToInt((posX - origin.x) / StepX - xOffset);
+            int gy = Mathf.RoundToInt((posY - origin.y) / StepY - yOffset);
 
 
 
@@ -914,8 +1046,8 @@ namespace SandBlocks.Puzzle.Grid
             float posX = local.x;
             float posY = isHorizontal ? local.z : local.y;
 
-            float rawGx = (posX - origin.x) / cellSize - xOffset;
-            float rawGy = (posY - origin.y) / cellSize - yOffset;
+            float rawGx = (posX - origin.x) / StepX - xOffset;
+            float rawGy = (posY - origin.y) / StepY - yOffset;
 
 
 
@@ -1081,6 +1213,10 @@ namespace SandBlocks.Puzzle.Grid
 
             registeredVehicles.Remove(vehicle);
 
+            if (vehicle.IsFull || (vehicle is SandBlocks.Puzzle.Vehicles.BusVehicle bv && bv.IsDrivingAway))
+            {
+                ClearHoverTileHighlights();
+            }
         }
 
 
@@ -1513,12 +1649,12 @@ namespace SandBlocks.Puzzle.Grid
                 {
                     if (isHorizontal)
                     {
-                        Vector3 center = new Vector3(origin.x + x * cellSize, 0.05f, origin.y + y * cellSize);
+                        Vector3 center = new Vector3(origin.x + x * StepX, 0.05f, origin.y + y * StepY);
                         Gizmos.DrawWireCube(center, new Vector3(cellSize * 0.95f, 0.02f, cellSize * 0.95f));
                     }
                     else
                     {
-                        Vector3 center = new Vector3(origin.x + x * cellSize, origin.y + y * cellSize, 0f);
+                        Vector3 center = new Vector3(origin.x + x * StepX, origin.y + y * StepY, 0f);
                         Gizmos.DrawWireCube(center, new Vector3(cellSize * 0.95f, cellSize * 0.95f, 0.1f));
                     }
                 }
