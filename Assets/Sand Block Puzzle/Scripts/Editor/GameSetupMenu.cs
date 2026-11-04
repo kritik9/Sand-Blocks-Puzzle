@@ -54,7 +54,8 @@ namespace SandBlocks.Editor
 
             // Find user prefabs
             var characterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Character/CharacterModel.prefab");
-            var busPrefabObj = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Bus/BusModel.prefab");
+            var busPrefabObj = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Bus/ModularBus.prefab")
+                ?? AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Bus/BusModel.prefab");
             BusVehicle busVehiclePrefab = busPrefabObj != null ? busPrefabObj.GetComponent<BusVehicle>() : null;
 
             // Ensure Level asset and Palette exist

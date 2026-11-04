@@ -135,6 +135,7 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         private Coroutine activeStartSequence;
         private bool isLevelStartAnimating = false;
 
+        public GameObject BusPrefab => busPrefab;
         public bool IsLevelCompleted => isLevelCompleted;
         public int TotalTransferredCount => totalTransferredCount;
         public bool IsUnifiedActive => currentLevel != null && currentLevel.gameplayMode == GameplayMode.UnifiedGrid;
@@ -208,30 +209,15 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             {
                 palette = Resources.Load<CrowdColorPalette>("CrowdColorPalette");
             }
-#if UNITY_EDITOR
-            if (palette == null)
+            if (palette == null && gameManager != null && gameManager.Palette != null)
             {
-                palette = UnityEditor.AssetDatabase.LoadAssetAtPath<CrowdColorPalette>("Assets/Sand Block Puzzle/Settings/CrowdColorPalette.asset");
+                palette = gameManager.Palette;
             }
-#endif
 
             if (busPrefab == null && gameManager != null && gameManager.BusPrefab != null)
             {
                 busPrefab = gameManager.BusPrefab.gameObject;
             }
-#if UNITY_EDITOR
-            if (busPrefab == null)
-            {
-                busPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Bus/BusModel.prefab");
-            }
-#endif
-
-#if UNITY_EDITOR
-            if (characterPrefab == null)
-            {
-                characterPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Character/CharacterModel.prefab");
-            }
-#endif
         }
 
         /// <summary>

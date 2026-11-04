@@ -10,7 +10,23 @@ namespace SandBlocks.Puzzle.Vehicles
 {
     public class BusVehicle : VehicleBase
     {
-        public const int MaxBusCapacity = 56;
+        public const int MaxBusCapacity = 256;
+        public const int DefaultFrontPieceCapacity = 9;
+        public const int DefaultMidPieceCapacity = 12;
+        public const int DefaultRearPieceCapacity = 9;
+
+        /// <summary>
+        /// Calculates modular bus passenger capacity based on piece count:
+        /// Size 2: Front (9) + Rear (9) = 18
+        /// Size 3: Front (9) + Mid (12) + Rear (9) = 30
+        /// Size 4: Front (9) + 2xMid (24) + Rear (9) = 42, etc.
+        /// </summary>
+        public static int CalculateModularCapacity(int busLength, int frontCap = DefaultFrontPieceCapacity, int midCap = DefaultMidPieceCapacity, int rearCap = DefaultRearPieceCapacity)
+        {
+            int len = Mathf.Max(2, busLength);
+            if (len == 2) return frontCap + rearCap;
+            return frontCap + (len - 2) * midCap + rearCap;
+        }
         [Header("Orientation & Alignment")]
         [Tooltip("Fixed in-plane puzzle rotation (0 = Right, 90 = Up, 180 = Left, 270 = Down)")]
         [Range(0, 360)]
@@ -33,53 +49,50 @@ namespace SandBlocks.Puzzle.Vehicles
         [Tooltip("Active passenger GameObjects chosen for this bus (settled in center for capacity < 56).")]
         [SerializeField] private List<GameObject> seatPassengers = new List<GameObject>();
 
-        [Header("Visual Components")]
+                [Header("Modular Bus Pieces (Assigned in Inspector)")]
+        [Tooltip("Prefab or model reference for the front section of the modular bus (assigned in Inspector)")]
+        [SerializeField] private GameObject frontPiecePrefab;
+
+        [Tooltip("Prefab or model reference for the middle section(s) of the modular bus (assigned in Inspector)")]
+        [SerializeField] private GameObject midPiecePrefab;
+
+        [Tooltip("Prefab or model reference for the rear section of the modular bus (assigned in Inspector)")]
+        [SerializeField] private GameObject rearPiecePrefab;
+
+        [Tooltip("Parent transform to hold spawned bus pieces (assigned in Inspector)")]
+        [SerializeField] private Transform piecesParent;
+
+        [Tooltip("Length in units of a single modular bus piece along local Z (matches grid cell size 1.35f)")]
+        [SerializeField] private float pieceLength = 1.35f;
+
+        [Tooltip("List of currently spawned modular piece instances")]
+        [SerializeField] private List<GameObject> spawnedPieces = new List<GameObject>();
+
+        [Header("Renderers & Materials (Assigned in Inspector)")]
+        [Tooltip("List of body renderers to tint with the bus color. If empty, automatically populated from spawned pieces.")]
+        [SerializeField] private List<Renderer> bodyRenderers = new List<Renderer>();
+
+        [Tooltip("Legacy fallback body renderer reference")]
         [SerializeField] private Renderer bodyRenderer;
+
+        [Tooltip("Material slot index of the bus body to be colored (default 0).")]
+        [SerializeField] private int bodyMaterialIndex = 0;
+
+        [Tooltip("Optional custom material to use for the bus body (e.g. toon shader material).")]
+        [SerializeField] private Material customBodyMaterial;
+
         [SerializeField] private Transform seatsParent;
         [SerializeField] private GameObject passengerPrefab;
 
-        [Header("Body Material Settings")]
-        [Tooltip("Optional custom material to use for the bus body (e.g. toon shader material). If assigned, this material will replace the 'Bus Color' material slot.")]
-        [SerializeField] private Material customBodyMaterial;
-
-        [Tooltip("Material slot index of the bus body to be colored (default 0 for 'Bus Color'). Only this slot will be tinted, keeping Glass, dark trim, and lights intact!")]
-        [SerializeField] private int bodyMaterialIndex = 0;
-
-        [Tooltip("Name of the material slot to color (default: 'Bus Color'). Used to find the slot automatically.")]
-        [SerializeField] private string bodyMaterialName = "Bus Color";
-
-        public Material CustomBodyMaterial
-        {
-            get => customBodyMaterial;
-            set
-            {
-                customBodyMaterial = value;
-                ApplyColor(colorPalette);
-            }
-        }
-
-        public int BodyMaterialIndex
-        {
-            get => bodyMaterialIndex;
-            set
-            {
-                bodyMaterialIndex = value;
-                ApplyColor(colorPalette);
-            }
-        }
-
-        [Header("Headlight Settings")]
+        [Header("Headlight & Taillight Settings (Assigned in Inspector)")]
         [Tooltip("Enable realistic headlights that glow only when selected, blink on passenger fill, and light up during departure.")]
         [SerializeField] private bool enableHeadlightAnimation = true;
 
-        [Tooltip("Slot index of the headlight material on the bus body (default 4 for 'cheragh_').")]
-        [SerializeField] private int headlightMaterialIndex = 4;
-
-        [Tooltip("Name of the headlight material to detect automatically (default: 'cheragh_').")]
-        [SerializeField] private string headlightMaterialName = "cheragh_";
-
-        [Tooltip("Renderer holding the bus materials. If null, auto-detected from bus body.")]
+        [Tooltip("Headlight renderer reference (assigned in Inspector or auto-referenced from front piece).")]
         [SerializeField] private Renderer headlightRenderer;
+
+        [Tooltip("Material slot index of the headlight on the headlight renderer (default 2 for modular piece, 4 for legacy).")]
+        [SerializeField] private int headlightMaterialIndex = 2;
 
         [Tooltip("Maximum emission multiplier for headlight effects.")]
         [Range(0.1f, 4.0f)]
@@ -114,16 +127,15 @@ namespace SandBlocks.Puzzle.Vehicles
         [Tooltip("Optional custom override for base emission color. Leave clear (alpha 0) to use material default.")]
         [SerializeField] private Color customHeadlightEmissionColor = Color.clear;
 
-        [Header("Optional Taillight Settings")]
-        [Tooltip("Enable subtle breathing/glow on red taillights (red lightr).")]
-        [SerializeField] private bool enableTaillightAnimation = false;
+        [Header("Optional Taillight Settings (Assigned in Inspector)")]
+        [Tooltip("Enable subtle breathing/glow on red taillights.")]
+        [SerializeField] private bool enableTaillightAnimation = true;
 
-        [Tooltip("Slot index of the taillight material (default 6 for 'red lightr').")]
-        [SerializeField] private int taillightMaterialIndex = 6;
+        [Tooltip("Taillight renderer reference (assigned in Inspector or auto-referenced from rear piece).")]
+        [SerializeField] private Renderer taillightRenderer;
 
-        [Tooltip("Name of the taillight material to detect automatically (default: 'red lightr').")]
-        [SerializeField] private string taillightMaterialName = "red lightr";
-
+        [Tooltip("Material slot index of the taillight on the taillight renderer (default 2 for modular piece, 6 for legacy).")]
+        [SerializeField] private int taillightMaterialIndex = 2;
 
         [Header("Seats Configuration")]
         [Tooltip("Physical seat transforms on this bus model. Visible characters will be positioned and oriented on these seats.")]
@@ -223,6 +235,62 @@ namespace SandBlocks.Puzzle.Vehicles
             }
         }
         public System.Action<BusVehicle> OnBusFullOverride;
+                public GameObject FrontPiecePrefab { get => frontPiecePrefab; set => frontPiecePrefab = value; }
+        public GameObject MidPiecePrefab { get => midPiecePrefab; set => midPiecePrefab = value; }
+        public GameObject RearPiecePrefab { get => rearPiecePrefab; set => rearPiecePrefab = value; }
+
+        public int GetFrontPieceCapacity()
+        {
+            if (frontPiecePrefab != null)
+            {
+                var piece = frontPiecePrefab.GetComponent<ModularBusPiece>();
+                if (piece != null && piece.PieceCapacity > 0) return piece.PieceCapacity;
+                var list = piece != null ? piece.GetPassengers() : null;
+                if (list != null && list.Count > 0) return list.Count;
+            }
+            return DefaultFrontPieceCapacity;
+        }
+
+        public int GetMidPieceCapacity()
+        {
+            if (midPiecePrefab != null)
+            {
+                var piece = midPiecePrefab.GetComponent<ModularBusPiece>();
+                if (piece != null && piece.PieceCapacity > 0) return piece.PieceCapacity;
+                var list = piece != null ? piece.GetPassengers() : null;
+                if (list != null && list.Count > 0) return list.Count;
+            }
+            return DefaultMidPieceCapacity;
+        }
+
+        public int GetRearPieceCapacity()
+        {
+            if (rearPiecePrefab != null)
+            {
+                var piece = rearPiecePrefab.GetComponent<ModularBusPiece>();
+                if (piece != null && piece.PieceCapacity > 0) return piece.PieceCapacity;
+                var list = piece != null ? piece.GetPassengers() : null;
+                if (list != null && list.Count > 0) return list.Count;
+            }
+            return DefaultRearPieceCapacity;
+        }
+
+        public int CalculateCapacityForLength(int busLength)
+        {
+            return CalculateModularCapacity(busLength, GetFrontPieceCapacity(), GetMidPieceCapacity(), GetRearPieceCapacity());
+        }
+        public Transform PiecesParent { get => piecesParent; set => piecesParent = value; }
+        public float PieceLength { get => pieceLength; set => pieceLength = value; }
+        public List<GameObject> SpawnedPieces => spawnedPieces;
+        public Renderer TaillightRenderer { get => taillightRenderer; set => taillightRenderer = value; }
+        public List<Renderer> BodyRenderers { get => bodyRenderers; set => bodyRenderers = value; }
+        public Renderer BodyRenderer { get => bodyRenderer; set => bodyRenderer = value; }
+        public Renderer HeadlightRenderer { get => headlightRenderer; set => headlightRenderer = value; }
+        public int BodyMaterialIndex { get => bodyMaterialIndex; set { bodyMaterialIndex = value; ApplyColor(colorPalette); } }
+        public int HeadlightMaterialIndex { get => headlightMaterialIndex; set => headlightMaterialIndex = value; }
+        public int TaillightMaterialIndex { get => taillightMaterialIndex; set => taillightMaterialIndex = value; }
+        public Material CustomBodyMaterial { get => customBodyMaterial; set { customBodyMaterial = value; ApplyColor(colorPalette); } }
+
         public Transform PassengerParent { get => passengerParent != null ? passengerParent : charactersParent; set => passengerParent = value; }
         public Transform CharactersParent => PassengerParent;
         public List<GameObject> PassengerList { get => passengerList; set => passengerList = value; }
@@ -365,8 +433,11 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             rotationDegrees = Mathf.RoundToInt(rotationDegrees / 90f) * 90 % 360;
             if (rotationDegrees < 0) rotationDegrees += 360;
+            length = Mathf.Max(2, length);
             EnsureCentered();
             ApplyRotation();
+            // Do NOT auto add/instantiate modular pieces in OnValidate to avoid duplicate pieces on script recompile
+            EnsureCollider();
             AutoDetectHierarchyAndSeats();
             UpdatePassengerCountUI();
             ApplyColor(colorPalette);
@@ -381,25 +452,57 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             allRoofPassengers.Clear();
 
-            // 1. Collect all available passengers strictly from inspector fields (NO name searching)
-            if (passengerList != null && passengerList.Count > 0)
+            // 1. If modular pieces are spawned, gather seated passenger models from each piece
+            if (spawnedPieces != null && spawnedPieces.Count > 0)
             {
-                for (int i = 0; i < passengerList.Count; i++)
+                for (int i = 0; i < spawnedPieces.Count; i++)
                 {
-                    if (passengerList[i] != null) allRoofPassengers.Add(passengerList[i]);
+                    if (spawnedPieces[i] == null) continue;
+                    var pieceComp = spawnedPieces[i].GetComponent<ModularBusPiece>();
+                    if (pieceComp != null)
+                    {
+                        var pList = pieceComp.GetPassengers();
+                        if (pList != null && pList.Count > 0)
+                        {
+                            allRoofPassengers.AddRange(pList);
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: search for child named Passengers or Seats
+                        Transform c = spawnedPieces[i].transform.Find("Passengers");
+                        if (c == null) c = spawnedPieces[i].transform.Find("Seats");
+                        if (c != null)
+                        {
+                            for (int ch = 0; ch < c.childCount; ch++)
+                            {
+                                var child = c.GetChild(ch);
+                                if (child != null) allRoofPassengers.Add(child.gameObject);
+                            }
+                        }
+                    }
                 }
             }
-            else
+
+            // 2. Direct inspector or legacy fallback
+            if (allRoofPassengers.Count == 0)
             {
-                Transform parentToUse = passengerParent != null ? passengerParent : charactersParent;
-                if (parentToUse != null)
+                if (passengerList != null && passengerList.Count > 0)
                 {
-                    for (int i = 0; i < parentToUse.childCount; i++)
+                    for (int i = 0; i < passengerList.Count; i++)
                     {
-                        var child = parentToUse.GetChild(i);
-                        if (child != null)
+                        if (passengerList[i] != null) allRoofPassengers.Add(passengerList[i]);
+                    }
+                }
+                else
+                {
+                    Transform parentToUse = passengerParent != null ? passengerParent : charactersParent;
+                    if (parentToUse != null)
+                    {
+                        for (int i = 0; i < parentToUse.childCount; i++)
                         {
-                            allRoofPassengers.Add(child.gameObject);
+                            var child = parentToUse.GetChild(i);
+                            if (child != null) allRoofPassengers.Add(child.gameObject);
                         }
                     }
                 }
@@ -411,81 +514,52 @@ namespace SandBlocks.Puzzle.Vehicles
                 return;
             }
 
-            // 2. Disable animators on all models to eliminate animations
             for (int i = 0; i < allRoofPassengers.Count; i++)
             {
+                allRoofPassengers[i].SetActive(false);
                 var anim = allRoofPassengers[i].GetComponentInChildren<Animator>(true);
                 if (anim != null) anim.enabled = false;
             }
 
-            // 3. Clear legacy chair transforms
-            if (seatTransforms != null && seatTransforms.Count > 0)
-            {
-                seatTransforms.Clear();
-            }
+            if (seatTransforms != null && seatTransforms.Count > 0) seatTransforms.Clear();
 
-            // 4. If capacity >= all available models, use all models sorted front-to-back, left-to-right
             int targetCount = Mathf.Clamp(capacity, 1, allRoofPassengers.Count);
             if (targetCount >= allRoofPassengers.Count)
             {
                 var allSorted = new List<GameObject>(allRoofPassengers);
                 allSorted.Sort((a, b) =>
                 {
-                    float dz = b.transform.localPosition.z - a.transform.localPosition.z;
+                    float dz = b.transform.position.z - a.transform.position.z;
                     if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
-                    return a.transform.localPosition.x.CompareTo(b.transform.localPosition.x);
+                    return a.transform.position.x.CompareTo(b.transform.position.x);
                 });
                 seatPassengers = allSorted;
                 return;
             }
 
-            // 5. Centered selection for capacity < max capacity:
-            // Settle passengers in center by choosing the models closest to geometric center
             Vector3 center = Vector3.zero;
             for (int i = 0; i < allRoofPassengers.Count; i++)
             {
-                center += allRoofPassengers[i].transform.localPosition;
+                center += allRoofPassengers[i].transform.position;
             }
             center /= allRoofPassengers.Count;
 
-            var scored = new List<System.Tuple<float, GameObject>>();
-            for (int i = 0; i < allRoofPassengers.Count; i++)
+            var sortedByCenter = new List<GameObject>(allRoofPassengers);
+            sortedByCenter.Sort((a, b) =>
             {
-                var p = allRoofPassengers[i];
-                Vector3 lp = p.transform.localPosition;
-                float dz = Mathf.Abs(lp.z - center.z);
-                float dx = Mathf.Abs(lp.x - center.x);
-                float distScore = dz * 1.0f + dx * 0.05f;
-                scored.Add(new System.Tuple<float, GameObject>(distScore, p));
-            }
+                float da = Vector3.SqrMagnitude(a.transform.position - center);
+                float db = Vector3.SqrMagnitude(b.transform.position - center);
+                return da.CompareTo(db);
+            });
 
-            scored.Sort((a, b) => a.Item1.CompareTo(b.Item1));
-
-            // Choose the exact 'capacity' passengers closest to center
             var chosen = new List<GameObject>();
-            for (int i = 0; i < targetCount; i++)
-            {
-                chosen.Add(scored[i].Item2);
-            }
+            for (int i = 0; i < targetCount; i++) chosen.Add(sortedByCenter[i]);
 
-            // Explicitly deactivate any unchosen passenger model so only the center ones can be visible
-            for (int i = targetCount; i < scored.Count; i++)
-            {
-                var unchosen = scored[i].Item2;
-                if (unchosen != null)
-                {
-                    unchosen.SetActive(false);
-                    var anim = unchosen.GetComponentInChildren<Animator>(true);
-                    if (anim != null) anim.enabled = false;
-                }
-            }
-
-            // Sort chosen center passengers front-to-back, left-to-right for orderly fill
             chosen.Sort((a, b) =>
             {
-                float dz = b.transform.localPosition.z - a.transform.localPosition.z;
+                float dz = b.transform.position.z - a.transform.position.z;
                 if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
-                return a.transform.localPosition.x.CompareTo(b.transform.localPosition.x);
+                return a.transform.position.x.CompareTo(b.transform.position.x);
             });
 
             seatPassengers = chosen;
@@ -552,6 +626,142 @@ namespace SandBlocks.Puzzle.Vehicles
             ApplyColor(colorPalette);
         }
 
+                [ContextMenu("Clear Modular Pieces")]
+        public void ClearModularPieces()
+        {
+            Transform container = piecesParent != null ? piecesParent : transform;
+            if (container != null && container != transform)
+            {
+                for (int i = container.childCount - 1; i >= 0; i--)
+                {
+                    var child = container.GetChild(i);
+                    if (child != null)
+                    {
+                        SafeDestroy(child.gameObject);
+                    }
+                }
+            }
+            if (spawnedPieces != null)
+            {
+                for (int i = spawnedPieces.Count - 1; i >= 0; i--)
+                {
+                    if (spawnedPieces[i] != null)
+                    {
+                        SafeDestroy(spawnedPieces[i]);
+                    }
+                }
+                spawnedPieces.Clear();
+            }
+        }
+
+        [ContextMenu("Rebuild Modular Mesh")]
+        public void RebuildModularMeshMenu()
+        {
+            RebuildModularMesh(length);
+        }
+
+        public void RebuildModularMesh(int targetLength)
+        {
+#if UNITY_EDITOR
+            if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(gameObject))
+            {
+                return;
+            }
+#endif
+            int effLength = Mathf.Max(2, targetLength);
+            length = effLength;
+
+            // Pure reference-based: requires front and rear piece prefabs from Inspector
+            if (frontPiecePrefab == null || rearPiecePrefab == null)
+            {
+                EnsureCollider();
+                return;
+            }
+
+            Transform container = piecesParent != null ? piecesParent : transform;
+
+            // Thoroughly clear previous pieces
+            ClearModularPieces();
+
+            if (spawnedPieces == null) spawnedPieces = new List<GameObject>();
+
+            float halfSpan = (effLength - 1) * 0.5f;
+
+            // 1. Rear piece at index 0 (z = -halfSpan * pieceLength)
+            float rearZ = -halfSpan * pieceLength;
+            GameObject rearGo = InstantiatePiece(rearPiecePrefab, container, new Vector3(0f, 0f, rearZ));
+            if (rearGo != null) spawnedPieces.Add(rearGo);
+
+            // 2. Mid pieces for index 1 to effLength - 2
+            int midCount = effLength - 2;
+            if (midPiecePrefab != null && midCount > 0)
+            {
+                for (int i = 1; i <= midCount; i++)
+                {
+                    float midZ = (i - halfSpan) * pieceLength;
+                    GameObject midGo = InstantiatePiece(midPiecePrefab, container, new Vector3(0f, 0f, midZ));
+                    if (midGo != null) spawnedPieces.Add(midGo);
+                }
+            }
+
+            // 3. Front piece at index effLength - 1 (z = +halfSpan * pieceLength)
+            float frontZ = halfSpan * pieceLength;
+            GameObject frontGo = InstantiatePiece(frontPiecePrefab, container, new Vector3(0f, 0f, frontZ));
+            if (frontGo != null) spawnedPieces.Add(frontGo);
+
+            // 4. Update BoxCollider to encapsulate full modular length
+            EnsureCollider();
+
+            // 5. Update renderers directly from the instantiated piece references
+            if (bodyRenderers == null) bodyRenderers = new List<Renderer>();
+            bodyRenderers.Clear();
+            for (int i = 0; i < spawnedPieces.Count; i++)
+            {
+                if (spawnedPieces[i] == null) continue;
+                var rends = spawnedPieces[i].GetComponentsInChildren<Renderer>(true);
+                for (int r = 0; r < rends.Length; r++)
+                {
+                    if (rends[r] != null) bodyRenderers.Add(rends[r]);
+                }
+            }
+
+            if (frontGo != null)
+            {
+                headlightRenderer = frontGo.GetComponentInChildren<Renderer>(true);
+            }
+            if (rearGo != null)
+            {
+                taillightRenderer = rearGo.GetComponentInChildren<Renderer>(true);
+            }
+
+            // 6. Apply colors and lights
+            InitializeHeadlights();
+            ApplyColor(colorPalette);
+
+            // 7. Refresh passengers / UI
+            SetupPassengerSlots();
+            UpdatePassengerCountUI();
+        }
+
+        private GameObject InstantiatePiece(GameObject prefab, Transform parent, Vector3 localPos)
+        {
+            if (prefab == null) return null;
+#if UNITY_EDITOR
+            if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(parent))
+            {
+                return null;
+            }
+#endif
+            GameObject go = Instantiate(prefab, parent);
+            if (go != null)
+            {
+                go.transform.localPosition = localPos;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+            }
+            return go;
+        }
+
         public override void Initialize(int id, int cap, int len, bool vertical, Vector2Int startPos)
         {
             Initialize(id, cap, len, vertical ? 90 : 0, startPos);
@@ -561,7 +771,7 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             colorId = id;
             capacity = Mathf.Clamp(cap, 1, MaxBusCapacity);
-            length = len;
+            length = Mathf.Max(2, len);
             rotationDegrees = Mathf.RoundToInt(rotDegrees / 90f) * 90 % 360;
             if (rotationDegrees < 0) rotationDegrees += 360;
             isVertical = (rotationDegrees == 90 || rotationDegrees == 270);
@@ -571,6 +781,10 @@ namespace SandBlocks.Puzzle.Vehicles
             CleanupOldChildColliders();
             EnsureCentered();
             ApplyRotation();
+            if (frontPiecePrefab != null || rearPiecePrefab != null || piecesParent != null)
+            {
+                RebuildModularMesh(length);
+            }
             EnsureCollider();
             AutoDetectHierarchyAndSeats();
             UpdatePassengerCountUI();
@@ -588,21 +802,14 @@ namespace SandBlocks.Puzzle.Vehicles
 
         private void EnsureCollider()
         {
-            // Do NOT add a new GameObject. Use collider present on bus or children (from prefab)
-            var col = GetComponent<Collider>();
-            if (col == null)
+            var box = GetComponent<BoxCollider>();
+            if (box == null)
             {
-                col = GetComponentInChildren<Collider>();
+                box = gameObject.AddComponent<BoxCollider>();
             }
-
-            // Fallback: If no collider at all exists on the prefab, add BoxCollider directly to this GameObject
-            if (col == null)
-            {
-                var box = gameObject.AddComponent<BoxCollider>();
-                // In local space: X = width, Y = height, Z = length
-                box.size = new Vector3(1.2f, 1.0f, length * 1.35f);
-                box.center = Vector3.zero;
-            }
+            int effLength = Mathf.Max(2, length);
+            box.size = new Vector3(1.35f, 1.2f, effLength * pieceLength);
+            box.center = new Vector3(0f, 0.75f, 0f);
         }
 
         public void ApplyColor(CrowdColorPalette palette)
@@ -610,15 +817,10 @@ namespace SandBlocks.Puzzle.Vehicles
             if (palette != null) colorPalette = palette;
             if (colorPalette == null)
             {
-                var gm = FindAnyObjectByType<Gameplay.GameManager>();
+                var gm = GameManager.Instance ?? FindAnyObjectByType<Gameplay.GameManager>();
                 if (gm != null && gm.Palette != null) colorPalette = gm.Palette;
             }
-#if UNITY_EDITOR
-            if (colorPalette == null)
-            {
-                colorPalette = UnityEditor.AssetDatabase.LoadAssetAtPath<CrowdColorPalette>("Assets/Sand Block Puzzle/Settings/CrowdColorPalette.asset");
-            }
-#endif
+
             Color targetColor = colorPalette != null ? colorPalette.GetColor(colorId) : GetColorFallback(colorId);
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
             propBlock.Clear();
@@ -627,55 +829,30 @@ namespace SandBlocks.Puzzle.Vehicles
             propBlock.SetColor(Shader.PropertyToID("_1st_ShadeColor"), targetColor * 0.85f);
             propBlock.SetColor(Shader.PropertyToID("_2nd_ShadeColor"), targetColor * 0.70f);
 
-            // Auto-detect bodyRenderer if not assigned
-            if (bodyRenderer == null)
+            var renderersToColor = (bodyRenderers != null && bodyRenderers.Count > 0) 
+                ? bodyRenderers 
+                : (bodyRenderer != null ? new List<Renderer> { bodyRenderer } : null);
+
+            if (renderersToColor != null)
             {
-                var renderers = GetComponentsInChildren<MeshRenderer>(true);
-                foreach (var mr in renderers)
+                for (int i = 0; i < renderersToColor.Count; i++)
                 {
-                    string nm = mr.gameObject.name.ToLower();
-                    if (nm == "bus" || nm.Contains("body"))
+                    var r = renderersToColor[i];
+                    if (r == null) continue;
+
+                    var mats = r.sharedMaterials;
+                    int slot = (bodyMaterialIndex >= 0 && mats != null && bodyMaterialIndex < mats.Length) 
+                        ? bodyMaterialIndex 
+                        : 0;
+
+                    if (customBodyMaterial != null && mats != null && slot < mats.Length && mats[slot] != customBodyMaterial)
                     {
-                        bodyRenderer = mr;
-                        break;
-                    }
-                }
-            }
-
-            var allRenderers = GetComponentsInChildren<Renderer>(true);
-            foreach (var r in allRenderers)
-            {
-                if (r == null) continue;
-                string n = r.gameObject.name.ToLower();
-                if (n.Contains("chair") || n.Contains("seat") || n.Contains("passenger") || n.Contains("text") || n.Contains("canvas")) continue;
-
-                // For the main bus body renderer (which has multiple materials: Bus Color, Glass, dark, lights)
-                if (r == bodyRenderer || r.gameObject.name.Equals("BUS", StringComparison.OrdinalIgnoreCase))
-                {
-                    int slot = GetBodyMaterialSlot(r);
-
-                    // If a custom material was provided by user in Inspector, apply it to the body slot
-                    if (customBodyMaterial != null)
-                    {
-                        var mats = r.sharedMaterials;
-                        if (mats != null && slot >= 0 && slot < mats.Length && mats[slot] != customBodyMaterial)
-                        {
-                            var newMats = (Material[])mats.Clone();
-                            newMats[slot] = customBodyMaterial;
-                            r.sharedMaterials = newMats;
-                        }
+                        var newMats = (Material[])mats.Clone();
+                        newMats[slot] = customBodyMaterial;
+                        r.sharedMaterials = newMats;
                     }
 
-                    // Apply the color ONLY to the body material slot (leaves Glass, dark trim, lights intact!)
                     r.SetPropertyBlock(propBlock, slot);
-                }
-                else if (r.sharedMaterials != null && r.sharedMaterials.Length == 1)
-                {
-                    // Single-material accessory or body trim piece (exclude glass, wheels, lights)
-                    if (!n.Contains("glass") && !n.Contains("wheel") && !n.Contains("light") && !n.Contains("tire") && !n.Contains("dark"))
-                    {
-                        r.SetPropertyBlock(propBlock);
-                    }
                 }
             }
 
@@ -689,31 +866,6 @@ namespace SandBlocks.Puzzle.Vehicles
                     }
                 }
             }
-        }
-
-        private int GetBodyMaterialSlot(Renderer r)
-        {
-            if (r == null) return bodyMaterialIndex;
-            var mats = r.sharedMaterials;
-            if (mats == null || mats.Length == 0) return 0;
-
-            // Search by material name if configured (e.g. "Bus Color")
-            if (!string.IsNullOrEmpty(bodyMaterialName))
-            {
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] != null)
-                    {
-                        if (mats[i].name.Equals(bodyMaterialName, StringComparison.OrdinalIgnoreCase) ||
-                            mats[i].name.IndexOf("bus color", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return i;
-                        }
-                    }
-                }
-            }
-
-            return Mathf.Clamp(bodyMaterialIndex, 0, mats.Length - 1);
         }
 
 
@@ -788,7 +940,7 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             if (obj == null) return;
             if (Application.isPlaying) Destroy(obj);
-            else DestroyImmediate(obj);
+            else DestroyImmediate(obj, true);
         }
 
         private void InitScaleIfNeeded()
@@ -1282,40 +1434,26 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             if (!enableHeadlightAnimation) return;
 
-            if (headlightRenderer == null)
+            if (headlightRenderer == null && bodyRenderer != null)
             {
-                if (bodyRenderer != null)
-                {
-                    headlightRenderer = bodyRenderer;
-                }
-                else
-                {
-                    var renderers = GetComponentsInChildren<MeshRenderer>(true);
-                    foreach (var mr in renderers)
-                    {
-                        string nm = mr.gameObject.name.ToLower();
-                        if (nm == "bus" || nm.Contains("body"))
-                        {
-                            headlightRenderer = mr;
-                            break;
-                        }
-                    }
-                }
+                headlightRenderer = bodyRenderer;
+            }
+            if (taillightRenderer == null && headlightRenderer != null)
+            {
+                taillightRenderer = headlightRenderer;
             }
 
-            if (headlightRenderer == null) return;
-
-            headlightSlot = GetHeadlightMaterialSlot(headlightRenderer);
-            if (headlightSlot >= 0)
+            if (headlightRenderer != null)
             {
                 var mats = headlightRenderer.sharedMaterials;
-                if (mats != null && headlightSlot < mats.Length && mats[headlightSlot] != null)
+                headlightSlot = (headlightMaterialIndex >= 0 && mats != null && headlightMaterialIndex < mats.Length) 
+                    ? headlightMaterialIndex 
+                    : -1;
+
+                if (headlightSlot >= 0 && mats[headlightSlot] != null)
                 {
                     var mat = mats[headlightSlot];
-                    if (!mat.IsKeywordEnabled("_EMISSION"))
-                    {
-                        mat.EnableKeyword("_EMISSION");
-                    }
+                    if (!mat.IsKeywordEnabled("_EMISSION")) mat.EnableKeyword("_EMISSION");
 
                     if (customHeadlightEmissionColor.a > 0.001f)
                     {
@@ -1324,57 +1462,37 @@ namespace SandBlocks.Puzzle.Vehicles
                     else if (mat.HasProperty(EmissionColorId))
                     {
                         Color c = mat.GetColor(EmissionColorId);
-                        if (c.maxColorComponent > 0.05f)
-                        {
-                            baseHeadlightEmission = c;
-                        }
-                        else
-                        {
-                            baseHeadlightEmission = new Color(23.28f, 17.63f, 0f, 1f);
-                        }
+                        baseHeadlightEmission = (c.maxColorComponent > 0.05f) ? c : new Color(23.28f, 17.63f, 0f, 1f);
                     }
 
-                    if (mat.HasProperty(BaseColorId))
-                    {
-                        baseHeadlightAlbedo = mat.GetColor(BaseColorId);
-                    }
-                    else if (mat.HasProperty(ColorId_Prop))
-                    {
-                        baseHeadlightAlbedo = mat.GetColor(ColorId_Prop);
-                    }
+                    if (mat.HasProperty(BaseColorId)) baseHeadlightAlbedo = mat.GetColor(BaseColorId);
+                    else if (mat.HasProperty(ColorId_Prop)) baseHeadlightAlbedo = mat.GetColor(ColorId_Prop);
                 }
             }
 
-            if (enableTaillightAnimation)
+            if (enableTaillightAnimation && taillightRenderer != null)
             {
-                taillightSlot = GetTaillightMaterialSlot(headlightRenderer);
-                if (taillightSlot >= 0)
+                var mats = taillightRenderer.sharedMaterials;
+                taillightSlot = (taillightMaterialIndex >= 0 && mats != null && taillightMaterialIndex < mats.Length) 
+                    ? taillightMaterialIndex 
+                    : -1;
+
+                if (taillightSlot >= 0 && mats[taillightSlot] != null)
                 {
-                    var mats = headlightRenderer.sharedMaterials;
-                    if (mats != null && taillightSlot < mats.Length && mats[taillightSlot] != null)
+                    var mat = mats[taillightSlot];
+                    if (!mat.IsKeywordEnabled("_EMISSION")) mat.EnableKeyword("_EMISSION");
+                    if (mat.HasProperty(EmissionColorId))
                     {
-                        var mat = mats[taillightSlot];
-                        if (!mat.IsKeywordEnabled("_EMISSION"))
-                        {
-                            mat.EnableKeyword("_EMISSION");
-                        }
-                        if (mat.HasProperty(EmissionColorId))
-                        {
-                            Color c = mat.GetColor(EmissionColorId);
-                            if (c.maxColorComponent > 0.05f) baseTaillightEmission = c;
-                        }
-                        if (mat.HasProperty(BaseColorId))
-                        {
-                            baseTaillightAlbedo = mat.GetColor(BaseColorId);
-                        }
+                        Color c = mat.GetColor(EmissionColorId);
+                        if (c.maxColorComponent > 0.05f) baseTaillightEmission = c;
                     }
+                    if (mat.HasProperty(BaseColorId)) baseTaillightAlbedo = mat.GetColor(BaseColorId);
                 }
             }
 
             if (headlightPropBlock == null) headlightPropBlock = new MaterialPropertyBlock();
             if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
 
-            // Randomize per-bus seed and timing so each bus has its own unique, non-repeating pattern
             busNoiseSeed = UnityEngine.Random.Range(10f, 1000f);
             busTimeOffset = UnityEngine.Random.Range(0f, 500f);
             busSpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.25f);
@@ -1384,90 +1502,7 @@ namespace SandBlocks.Puzzle.Vehicles
             isHeadlightFullyOff = false;
             headlightsInitialized = true;
 
-            // Ensure headlights start completely dark / unlit
             ApplyHeadlightIntensity(0f);
-        }
-
-        private int GetHeadlightMaterialSlot(Renderer r)
-        {
-            if (r == null) return headlightMaterialIndex;
-            var mats = r.sharedMaterials;
-            if (mats == null || mats.Length == 0) return -1;
-
-            if (!string.IsNullOrEmpty(headlightMaterialName))
-            {
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] != null)
-                    {
-                        if (mats[i].name.Equals(headlightMaterialName, StringComparison.OrdinalIgnoreCase) ||
-                            mats[i].name.IndexOf(headlightMaterialName, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return i;
-                        }
-                    }
-                }
-            }
-
-            for (int i = 0; i < mats.Length; i++)
-            {
-                if (mats[i] != null)
-                {
-                    string nm = mats[i].name.ToLower();
-                    if (nm.Contains("cheragh") || nm.Contains("headlight") || nm.Contains("front light") || nm.Contains("lamp"))
-                    {
-                        return i;
-                    }
-                }
-            }
-
-            if (headlightMaterialIndex >= 0 && headlightMaterialIndex < mats.Length)
-            {
-                return headlightMaterialIndex;
-            }
-
-            return -1;
-        }
-
-        private int GetTaillightMaterialSlot(Renderer r)
-        {
-            if (r == null) return taillightMaterialIndex;
-            var mats = r.sharedMaterials;
-            if (mats == null || mats.Length == 0) return -1;
-
-            if (!string.IsNullOrEmpty(taillightMaterialName))
-            {
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] != null)
-                    {
-                        if (mats[i].name.Equals(taillightMaterialName, StringComparison.OrdinalIgnoreCase) ||
-                            mats[i].name.IndexOf(taillightMaterialName, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return i;
-                        }
-                    }
-                }
-            }
-
-            for (int i = 0; i < mats.Length; i++)
-            {
-                if (mats[i] != null)
-                {
-                    string nm = mats[i].name.ToLower();
-                    if (nm.Contains("red light") || nm.Contains("taillight") || nm.Contains("brake"))
-                    {
-                        return i;
-                    }
-                }
-            }
-
-            if (taillightMaterialIndex >= 0 && taillightMaterialIndex < mats.Length)
-            {
-                return taillightMaterialIndex;
-            }
-
-            return -1;
         }
 
         /// <summary>
@@ -1609,30 +1644,28 @@ namespace SandBlocks.Puzzle.Vehicles
 
         private void UpdateTaillightAnimation()
         {
-            if (headlightRenderer == null || taillightSlot < 0) return;
+            var rend = taillightRenderer != null ? taillightRenderer : headlightRenderer;
+            if (rend == null || taillightSlot < 0) return;
 
             if (!isSelected && !isDrivingAway && blinkIntensityBonus <= 0.001f)
             {
                 if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
                 taillightPropBlock.SetColor(EmissionColorId, Color.black);
-                headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
+                rend.SetPropertyBlock(taillightPropBlock, taillightSlot);
                 return;
             }
 
             float t = (Time.time + busTimeOffset * 0.7f) * 1.2f;
             float pulse = Mathf.Sin(t) * 0.15f + 0.85f;
-            float brakeMultiplier = isDrivingAway ? 0.7f : 1.15f;
-            float finalMultiplier = pulse * brakeMultiplier;
-
-            Color currentEmission = baseTaillightEmission * finalMultiplier;
-            Color currentAlbedo = baseTaillightAlbedo * Mathf.Clamp(finalMultiplier, 0.7f, 1.3f);
+            Color currentEmission = baseTaillightEmission * (isSelected ? 1.4f : 0.8f) * pulse;
+            Color currentAlbedo = baseTaillightAlbedo;
 
             if (taillightPropBlock == null) taillightPropBlock = new MaterialPropertyBlock();
             taillightPropBlock.SetColor(EmissionColorId, currentEmission);
             taillightPropBlock.SetColor(BaseColorId, currentAlbedo);
             taillightPropBlock.SetColor(ColorId_Prop, currentAlbedo);
 
-            headlightRenderer.SetPropertyBlock(taillightPropBlock, taillightSlot);
+            rend.SetPropertyBlock(taillightPropBlock, taillightSlot);
         }
 
         [ContextMenu("Trigger Headlight Blink (Test)")]

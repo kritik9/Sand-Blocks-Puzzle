@@ -13,8 +13,10 @@ MonoBehaviour:
   m_Name: Level_07
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
   gameplayMode: 1
-  levelName: Level 7
+  levelName: Level 4
   particleRadius: 0.15
+  characterScale: 0
+  verticalSpacingMultiplier: 0
   maxParticles: 100
   containerShape: 0
   containerWidth: 4.67
@@ -33,8 +35,8 @@ MonoBehaviour:
   puzzleColumns: 6
   puzzleRows: 6
   buses: []
-  unifiedGridColumns: 10
-  unifiedGridRows: 10
+  unifiedGridColumns: 12
+  unifiedGridRows: 16
   unifiedGridRotation: 0
   unifiedCellSize: 1
   unifiedMode: 1
@@ -42,14 +44,14 @@ MonoBehaviour:
   unifiedCells:
   - gridPosition: {x: 5, y: 7}
     cellType: 2
-    colorId: 4
-    passengerCount: 5
+    colorId: 8
+    passengerCount: 7
     walkableAfterCollection: 1
     hideVisual: 0
   - gridPosition: {x: 4, y: 7}
     cellType: 2
-    colorId: 4
-    passengerCount: 10
+    colorId: 8
+    passengerCount: 8
     walkableAfterCollection: 1
     hideVisual: 0
   - gridPosition: {x: 7, y: 3}
@@ -92,7 +94,7 @@ MonoBehaviour:
     cellType: 2
     colorId: 3
     passengerCount: 5
-    walkableAfterCollection: 0
+    walkableAfterCollection: 1
     hideVisual: 0
   - gridPosition: {x: 8, y: 2}
     cellType: 2
@@ -104,7 +106,7 @@ MonoBehaviour:
     cellType: 2
     colorId: 3
     passengerCount: 5
-    walkableAfterCollection: 0
+    walkableAfterCollection: 1
     hideVisual: 0
   - gridPosition: {x: 5, y: 3}
     cellType: 4
@@ -133,26 +135,134 @@ MonoBehaviour:
   - gridPosition: {x: 0, y: 9}
     cellType: 2
     colorId: 7
-    passengerCount: 10
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 0, y: 8}
-    cellType: 2
-    colorId: 7
     passengerCount: 5
     walkableAfterCollection: 0
     hideVisual: 0
   - gridPosition: {x: 1, y: 8}
     cellType: 2
     colorId: 7
-    passengerCount: 10
+    passengerCount: 5
     walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 7}
+    cellType: 2
+    colorId: 8
+    passengerCount: 3
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 8, y: 9}
+    cellType: 2
+    colorId: 7
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 9, y: 9}
+    cellType: 2
+    colorId: 7
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 9, y: 8}
+    cellType: 2
+    colorId: 7
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 0}
+    cellType: 2
+    colorId: 7
+    passengerCount: 5
+    walkableAfterCollection: 0
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 2, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 11, y: 4}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 11, y: 5}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 9, y: 15}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 9, y: 14}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 9, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 10, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 11, y: 13}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 11, y: 14}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 11, y: 15}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 10, y: 15}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 10, y: 14}
+    cellType: 2
+    colorId: 2
+    passengerCount: 5
+    walkableAfterCollection: 1
     hideVisual: 0
   unifiedBuses:
   - name: Pink Bus
-    colorId: 4
-    capacity: 15
-    length: 3
+    colorId: 8
+    capacity: 18
+    length: 2
     rotationDegrees: 90
     gridPosition: {x: 0, y: 4}
   - name: Blue Bus
@@ -163,7 +273,7 @@ MonoBehaviour:
     gridPosition: {x: 4, y: 6}
   - name: Blue Bus
     colorId: 7
-    capacity: 25
+    capacity: 30
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 6, y: 5}

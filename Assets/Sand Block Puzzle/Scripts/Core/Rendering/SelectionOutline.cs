@@ -29,7 +29,7 @@ namespace SandBlocks.Core.Rendering
 
         [Header("Filtering")]
         [Tooltip("Child GameObjects containing any of these keywords in their name will NOT be outlined (e.g. seats, text, canvas).")]
-        [SerializeField] private List<string> ignoreKeywords = new List<string> { "chair", "seat", "passenger", "text", "canvas", "doll" };
+        [SerializeField] private List<string> ignoreKeywords = new List<string> { "chair", "seat", "passenger", "text", "canvas", "doll", "Minimalist_Stickman" };
 
         private class OutlineShell
         {

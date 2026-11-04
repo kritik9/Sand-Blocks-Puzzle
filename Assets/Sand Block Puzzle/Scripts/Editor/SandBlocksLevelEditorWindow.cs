@@ -41,6 +41,13 @@ namespace SandBlocks.Editor
         // Bus Editor State
         private int selectedBusIndex = -1;
 
+        // Modular Bus Piece Capacities State
+        private GameObject modularBusPrefab;
+        private int frontPieceCapacity = 9;
+        private int midPieceCapacity = 12;
+        private int rearPieceCapacity = 9;
+        private bool showPieceCapacitiesFoldout = true;
+
         // Unified Grid Editor State
         private readonly string[] tabLabelsClassic = new string[] { "Crowd & Container", "Buses & Parking Grid", "Balance & Scene" };
         private readonly string[] tabLabelsUnified = new string[] { "Unified Grid & Cells", "Unified Buses & Destination", "Unified Balance & Scene" };
@@ -90,6 +97,128 @@ namespace SandBlocks.Editor
             wantsMouseMove = true;
             LoadPalette();
             LoadDefaultLevel();
+            AutoDetectPieceCapacities();
+        }
+
+        private void AutoDetectPieceCapacities()
+        {
+            frontPieceCapacity = EditorPrefs.GetInt("SandBlocks_FrontPieceCap", 9);
+            midPieceCapacity = EditorPrefs.GetInt("SandBlocks_MidPieceCap", 12);
+            rearPieceCapacity = EditorPrefs.GetInt("SandBlocks_RearPieceCap", 9);
+
+            if (modularBusPrefab == null)
+            {
+                var gm = FindAnyObjectByType<SandBlocks.Gameplay.GameManager>();
+                if (gm != null && gm.BusPrefab != null)
+                {
+                    modularBusPrefab = gm.BusPrefab.gameObject;
+                }
+                else
+                {
+                    var ugm = FindAnyObjectByType<SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager>();
+                    if (ugm != null && ugm.BusPrefab != null)
+                    {
+                        modularBusPrefab = ugm.BusPrefab.gameObject;
+                    }
+                    else
+                    {
+                        modularBusPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Prefabs/Bus/ModularBus.prefab");
+                    }
+                }
+            }
+
+            if (modularBusPrefab != null)
+            {
+                var bus = modularBusPrefab.GetComponent<BusVehicle>();
+                if (bus != null)
+                {
+                    frontPieceCapacity = bus.GetFrontPieceCapacity();
+                    midPieceCapacity = bus.GetMidPieceCapacity();
+                    rearPieceCapacity = bus.GetRearPieceCapacity();
+                    SavePieceCapacities();
+                }
+            }
+        }
+
+        private void SavePieceCapacities()
+        {
+            EditorPrefs.SetInt("SandBlocks_FrontPieceCap", frontPieceCapacity);
+            EditorPrefs.SetInt("SandBlocks_MidPieceCap", midPieceCapacity);
+            EditorPrefs.SetInt("SandBlocks_RearPieceCap", rearPieceCapacity);
+        }
+
+        public int CalculateBusCapacity(int length)
+        {
+            return BusVehicle.CalculateModularCapacity(length, frontPieceCapacity, midPieceCapacity, rearPieceCapacity);
+        }
+
+        private void ApplyPieceCapacitiesToAllBuses()
+        {
+            if (selectedLevel == null) return;
+            Undo.RecordObject(selectedLevel, "Apply Piece Capacities");
+            int changed = 0;
+            if (selectedLevel.buses != null)
+            {
+                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                {
+                    var b = selectedLevel.buses[i];
+                    b.capacity = CalculateBusCapacity(b.length);
+                    selectedLevel.buses[i] = b;
+                    changed++;
+                }
+            }
+            if (selectedLevel.unifiedBuses != null)
+            {
+                for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++)
+                {
+                    var b = selectedLevel.unifiedBuses[i];
+                    b.capacity = CalculateBusCapacity(b.length);
+                    selectedLevel.unifiedBuses[i] = b;
+                    changed++;
+                }
+            }
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log($"<color=green>[SandBlocks]</color> Applied modular capacities to {changed} buses!");
+        }
+
+        private void DrawModularPieceCapacitySettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            showPieceCapacitiesFoldout = EditorGUILayout.Foldout(showPieceCapacitiesFoldout,
+                $"Modular Bus Piece Capacities (Front: {frontPieceCapacity}, Mid: {midPieceCapacity}, Rear: {rearPieceCapacity})", true, EditorStyles.boldLabel);
+            if (GUILayout.Button("Auto-Read from Prefabs", EditorStyles.miniButton, GUILayout.Width(140)))
+            {
+                AutoDetectPieceCapacities();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (showPieceCapacitiesFoldout)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginChangeCheck();
+                modularBusPrefab = (GameObject)EditorGUILayout.ObjectField("Bus Prefab Reference:", modularBusPrefab, typeof(GameObject), false);
+                frontPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Front Piece Capacity:", frontPieceCapacity));
+                midPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Mid Piece Capacity:", midPieceCapacity));
+                rearPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Rear Piece Capacity:", rearPieceCapacity));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    SavePieceCapacities();
+                }
+
+                int s2 = CalculateBusCapacity(2);
+                int s3 = CalculateBusCapacity(3);
+                int s4 = CalculateBusCapacity(4);
+                int s5 = CalculateBusCapacity(5);
+                EditorGUILayout.HelpBox($"Calculated Capacities -> Size 2: {s2} | Size 3: {s3} | Size 4: {s4} | Size 5: {s5}", MessageType.None);
+
+                if (GUILayout.Button("Apply Piece Capacities to All Buses in Level", EditorStyles.miniButton))
+                {
+                    ApplyPieceCapacitiesToAllBuses();
+                }
+                EditorGUI.indentLevel--;
+            }
+            EditorGUILayout.EndVertical();
         }
 
         private void LoadPalette()
@@ -1412,6 +1541,9 @@ namespace SandBlocks.Editor
 
             EditorGUILayout.Space(8);
 
+            DrawModularPieceCapacitySettings();
+            EditorGUILayout.Space(6);
+
             // Bus Inspector & Modification Panel
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.BeginHorizontal();
@@ -1690,8 +1822,24 @@ namespace SandBlocks.Editor
             int maxGridY = Mathf.Max(0, maxGridRows - 1);
             int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
 
-            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 56);
-            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, maxAllowedLength);
+            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
+            int oldLength = Mathf.Max(2, bus.length);
+            int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
+            int autoCap = CalculateBusCapacity(newLength);
+
+            EditorGUILayout.BeginHorizontal();
+            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+            if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+            {
+                bus.capacity = autoCap;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (newLength != oldLength)
+            {
+                bus.length = newLength;
+                bus.capacity = autoCap;
+            }
 
             // Rotation Buttons
             EditorGUILayout.BeginHorizontal();
@@ -1736,7 +1884,7 @@ namespace SandBlocks.Editor
             {
                 name = $"Bus {selectedLevel.buses.Count + 1}",
                 colorId = activeBrushColor,
-                capacity = 56,
+                capacity = CalculateBusCapacity(2),
                 length = 2,
                 rotationDegrees = 0,
                 gridPosition = new Vector2Int(0, 0)
@@ -1947,7 +2095,7 @@ namespace SandBlocks.Editor
                     for (int m = 0; m < matchingBuses.Count; m++)
                     {
                         var bus = selectedLevel.buses[matchingBuses[m]];
-                        bus.capacity = Mathf.Clamp(capPerBus + (m == 0 ? remainder : 0), 1, 56);
+                        bus.capacity = Mathf.Max(1, capPerBus + (m == 0 ? remainder : 0));
                         selectedLevel.buses[matchingBuses[m]] = bus;
                     }
                 }
@@ -2611,8 +2759,24 @@ namespace SandBlocks.Editor
             int maxGridY = Mathf.Max(0, maxGridRows - 1);
             int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
 
-            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, 56);
-            bus.length = EditorGUILayout.IntSlider("Length (Grid Cells):", bus.length, 1, maxAllowedLength);
+            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
+            int oldLength = Mathf.Max(2, bus.length);
+            int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
+            int autoCap = CalculateBusCapacity(newLength);
+
+            EditorGUILayout.BeginHorizontal();
+            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+            if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+            {
+                bus.capacity = autoCap;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (newLength != oldLength)
+            {
+                bus.length = newLength;
+                bus.capacity = autoCap;
+            }
 
             // Rotation Buttons
             EditorGUILayout.BeginHorizontal();
@@ -2657,7 +2821,7 @@ namespace SandBlocks.Editor
             {
                 name = $"Bus {selectedLevel.unifiedBuses.Count + 1}",
                 colorId = unifiedBrushColor,
-                capacity = 10,
+                capacity = CalculateBusCapacity(2),
                 length = 2,
                 rotationDegrees = 0,
                 gridPosition = new Vector2Int(0, 0)
@@ -2828,7 +2992,7 @@ namespace SandBlocks.Editor
                     {
                         name = $"{GetColorName(cId)} Bus",
                         colorId = cId,
-                        capacity = Mathf.Min(pCount, 56),
+                        capacity = pCount,
                         length = 2,
                         rotationDegrees = 0,
                         gridPosition = new Vector2Int(0, 0)
@@ -2840,7 +3004,7 @@ namespace SandBlocks.Editor
                     for (int m = 0; m < matchingBuses.Count; m++)
                     {
                         var bus = selectedLevel.unifiedBuses[matchingBuses[m]];
-                        bus.capacity = Mathf.Clamp(capPerBus, 1, 56);
+                        bus.capacity = Mathf.Max(1, capPerBus);
                         selectedLevel.unifiedBuses[matchingBuses[m]] = bus;
                     }
                 }

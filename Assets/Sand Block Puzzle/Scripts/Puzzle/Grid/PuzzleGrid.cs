@@ -77,6 +77,12 @@ namespace SandBlocks.Puzzle.Grid
         [Tooltip("If true, applies tileColor to the visual tiles. Enabled by default.")]
         [SerializeField] private bool applyColorToTilePrefab = true;
 
+        public float TileBaseMeshSize
+        {
+            get => tileBaseMeshSize;
+            set { tileBaseMeshSize = Mathf.Max(0.01f, value); if (autoBuildVisuals) BuildVisualGrid(); }
+        }
+
         public GameObject TilePrefab
         {
             get => tilePrefab;
@@ -352,7 +358,9 @@ namespace SandBlocks.Puzzle.Grid
 
                     blockedTile.name = $"Tile_{pos.x}_{pos.y}";
 
-                    blockedTile.localScale = new Vector3(cellSize * 0.92f, cellSize * 0.92f, 0.08f);
+                    bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
+                    blockedTile.localScale = GetTileScale(false, isHorizontal);
 
                     blockedTile.localPosition = new Vector3(blockedTile.localPosition.x, blockedTile.localPosition.y, 0.05f);
 
@@ -432,25 +440,18 @@ namespace SandBlocks.Puzzle.Grid
 
         public void EnsureTilePrefab()
         {
-            if (tilePrefab == null)
-            {
-#if UNITY_EDITOR
-                tilePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Sand Block Puzzle/Models/Tile_v1/Tile_v1.fbx");
-#endif
-            }
+            // Reference-based: tilePrefab is assigned directly via the Inspector
         }
 
         public Vector3 GetTileScale(bool isBlocked, bool isHorizontal)
         {
             if (tilePrefab != null)
             {
-                float baseSize = tileBaseMeshSize > 0.001f ? tileBaseMeshSize : 2.0f;
-                float scaleFactor = cellSize / baseSize;
                 float blockedScale = isBlocked ? 1.05f : 1.0f;
                 return new Vector3(
-                    scaleFactor * tileScaleMultiplier.x * blockedScale,
-                    scaleFactor * tileScaleMultiplier.y * (isBlocked ? 1.4f : 1.0f),
-                    scaleFactor * tileScaleMultiplier.z * blockedScale
+                    tileScaleMultiplier.x * blockedScale,
+                    tileScaleMultiplier.y * (isBlocked ? 1.4f : 1.0f),
+                    tileScaleMultiplier.z * blockedScale
                 );
             }
 

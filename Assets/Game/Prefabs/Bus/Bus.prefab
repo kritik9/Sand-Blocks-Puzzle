@@ -424,6 +424,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
       insertIndex: -1
       addedObject: {fileID: 389685010394196743}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 3946665759501943352}
   m_SourcePrefab: {fileID: 100100000, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
 --- !u!1 &269926547547268495 stripped
 GameObject:
@@ -453,9 +456,33 @@ MonoBehaviour:
   charactersParent: {fileID: 7608802820881767737}
   passengerList: []
   seatPassengers: []
+  frontPiecePrefab: {fileID: 0}
+  midPiecePrefab: {fileID: 0}
+  rearPiecePrefab: {fileID: 0}
+  piecesParent: {fileID: 0}
+  pieceLength: 1.35
+  spawnedPieces: []
+  bodyRenderers: []
   bodyRenderer: {fileID: 2532267996206923975}
+  bodyMaterialIndex: 0
+  customBodyMaterial: {fileID: 0}
   seatsParent: {fileID: 645466580224900917}
   passengerPrefab: {fileID: 293946332538391629, guid: 7a16dab9e2a944c8d9b9adbb6ed29c5e, type: 3}
+  enableHeadlightAnimation: 1
+  headlightRenderer: {fileID: 2532267996206923975}
+  headlightMaterialIndex: 2
+  maxIntensityMultiplier: 2.5
+  baseFlickerSpeed: 1.8
+  highlightWhenSelected: 1
+  selectedGlowIntensity: 1.45
+  blinkOnPassengerFill: 1
+  passengerFillBlinkIntensity: 2.2
+  passengerFillBlinkDuration: 0.14
+  highlightWhenMoving: 1
+  customHeadlightEmissionColor: {r: 0, g: 0, b: 0, a: 0}
+  enableTaillightAnimation: 1
+  taillightRenderer: {fileID: 2532267996206923975}
+  taillightMaterialIndex: 2
   seatTransforms:
   - {fileID: 4906322463400545682}
   - {fileID: 7552082680128738279}
@@ -464,10 +491,36 @@ MonoBehaviour:
   seatedRotationOffset: {x: 0, y: 0, z: 0}
   passengerCountText: {fileID: 8343928069448560395}
   passengerScale: 0.1
+  enablePassengerBoardPop: 1
   popScaleMultiplier: 1.14
+  passengerPopDuration: 0.2
   blockedShakeMagnitude: 0.16
   spawnBounceDuration: 0.35
   spawnOvershoot: 1.70158
+  driveAwayDelay: 0.25
+  driveAwayDuration: 0.5
+  driveAwayDistance: 15
+--- !u!65 &3946665759501943352
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 269926547547268495}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1.35, y: 1.2, z: 2.7}
+  m_Center: {x: 0, y: 0.75, z: 0}
 --- !u!4 &645466580224900917 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: f0c622864a83a5b42accf1f7abdff8f3, type: 3}
