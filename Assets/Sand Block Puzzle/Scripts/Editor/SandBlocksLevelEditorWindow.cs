@@ -47,6 +47,7 @@ namespace SandBlocks.Editor
         private int midPieceCapacity = 12;
         private int rearPieceCapacity = 9;
         private bool showPieceCapacitiesFoldout = true;
+        private bool showUnifiedJumpSettingsFoldout = true;
 
         // Unified Grid Editor State
         private readonly string[] tabLabelsClassic = new string[] { "Crowd & Container", "Buses & Parking Grid", "Balance & Scene" };
@@ -2170,6 +2171,10 @@ namespace SandBlocks.Editor
 
             EditorGUILayout.Space(6);
 
+            DrawUnifiedJumpAnimationSettings();
+
+            EditorGUILayout.Space(6);
+
             // Tools & Brush Selector
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("2. Cell Type & Passenger Painting Tools", EditorStyles.boldLabel);
@@ -2530,6 +2535,63 @@ namespace SandBlocks.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.LabelField($"Unified Grid: {cols}x{rows} | Rotation: {selectedLevel.unifiedGridRotation}° | Destination: ({selectedLevel.sharedDestinationPos.x}, {selectedLevel.sharedDestinationPos.y})", EditorStyles.centeredGreyMiniLabel);
+        }
+
+        private void DrawUnifiedJumpAnimationSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            showUnifiedJumpSettingsFoldout = EditorGUILayout.Foldout(showUnifiedJumpSettingsFoldout, "✨ Passenger Jump, Crowd Layout & Level Start Animation", true, EditorStyles.boldLabel);
+            if (showUnifiedJumpSettingsFoldout)
+            {
+                EditorGUI.indentLevel++;
+                var ugm = FindAnyObjectByType<SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager>();
+                if (ugm != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+
+                    GUILayout.Label("Standing Crowd Spacing & Positioning", EditorStyles.boldLabel);
+                    float frontSpacing = EditorGUILayout.Slider("Crowd Front Spacing (Offset):", ugm.CrowdFrontSpacing, -0.8f, 0.8f);
+
+                    EditorGUILayout.Space(4);
+                    GUILayout.Label("Passenger Jump & Flight Animation", EditorStyles.boldLabel);
+                    float arc = EditorGUILayout.Slider("Jump Arc Height:", ugm.JumpArcHeight, 0.5f, 6.0f);
+                    float dur = EditorGUILayout.Slider("Flight Duration (Speed):", ugm.PassengerFlightDuration, 0.10f, 1.0f);
+                    float scaleMult = EditorGUILayout.Slider("Jump Scale Multiplier:", ugm.JumpCharacterScaleMultiplier, 0.4f, 2.5f);
+                    float apexMult = EditorGUILayout.Slider("Apex Scale Pop:", ugm.JumpApexScaleMultiplier, 0.8f, 2.0f);
+                    float stream = EditorGUILayout.Slider("Stream Interval:", ugm.StreamTransferInterval, 0.02f, 0.35f);
+                    float tilt = EditorGUILayout.Slider("Landing Feet Tilt:", ugm.LandingFeetForwardTilt, 0f, 60f);
+
+                    EditorGUILayout.Space(4);
+                    GUILayout.Label("Level Start Sequence Animation", EditorStyles.boldLabel);
+                    bool animStart = EditorGUILayout.Toggle("Animate Level Start:", ugm.AnimateLevelStart);
+                    float bStart = EditorGUILayout.Slider("Bus Start Delay:", ugm.BusStartDelay, 0.0f, 0.5f);
+                    float bInt = EditorGUILayout.Slider("Bus Spawn Interval:", ugm.BusSpawnInterval, 0.02f, 0.20f);
+                    float cStart = EditorGUILayout.Slider("Crowd Start Delay:", ugm.CrowdStartDelay, 0.0f, 0.6f);
+
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(ugm, "Tune Unified Visuals and Animations");
+                        ugm.CrowdFrontSpacing = frontSpacing;
+                        ugm.JumpArcHeight = arc;
+                        ugm.PassengerFlightDuration = dur;
+                        ugm.JumpCharacterScaleMultiplier = scaleMult;
+                        ugm.JumpApexScaleMultiplier = apexMult;
+                        ugm.StreamTransferInterval = stream;
+                        ugm.LandingFeetForwardTilt = tilt;
+                        ugm.AnimateLevelStart = animStart;
+                        ugm.BusStartDelay = bStart;
+                        ugm.BusSpawnInterval = bInt;
+                        ugm.CrowdStartDelay = cStart;
+                        EditorUtility.SetDirty(ugm);
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("Open a scene with UnifiedGridManager (e.g. Gameplay.unity) to tune jump animation live in the editor.", MessageType.Info);
+                }
+                EditorGUI.indentLevel--;
+            }
+            EditorGUILayout.EndVertical();
         }
 
         private void DrawUnifiedBusesTab()

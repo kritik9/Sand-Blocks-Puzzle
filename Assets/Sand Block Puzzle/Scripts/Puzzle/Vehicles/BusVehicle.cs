@@ -943,7 +943,7 @@ namespace SandBlocks.Puzzle.Vehicles
             else DestroyImmediate(obj, true);
         }
 
-        private void InitScaleIfNeeded()
+        public void InitScaleIfNeeded()
         {
             if (!hasSavedScale)
             {
@@ -972,6 +972,9 @@ namespace SandBlocks.Puzzle.Vehicles
             {
                 yield return new WaitForSeconds(delay);
             }
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerUIButton();
 
             float elapsed = 0f;
             while (elapsed < spawnBounceDuration)

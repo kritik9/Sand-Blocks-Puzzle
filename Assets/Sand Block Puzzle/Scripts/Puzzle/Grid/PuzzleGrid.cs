@@ -334,56 +334,86 @@ namespace SandBlocks.Puzzle.Grid
 
 
 
-        public void UnblockCell(Vector2Int pos)
-
+        public Vector3 GetTileLocalPosition(int x, int y, bool isBlocked)
         {
+            float stepX = cellSize + columnSpacing;
+            float stepY = cellSize + rowSpacing;
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            return isHorizontal
+                ? new Vector3(origin.x + x * stepX + tilePositionOffset.x, (isBlocked ? 0.08f : 0.02f) + tileElevation + tilePositionOffset.y, origin.y + y * stepY + tilePositionOffset.z)
+                : new Vector3(origin.x + x * stepX + tilePositionOffset.x, origin.y + y * stepY + tilePositionOffset.y, (isBlocked ? 0.12f : 0.05f) + tileElevation + tilePositionOffset.z);
+        }
 
-            if (!blockedCells.Contains(pos) && !hiddenBlockedCells.Contains(pos)) return;
-
+        public void UnblockCell(Vector2Int pos)
+        {
             blockedCells.Remove(pos);
-
             hiddenBlockedCells.Remove(pos);
 
+            if (visualRoot == null) return;
 
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            Vector3 unblockedPos = GetTileLocalPosition(pos.x, pos.y, false);
+            Vector3 unblockedScale = GetTileScale(false, isHorizontal);
+            Quaternion unblockedRot = isHorizontal ? Quaternion.identity : Quaternion.Euler(-90f, 0f, 0f);
 
-            if (visualRoot != null)
+            var tileMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            tileMat.color = tileColor;
+            if (tileMat.HasProperty(TileBaseColorId)) tileMat.SetColor(TileBaseColorId, tileColor);
+            if (tileMat.HasProperty(TileColorId)) tileMat.SetColor(TileColorId, tileColor);
 
+            Transform blockedTile = visualRoot.transform.Find($"BlockedTile_{pos.x}_{pos.y}");
+            Transform existingTile = visualRoot.transform.Find($"Tile_{pos.x}_{pos.y}");
+
+            GameObject targetTile = null;
+
+            if (blockedTile != null)
             {
-
-                Transform blockedTile = visualRoot.transform.Find($"BlockedTile_{pos.x}_{pos.y}");
-
-                if (blockedTile != null)
-
+                blockedTile.name = $"Tile_{pos.x}_{pos.y}";
+                blockedTile.localPosition = unblockedPos;
+                blockedTile.localRotation = unblockedRot;
+                blockedTile.localScale = unblockedScale;
+                targetTile = blockedTile.gameObject;
+            }
+            else if (existingTile != null)
+            {
+                existingTile.localPosition = unblockedPos;
+                existingTile.localRotation = unblockedRot;
+                existingTile.localScale = unblockedScale;
+                targetTile = existingTile.gameObject;
+            }
+            else
+            {
+                // Tile was hidden or not spawned yet: spawn it now so the board floor is always continuous
+                if (tilePrefab != null)
                 {
-
-                    blockedTile.name = $"Tile_{pos.x}_{pos.y}";
-
-                    bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-
-                    blockedTile.localScale = GetTileScale(false, isHorizontal);
-
-                    blockedTile.localPosition = new Vector3(blockedTile.localPosition.x, blockedTile.localPosition.y, 0.05f);
-
-
-
-                    var rend = blockedTile.GetComponent<Renderer>();
-
-                    if (rend != null)
-
-                    {
-
-                        var tileMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-
-                        tileMat.color = tileColor;
-
-                        rend.sharedMaterial = tileMat;
-
-                    }
-
+                    targetTile = Instantiate(tilePrefab, visualRoot.transform);
+                    var cols = targetTile.GetComponentsInChildren<Collider>();
+                    for (int c = 0; c < cols.Length; c++) SafeDestroy(cols[c]);
                 }
-
+                else
+                {
+                    targetTile = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    var col = targetTile.GetComponent<Collider>();
+                    if (col != null) SafeDestroy(col);
+                }
+                targetTile.name = $"Tile_{pos.x}_{pos.y}";
+                targetTile.transform.localPosition = unblockedPos;
+                targetTile.transform.localRotation = unblockedRot;
+                targetTile.transform.localScale = unblockedScale;
             }
 
+            if (targetTile != null)
+            {
+                var rend = targetTile.GetComponentInChildren<Renderer>();
+                if (rend != null)
+                {
+                    if (applyColorToTilePrefab || tilePrefab == null)
+                    {
+                        rend.sharedMaterial = tileMat;
+                    }
+                    tileRendererCache[pos] = rend;
+                }
+            }
         }
 
 
@@ -729,9 +759,7 @@ namespace SandBlocks.Puzzle.Grid
                     }
 
                     bool isBlocked = IsCellBlocked(x, y);
-                    Vector3 tilePos = isHorizontal
-                        ? new Vector3(origin.x + x * stepX + tilePositionOffset.x, (isBlocked ? 0.08f : 0.02f) + tileElevation + tilePositionOffset.y, origin.y + y * stepY + tilePositionOffset.z)
-                        : new Vector3(origin.x + x * stepX + tilePositionOffset.x, origin.y + y * stepY + tilePositionOffset.y, (isBlocked ? 0.12f : 0.05f) + tileElevation + tilePositionOffset.z);
+                    Vector3 tilePos = GetTileLocalPosition(x, y, isBlocked);
 
                     GameObject tile;
                     if (tilePrefab != null)

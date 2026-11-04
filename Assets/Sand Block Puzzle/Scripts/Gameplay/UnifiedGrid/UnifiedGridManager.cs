@@ -67,6 +67,10 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [Tooltip("Base row spacing ratio relative to cell size")]
         [SerializeField] private float baseRowSpacingRatio = 0.26f;
 
+        [Tooltip("Adjusts front/back position offset of the standing crowd on the platform pad. Positive values shift the crowd forward toward the front edge to close front gaps; negative values shift backward.")]
+        [Range(-1.0f, 1.0f)]
+        [SerializeField] private float crowdFrontSpacing = 0.0f;
+
         [Tooltip("If true, automatically scales down passenger figures when a cell has many passengers (e.g. > 6) so they fit comfortably without intersecting")]
         [SerializeField] private bool autoScaleCrowdByCount = true;
 
@@ -95,15 +99,36 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [SerializeField] private Color blockedColor = new Color(0.28f, 0.28f, 0.32f, 1f);
 
         [Header("Streaming & Animation Tuning")]
+        [Tooltip("Delay in seconds between consecutive passengers jumping to the bus")]
+        [Range(0.02f, 0.5f)]
         [SerializeField] private float streamTransferInterval = 0.08f;
-        [SerializeField] private float passengerFlightDuration = 0.26f;
 
-        [Header("Passenger Jump Arc & Camera Visibility")]
+        [Header("Passenger Jump Animation & Scale Tuning")]
         [Tooltip("Vertical height added to the jump flight trajectory curve")]
+        [Range(0.2f, 8.0f)]
         [SerializeField] private float jumpArcHeight = 2.4f;
+
         [Tooltip("Forward offset (-Z toward camera) added to flight midpoint so character stays in prominent view")]
+        [Range(0f, 3.0f)]
         [SerializeField] private float jumpForwardBias = 0.75f;
-        [Tooltip("Maximum pitch angle (degrees) tilting feet forward toward camera during landing so whole character is visible from top-down camera")]
+
+        [Tooltip("Flight duration in seconds for passenger jump animation (smaller = faster jump)")]
+        [Range(0.08f, 1.2f)]
+        [SerializeField] private float passengerFlightDuration = 0.28f;
+
+        [Tooltip("Scale multiplier applied to characters while jumping through the air")]
+        [Range(0.2f, 3.0f)]
+        [SerializeField] private float jumpCharacterScaleMultiplier = 1.0f;
+
+        [Tooltip("Additional peak scale multiplier at apex of jump (e.g. 1.25 = 25% larger at mid-flight, 1.0 = constant)")]
+        [Range(0.5f, 2.5f)]
+        [SerializeField] private float jumpApexScaleMultiplier = 1.15f;
+
+        [Tooltip("Optional absolute character scale during jump (0 = uses characterScale * jumpCharacterScaleMultiplier)")]
+        [SerializeField] private float jumpCharacterScaleOverride = 0.0f;
+
+        [Tooltip("Maximum pitch angle (degrees) tilting feet forward toward camera during landing")]
+        [Range(0f, 75f)]
         [SerializeField] private float landingFeetForwardTilt = 38f;
 
         [Header("Level Start Sequence")]
@@ -154,6 +179,20 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         public float CharacterElevationOffset { get => characterElevationOffset; set { characterElevationOffset = value; RefreshAllCellVisuals(); } }
         public bool FaceBackSide { get => faceBackSide; set { faceBackSide = value; RefreshAllCellVisuals(); } }
         public Vector2 RotationJitterZRange { get => rotationJitterZRange; set { rotationJitterZRange = value; RefreshAllCellVisuals(); } }
+        public float JumpArcHeight { get => jumpArcHeight; set => jumpArcHeight = value; }
+        public float JumpForwardBias { get => jumpForwardBias; set => jumpForwardBias = value; }
+        public float PassengerFlightDuration { get => passengerFlightDuration; set => passengerFlightDuration = value; }
+        public float JumpCharacterScaleMultiplier { get => jumpCharacterScaleMultiplier; set => jumpCharacterScaleMultiplier = value; }
+        public float JumpApexScaleMultiplier { get => jumpApexScaleMultiplier; set => jumpApexScaleMultiplier = value; }
+        public float JumpCharacterScaleOverride { get => jumpCharacterScaleOverride; set => jumpCharacterScaleOverride = value; }
+        public float LandingFeetForwardTilt { get => landingFeetForwardTilt; set => landingFeetForwardTilt = value; }
+        public float StreamTransferInterval { get => streamTransferInterval; set => streamTransferInterval = value; }
+        public float CharacterScaleProperty { get => characterScale; set { characterScale = value; RefreshAllCellVisuals(); } }
+        public float CrowdFrontSpacing { get => crowdFrontSpacing; set { crowdFrontSpacing = value; RefreshAllCellVisuals(); } }
+        public float BusStartDelay { get => busStartDelay; set => busStartDelay = value; }
+        public float BusSpawnInterval { get => busSpawnInterval; set => busSpawnInterval = value; }
+        public float CrowdStartDelay { get => crowdStartDelay; set => crowdStartDelay = value; }
+        public float CrowdSpawnInterval { get => crowdSpawnInterval; set => crowdSpawnInterval = value; }
 
         public Vector3 GetEffectiveBaseEuler()
         {
@@ -349,6 +388,7 @@ public static Vector3[] GetSymmetricalPositions(int count, float cellSize)
             float vMult = (Instance != null) ? Instance.crowdVerticalSpacingMultiplier : 1.0f;
             float baseColRatio = (Instance != null) ? Instance.baseColumnSpacingRatio : 0.22f;
             float baseRowRatio = (Instance != null) ? Instance.baseRowSpacingRatio : 0.26f;
+            float frontSpacing = (Instance != null) ? Instance.crowdFrontSpacing : 0.0f;
 
             bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
             float surfaceY = (Instance != null)
@@ -370,37 +410,37 @@ public static Vector3[] GetSymmetricalPositions(int count, float cellSize)
                 switch (count)
                 {
                     case 1:
-                        positions[0] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset);
+                        positions[0] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         break;
                     case 2:
-                        positions[0] = MakePos(-dX, 0f, isHorizontal, surfaceY, zOffset);
-                        positions[1] = MakePos(dX, 0f, isHorizontal, surfaceY, zOffset);
+                        positions[0] = MakePos(-dX, 0f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[1] = MakePos(dX, 0f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         break;
                     case 3:
-                        positions[0] = MakePos(-dX, dV * 0.7f, isHorizontal, surfaceY, zOffset);
-                        positions[1] = MakePos(0f, -dV * 0.35f, isHorizontal, surfaceY, zOffset);
-                        positions[2] = MakePos(dX, dV * 0.7f, isHorizontal, surfaceY, zOffset);
+                        positions[0] = MakePos(-dX, dV * 0.7f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[1] = MakePos(0f, -dV * 0.35f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[2] = MakePos(dX, dV * 0.7f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         break;
                     case 4:
-                        positions[0] = MakePos(-dX, dV * 0.6f, isHorizontal, surfaceY, zOffset);
-                        positions[1] = MakePos(dX, dV * 0.6f, isHorizontal, surfaceY, zOffset);
-                        positions[2] = MakePos(-dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset);
-                        positions[3] = MakePos(dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset);
+                        positions[0] = MakePos(-dX, dV * 0.6f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[1] = MakePos(dX, dV * 0.6f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[2] = MakePos(-dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[3] = MakePos(dX, -dV * 0.6f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         break;
                     case 5:
-                        positions[0] = MakePos(-dX, dV * 0.65f, isHorizontal, surfaceY, zOffset);
-                        positions[1] = MakePos(dX, dV * 0.65f, isHorizontal, surfaceY, zOffset);
-                        positions[2] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset);
-                        positions[3] = MakePos(-dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset);
-                        positions[4] = MakePos(dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset);
+                        positions[0] = MakePos(-dX, dV * 0.65f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[1] = MakePos(dX, dV * 0.65f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[2] = MakePos(0f, 0f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[3] = MakePos(-dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                        positions[4] = MakePos(dX, -dV * 0.65f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         break;
                     case 6:
                         float col3Spacing = Mathf.Min(hSpacing * 0.85f, maxSpan / 2f);
                         for (int c = 0; c < 3; c++)
                         {
                             float x = (c - 1f) * col3Spacing;
-                            positions[c] = MakePos(x, dV * 0.55f, isHorizontal, surfaceY, zOffset);
-                            positions[c + 3] = MakePos(x, -dV * 0.55f, isHorizontal, surfaceY, zOffset);
+                            positions[c] = MakePos(x, dV * 0.55f, isHorizontal, surfaceY, zOffset, frontSpacing);
+                            positions[c + 3] = MakePos(x, -dV * 0.55f, isHorizontal, surfaceY, zOffset, frontSpacing);
                         }
                         break;
                 }
@@ -432,22 +472,25 @@ public static Vector3[] GetSymmetricalPositions(int count, float cellSize)
                 for (int c = 0; c < numInRow; c++)
                 {
                     float x = (numInRow > 1) ? (c - (numInRow - 1) * 0.5f) * actualColSpacing : 0f;
-                    positions[index++] = MakePos(x, -rowPos, isHorizontal, surfaceY, zOffset);
+                    positions[index++] = MakePos(x, -rowPos, isHorizontal, surfaceY, zOffset, frontSpacing);
                 }
             }
 
             return positions;
         }
 
-        private static Vector3 MakePos(float x, float rowOffset, bool isHorizontal, float surfaceY, float zOffset)
+        private static Vector3 MakePos(float x, float rowOffset, bool isHorizontal, float surfaceY, float zOffset, float frontSpacing = 0f)
         {
             if (isHorizontal)
             {
-                return new Vector3(x, surfaceY, rowOffset);
+                // In Horizontal_XZ, front of pad (closest to bottom/camera) is along -Z.
+                // Positive frontSpacing shifts figures toward front edge (-Z), closing the front gap.
+                return new Vector3(x, surfaceY, rowOffset - frontSpacing);
             }
             else
             {
-                return new Vector3(x, rowOffset, zOffset);
+                // In Vertical_XY, front of pad (closest to bottom) is along -Y.
+                return new Vector3(x, rowOffset - frontSpacing, zOffset);
             }
         }
         #endregion
@@ -635,6 +678,11 @@ private void SpawnPassengerCell(UnifiedCellData data)
                     bus.OnBusFullOverride = null;
 
                     puzzleGrid.PlaceVehicle(bus, data.gridPosition);
+                    bus.InitScaleIfNeeded();
+                    if (animateLevelStart)
+                    {
+                        bus.transform.localScale = Vector3.zero;
+                    }
                     spawnedBuses.Add(bus);
                     nextInteractionTime[bus] = 0f;
                 }
@@ -914,11 +962,9 @@ private void SpawnPassengerCell(UnifiedCellData data)
         {
             if (padObj == null) yield break;
 
-            float duration = 0.25f;
+            float duration = 0.20f;
             float elapsed = 0f;
             Vector3 startScale = padObj.transform.localScale;
-            Vector3 startPos = padObj.transform.localPosition;
-            Vector3 endPos = startPos + new Vector3(0f, 0f, 0.2f);
 
             while (elapsed < duration)
             {
@@ -927,7 +973,6 @@ private void SpawnPassengerCell(UnifiedCellData data)
                 float t = Mathf.Clamp01(elapsed / duration);
 
                 padObj.transform.localScale = Vector3.Lerp(startScale, Vector3.zero, t);
-                padObj.transform.localPosition = Vector3.Lerp(startPos, endPos, t);
                 yield return null;
             }
 
@@ -954,10 +999,20 @@ private void SpawnPassengerCell(UnifiedCellData data)
 
             Vector3 endPos = (targetBus != null) ? targetBus.transform.TransformPoint(localSeatOffset) : targetSeatPos;
             float elapsed = 0f;
-            while (elapsed < passengerFlightDuration)
+            float duration = Mathf.Max(0.05f, passengerFlightDuration);
+
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+            Vector3 upDir = isHorizontal ? Vector3.up : -Vector3.forward;
+            Vector3 forwardBiasDir = isHorizontal ? -Vector3.forward : Vector3.up;
+
+            float baseJumpScale = (jumpCharacterScaleOverride > 0.001f)
+                ? jumpCharacterScaleOverride
+                : characterScale * jumpCharacterScaleMultiplier;
+
+            while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / passengerFlightDuration);
+                float t = Mathf.Clamp01(elapsed / duration);
 
                 // Dynamically track moving bus as player drags it across the board
                 if (targetBus != null)
@@ -965,10 +1020,14 @@ private void SpawnPassengerCell(UnifiedCellData data)
                     endPos = targetBus.transform.TransformPoint(localSeatOffset);
                 }
 
-                Vector3 midPoint = (startPos + endPos) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
+                Vector3 midPoint = (startPos + endPos) * 0.5f + upDir * jumpArcHeight + forwardBiasDir * jumpForwardBias;
                 float oneMinusT = 1f - t;
                 Vector3 currentPos = oneMinusT * oneMinusT * startPos + 2f * oneMinusT * t * midPoint + t * t * endPos;
                 flyer.transform.position = currentPos;
+
+                // Scale character dynamically during jump (apex bounce / squash & stretch)
+                float apexFactor = Mathf.Lerp(1.0f, jumpApexScaleMultiplier, Mathf.Sin(t * Mathf.PI));
+                flyer.transform.localScale = Vector3.one * (baseJumpScale * apexFactor);
 
                 if (cpFlyer != null)
                 {
@@ -1000,20 +1059,34 @@ private void SpawnPassengerCell(UnifiedCellData data)
 
             Vector3 destWorld = puzzleGrid.GridToWorld(destCell, 1, false);
             float elapsed = 0f;
-            while (elapsed < passengerFlightDuration)
+            float duration = Mathf.Max(0.05f, passengerFlightDuration);
+
+            bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
+            Vector3 upDir = isHorizontal ? Vector3.up : -Vector3.forward;
+            Vector3 forwardBiasDir = isHorizontal ? -Vector3.forward : Vector3.up;
+
+            float baseJumpScale = (jumpCharacterScaleOverride > 0.001f)
+                ? jumpCharacterScaleOverride
+                : characterScale * jumpCharacterScaleMultiplier;
+
+            while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / passengerFlightDuration);
+                float t = Mathf.Clamp01(elapsed / duration);
 
                 if (sourceBus != null)
                 {
                     startPos = sourceBus.transform.TransformPoint(localSeatOffset);
                 }
 
-                Vector3 midPoint = (startPos + destWorld) * 0.5f + Vector3.up * jumpArcHeight - Vector3.forward * jumpForwardBias;
+                Vector3 midPoint = (startPos + destWorld) * 0.5f + upDir * jumpArcHeight + forwardBiasDir * jumpForwardBias;
                 float oneMinusT = 1f - t;
                 Vector3 currentPos = oneMinusT * oneMinusT * startPos + 2f * oneMinusT * t * midPoint + t * t * destWorld;
                 flyer.transform.position = currentPos;
+
+                // Scale character dynamically during jump (apex bounce / squash & stretch)
+                float apexFactor = Mathf.Lerp(1.0f, jumpApexScaleMultiplier, Mathf.Sin(t * Mathf.PI));
+                flyer.transform.localScale = Vector3.one * (baseJumpScale * apexFactor);
 
                 if (cpFlyer != null)
                 {
@@ -1246,18 +1319,28 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             }
 
             // Wait for all animations to complete
-            float busMaxTime = busStartDelay + Mathf.Max(0, spawnedBuses.Count - 1) * busSpawnInterval + 0.35f;
-            float remainingWait = Mathf.Max(maxAnimDuration, busMaxTime - crowdStartDelay);
+            float busTotalTime = busStartDelay + Mathf.Max(0, spawnedBuses.Count) * busSpawnInterval + 0.40f;
+            float crowdTotalTime = crowdStartDelay + maxAnimDuration;
+            float totalWait = Mathf.Max(busTotalTime, crowdTotalTime) + 0.10f;
 
-            if (remainingWait > 0f)
+            if (totalWait > 0f)
             {
-                yield return new WaitForSeconds(remainingWait);
+                yield return new WaitForSeconds(totalWait);
             }
 
-            yield return new WaitForSeconds(0.15f); // settling buffer
+            yield return new WaitForSeconds(0.10f); // settling buffer
 
-            // Solidify all pristine scales
-            RestoreAllElementsToFullScale();
+            // Solidify passenger cells to full scale
+            RestorePassengerCellsToFullScale();
+
+            // Ensure any non-animating bus is solidly at full scale without stopping active routines
+            for (int i = 0; i < spawnedBuses.Count; i++)
+            {
+                if (spawnedBuses[i] != null && spawnedBuses[i].transform.localScale == Vector3.zero)
+                {
+                    spawnedBuses[i].transform.localScale = Vector3.one;
+                }
+            }
 
             isLevelStartAnimating = false;
             activeStartSequence = null;
@@ -1331,6 +1414,11 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             }
 
             // 2. Passenger Cells & Figures
+            RestorePassengerCellsToFullScale();
+        }
+
+        private void RestorePassengerCellsToFullScale()
+        {
             bool isHorizontal = (GameManager.CurrentOrientation == BoardOrientation.Horizontal_XZ);
             Vector3 targetBaseScale = (puzzleGrid != null)
                 ? (isHorizontal
@@ -1495,10 +1583,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            if (Application.isPlaying)
-            {
-                RefreshAllCellVisuals();
-            }
+            RefreshAllCellVisuals();
         }
 #endif
 

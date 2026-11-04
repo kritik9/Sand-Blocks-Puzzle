@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Level_13
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
   gameplayMode: 1
-  levelName: Level 4
+  levelName: Level 2
   particleRadius: 0.15
   characterScale: 0
   verticalSpacingMultiplier: 0
@@ -54,12 +54,6 @@ MonoBehaviour:
     passengerCount: 6
     walkableAfterCollection: 1
     hideVisual: 0
-  - gridPosition: {x: 3, y: 1}
-    cellType: 4
-    colorId: 0
-    passengerCount: 0
-    walkableAfterCollection: 0
-    hideVisual: 1
   - gridPosition: {x: 3, y: 5}
     cellType: 2
     colorId: 7
