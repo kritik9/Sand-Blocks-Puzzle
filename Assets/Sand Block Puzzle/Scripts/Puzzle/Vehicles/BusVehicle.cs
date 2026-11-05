@@ -8,6 +8,12 @@ using TMPro;
 
 namespace SandBlocks.Puzzle.Vehicles
 {
+    public enum BusSeatFillOrder
+    {
+        FillFromPlayerToFirstRow = 0,
+        FillFromFirstRowToPlayer = 1
+    }
+
     public class BusVehicle : VehicleBase
     {
         public const int MaxBusCapacity = 256;
@@ -136,6 +142,16 @@ namespace SandBlocks.Puzzle.Vehicles
 
         [Tooltip("Material slot index of the taillight on the taillight renderer (default 2 for modular piece, 6 for legacy).")]
         [SerializeField] private int taillightMaterialIndex = 2;
+
+        [Header("Seat Fill Order")]
+        [Tooltip("FillFromPlayerToFirstRow: Seats away from first row (near player) fill first. FillFromFirstRowToPlayer: Seats near first row fill first.")]
+        [SerializeField] private BusSeatFillOrder seatFillOrder = BusSeatFillOrder.FillFromPlayerToFirstRow;
+
+        public BusSeatFillOrder SeatFillOrder
+        {
+            get => seatFillOrder;
+            set { seatFillOrder = value; SetupPassengerSlots(); }
+        }
 
         [Header("Seats Configuration")]
         [Tooltip("Physical seat transforms on this bus model. Visible characters will be positioned and oriented on these seats.")]
@@ -523,16 +539,42 @@ namespace SandBlocks.Puzzle.Vehicles
 
             if (seatTransforms != null && seatTransforms.Count > 0) seatTransforms.Clear();
 
+            bool isHorizontal = (GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            bool fillFromPlayer = (seatFillOrder == BusSeatFillOrder.FillFromPlayerToFirstRow);
+
+            int CompareSeats(GameObject a, GameObject b)
+            {
+                if (a == null && b == null) return 0;
+                if (a == null) return 1;
+                if (b == null) return -1;
+
+                if (isHorizontal)
+                {
+                    // In Horizontal_XZ: player is at lower Z (-Z), first row of crowd is at higher Z (+Z)
+                    float dz = fillFromPlayer
+                        ? (a.transform.position.z - b.transform.position.z)
+                        : (b.transform.position.z - a.transform.position.z);
+
+                    if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
+                    return a.transform.position.x.CompareTo(b.transform.position.x);
+                }
+                else
+                {
+                    // In Vertical_XY: player is at lower Y (-Y), first row of crowd is at higher Y (+Y)
+                    float dy = fillFromPlayer
+                        ? (a.transform.position.y - b.transform.position.y)
+                        : (b.transform.position.y - a.transform.position.y);
+
+                    if (Mathf.Abs(dy) > 0.05f) return dy.CompareTo(0f);
+                    return a.transform.position.x.CompareTo(b.transform.position.x);
+                }
+            }
+
             int targetCount = Mathf.Clamp(capacity, 1, allRoofPassengers.Count);
             if (targetCount >= allRoofPassengers.Count)
             {
                 var allSorted = new List<GameObject>(allRoofPassengers);
-                allSorted.Sort((a, b) =>
-                {
-                    float dz = b.transform.position.z - a.transform.position.z;
-                    if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
-                    return a.transform.position.x.CompareTo(b.transform.position.x);
-                });
+                allSorted.Sort(CompareSeats);
                 seatPassengers = allSorted;
                 return;
             }
@@ -555,12 +597,7 @@ namespace SandBlocks.Puzzle.Vehicles
             var chosen = new List<GameObject>();
             for (int i = 0; i < targetCount; i++) chosen.Add(sortedByCenter[i]);
 
-            chosen.Sort((a, b) =>
-            {
-                float dz = b.transform.position.z - a.transform.position.z;
-                if (Mathf.Abs(dz) > 0.05f) return dz.CompareTo(0f);
-                return a.transform.position.x.CompareTo(b.transform.position.x);
-            });
+            chosen.Sort(CompareSeats);
 
             seatPassengers = chosen;
         }
