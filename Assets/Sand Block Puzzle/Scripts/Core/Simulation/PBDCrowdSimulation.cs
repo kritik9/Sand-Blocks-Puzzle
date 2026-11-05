@@ -30,6 +30,7 @@ namespace SandBlocks.Core.Simulation
         private int capacity;
         private IContainerBoundary boundary;
         private bool isInitialized;
+        private bool autoWakeCheckNeeded = true;
 
         public int ActiveCount => activeCount;
         public int RemainingActiveCount => (!isInitialized || activeCount == 0) ? 0 : remainingActiveCount;
@@ -67,6 +68,7 @@ namespace SandBlocks.Core.Simulation
             particles[activeCount] = p;
             activeCount++;
             remainingActiveCount++;
+            autoWakeCheckNeeded = true;
         }
 
         public void StepSimulation(float deltaTime)
@@ -81,42 +83,52 @@ namespace SandBlocks.Core.Simulation
             float floorLevel = safetyFloorY;
 
             // 0. Auto-wake check: ensure NO active particle is left suspended in mid-air with empty space beneath it
-            for (int i = 0; i < activeCount; i++)
+            if (autoWakeCheckNeeded)
             {
-                var p = particles[i];
-                if (!p.isActive || !p.isSettled) continue;
-
-                float particleFloorRestY = floorLevel + p.radius;
-                // If firmly resting on the floor (within small tolerance), it is solidly supported
-                if (p.position.y <= particleFloorRestY + 0.04f)
+                bool anyWoken = false;
+                for (int i = 0; i < activeCount; i++)
                 {
-                    continue;
-                }
+                    var p = particles[i];
+                    if (!p.isActive || !p.isSettled) continue;
 
-                // If suspended above floor, check if another active settled particle supports it directly beneath
-                bool isSupported = false;
-                for (int j = 0; j < activeCount; j++)
-                {
-                    if (j == i) continue;
-                    var pBelow = particles[j];
-                    if (!pBelow.isActive || !pBelow.isSettled) continue;
-
-                    float dy = p.position.y - pBelow.position.y;
-                    float maxSupportDy = (p.radius + pBelow.radius) * 1.25f;
-                    float maxSupportDx = (p.radius + pBelow.radius) * 0.90f;
-
-                    if (dy > 0.01f && dy <= maxSupportDy && math.abs(p.position.x - pBelow.position.x) <= maxSupportDx)
+                    float particleFloorRestY = floorLevel + p.radius;
+                    // If firmly resting on the floor (within small tolerance), it is solidly supported
+                    if (p.position.y <= particleFloorRestY + 0.04f)
                     {
-                        isSupported = true;
-                        break;
+                        continue;
+                    }
+
+                    // If suspended above floor, check if another active settled particle supports it directly beneath
+                    bool isSupported = false;
+                    for (int j = 0; j < activeCount; j++)
+                    {
+                        if (j == i) continue;
+                        var pBelow = particles[j];
+                        if (!pBelow.isActive || !pBelow.isSettled) continue;
+
+                        float dy = p.position.y - pBelow.position.y;
+                        float maxSupportDy = (p.radius + pBelow.radius) * 1.25f;
+                        float maxSupportDx = (p.radius + pBelow.radius) * 0.90f;
+
+                        if (dy > 0.01f && dy <= maxSupportDy && math.abs(p.position.x - pBelow.position.x) <= maxSupportDx)
+                        {
+                            isSupported = true;
+                            break;
+                        }
+                    }
+
+                    // If unsupported in air, wake it immediately so gravity pulls it down to the floor
+                    if (!isSupported)
+                    {
+                        p.isSettled = false;
+                        particles[i] = p;
+                        anyWoken = true;
                     }
                 }
 
-                // If unsupported in air, wake it immediately so gravity pulls it down to the floor
-                if (!isSupported)
+                if (!anyWoken)
                 {
-                    p.isSettled = false;
-                    particles[i] = p;
+                    autoWakeCheckNeeded = false;
                 }
             }
 
@@ -130,6 +142,7 @@ namespace SandBlocks.Core.Simulation
                 if (!p.isSettled)
                 {
                     anyAwake = true;
+                    autoWakeCheckNeeded = true;
                     p.velocity += grav;
                     p.velocity *= damping;
 
@@ -390,6 +403,7 @@ namespace SandBlocks.Core.Simulation
 
                 // Wake up nearby particles to trigger cascade
                 WakeNeighbors(target.position, target.radius * 3.5f);
+                autoWakeCheckNeeded = true;
                 return true;
             }
 
@@ -470,6 +484,7 @@ namespace SandBlocks.Core.Simulation
                 if (remainingActiveCount > 0) remainingActiveCount--;
 
                 WakeNeighbors(target.position, target.radius * 3.5f);
+                autoWakeCheckNeeded = true;
                 return true;
             }
 

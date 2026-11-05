@@ -99,6 +99,16 @@ namespace SandBlocks.Gameplay
         [Tooltip("Global toggle to enable or disable device vibration / haptic feedback")]
         [SerializeField] private bool enableHaptics = true;
 
+        [Header("Performance & Frame Rate")]
+        [Tooltip("Target Frame Rate. Set to 0 to match display refresh rate (e.g. 60/90/120 FPS).")]
+        [SerializeField] private int targetFrameRate = 0;
+
+        [Tooltip("If true and targetFrameRate is 0, detects screen refresh rate and sets 60/90/120 accordingly.")]
+        [SerializeField] private bool matchDisplayRefreshRate = true;
+
+        [Tooltip("Disable vSyncCount so Application.targetFrameRate takes effect properly on mobile.")]
+        [SerializeField] private bool optimizeMobileVSync = true;
+
         public bool EnableAudio
         {
             get => enableAudio;
@@ -231,6 +241,28 @@ namespace SandBlocks.Gameplay
         {
             if (Instance == null) Instance = this;
             CurrentOrientation = boardOrientation;
+
+            if (optimizeMobileVSync)
+            {
+                QualitySettings.vSyncCount = 0;
+            }
+
+            int targetFPS = targetFrameRate;
+            if (targetFPS <= 0 && matchDisplayRefreshRate)
+            {
+#if UNITY_2022_2_OR_NEWER
+                int refresh = (int)Mathf.Round((float)Screen.currentResolution.refreshRateRatio.value);
+#else
+                int refresh = Screen.currentResolution.refreshRate;
+#endif
+                targetFPS = (refresh >= 120) ? 120 : ((refresh >= 90) ? 90 : 60);
+            }
+            else if (targetFPS <= 0)
+            {
+                targetFPS = 60;
+            }
+
+            Application.targetFrameRate = targetFPS;
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (simulation == null) simulation = FindAnyObjectByType<PBDCrowdSimulation>();
             if (crowdRenderer == null) crowdRenderer = FindAnyObjectByType<InstancedCrowdRenderer>();

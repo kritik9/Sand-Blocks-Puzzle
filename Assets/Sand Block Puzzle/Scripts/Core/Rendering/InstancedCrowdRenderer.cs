@@ -175,6 +175,11 @@ namespace SandBlocks.Core.Rendering
             }
         }
 
+        [Header("Rendering Performance")]
+        [Tooltip("If true, instanced crowd particles cast dynamic shadows. Disabling this saves massive shadow caster draw calls on mobile.")]
+        [SerializeField] private bool crowdCastShadows = false;
+        public bool CrowdCastShadows { get => crowdCastShadows; set => crowdCastShadows = value; }
+
         [Header("Fallback Instanced Mesh Settings")]
         [SerializeField] private Mesh characterMesh;
         [SerializeField] private Material characterMaterial;
@@ -547,7 +552,7 @@ namespace SandBlocks.Core.Rendering
                 batchMatrices,
                 count,
                 propertyBlock,
-                UnityEngine.Rendering.ShadowCastingMode.On,
+                crowdCastShadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off,
                 true
             );
         }

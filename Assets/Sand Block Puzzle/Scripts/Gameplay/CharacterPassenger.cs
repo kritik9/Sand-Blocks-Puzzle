@@ -182,6 +182,10 @@ namespace SandBlocks.Gameplay
             {
                 animator = GetComponentInChildren<Animator>(true);
             }
+            if (animator != null)
+            {
+                animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
+            }
 
             // Find all renderers in children (include inactive so SetColor caches all variations)
             renderers = GetComponentsInChildren<Renderer>(true);
@@ -277,8 +281,12 @@ namespace SandBlocks.Gameplay
             ResetRotationJitter();
             if (animator != null)
             {
+                animator.enabled = true;
                 animator.SetBool(IsRunningHash, false);
                 animator.SetBool(IsSittingHash, true);
+                animator.Update(0f);
+                // Freeze animator when sitting to save CPU skinning on seated passengers
+                animator.enabled = false;
             }
         }
 
