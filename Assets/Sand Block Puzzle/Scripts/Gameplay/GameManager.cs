@@ -485,6 +485,12 @@ namespace SandBlocks.Gameplay
             // 2. Use pre-collected crowd particles or collect now
             var particles = preCollectedParticles ?? CollectAllCrowdParticles();
 
+            // Prewarm crowd pool before the row animation begins to guarantee smooth 60-120 FPS
+            if (crowdRenderer != null && particles != null && particles.Count > 0)
+            {
+                crowdRenderer.Prewarm(particles.Count);
+            }
+
             // 3. Animate crowd filling row-by-row with spring bounce after crowdStartDelay
             yield return StartCoroutine(SpawnCrowdAnimatedRoutine(particles, crowdStartDelay));
 

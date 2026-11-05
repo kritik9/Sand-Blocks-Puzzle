@@ -195,6 +195,8 @@ namespace SandBlocks.Core.Rendering
         private List<Renderer[]> pooledRenderers = new List<Renderer[]>();
         private List<float> pooledSpawnTimes = new List<float>();
         private List<SandBlocks.Gameplay.CharacterPassenger> pooledPassengers = new List<SandBlocks.Gameplay.CharacterPassenger>();
+        private List<int> pooledCachedColorIds = new List<int>();
+        private List<bool> pooledConfigured = new List<bool>();
         private float defaultPrefabScale = -1f;
 
         public void SetCharacterScale(float scale)
@@ -301,6 +303,8 @@ namespace SandBlocks.Core.Rendering
             pooledRenderers.Clear();
             pooledSpawnTimes.Clear();
             pooledPassengers.Clear();
+            pooledCachedColorIds.Clear();
+            pooledConfigured.Clear();
             if (defaultPrefabScale < 0f) defaultPrefabScale = prefabScale;
 
             // Setup fallback mesh and material
@@ -324,6 +328,44 @@ namespace SandBlocks.Core.Rendering
             else
             {
                 characterMaterial.enableInstancing = true;
+            }
+        }
+
+        /// <summary>
+        /// Prewarms the character GameObject pool before the level start animation runs,
+        /// ensuring zero frame-rate hitches or garbage allocations while crowd rows pop in.
+        /// </summary>
+        public void Prewarm(int count)
+        {
+            if (characterPrefab == null) return;
+            while (pooledCharacters.Count < count)
+            {
+                var instance = Instantiate(characterPrefab, transform);
+                instance.transform.localScale = Vector3.one * prefabScale;
+
+                var cols = instance.GetComponentsInChildren<Collider>();
+                for (int c = 0; c < cols.Length; c++) cols[c].enabled = false;
+
+                var instRends = instance.GetComponentsInChildren<Renderer>(true);
+                for (int r = 0; r < instRends.Length; r++)
+                {
+                    if (instRends[r] != null)
+                    {
+                        var mat = instRends[r].sharedMaterial;
+                        if ((mat == null || mat.shader == null || mat.shader.name == "Hidden/InternalErrorShader") && characterMaterial != null)
+                        {
+                            instRends[r].sharedMaterial = characterMaterial;
+                        }
+                    }
+                }
+
+                instance.SetActive(false);
+                pooledCharacters.Add(instance);
+                pooledRenderers.Add(instRends);
+                pooledSpawnTimes.Add(0f);
+                pooledPassengers.Add(instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>());
+                pooledCachedColorIds.Add(-999);
+                pooledConfigured.Add(false);
             }
         }
 
@@ -372,9 +414,9 @@ namespace SandBlocks.Core.Rendering
                 pooledRenderers.Add(instRends);
                 pooledSpawnTimes.Add(Time.time);
                 pooledPassengers.Add(instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>());
+                pooledCachedColorIds.Add(-999);
+                pooledConfigured.Add(false);
             }
-
-            float baseRotY = characterRotationEuler.y + (faceBackSide ? 180f : 0f);
 
             for (int i = 0; i < count; i++)
             {
@@ -383,31 +425,42 @@ namespace SandBlocks.Core.Rendering
 
                 if (!p.isActive)
                 {
-                    if (instance.activeSelf) instance.SetActive(false);
+                    if (instance.activeSelf)
+                    {
+                        instance.SetActive(false);
+                        pooledConfigured[i] = false;
+                        pooledCachedColorIds[i] = -999;
+                    }
                     continue;
                 }
 
+                bool isPopping = false;
+                float scaleMult = 1f;
                 if (!instance.activeSelf)
                 {
                     instance.SetActive(true);
-                    if (i < pooledSpawnTimes.Count)
-                    {
-                        pooledSpawnTimes[i] = Time.time;
-                    }
+                    pooledSpawnTimes[i] = Time.time;
+                    pooledConfigured[i] = false;
                 }
 
-                float scaleMult = 1f;
                 if (enableSpawnPop && i < pooledSpawnTimes.Count)
                 {
                     float elapsed = Time.time - pooledSpawnTimes[i];
                     if (elapsed < spawnPopDuration)
                     {
+                        isPopping = true;
                         float t = elapsed / spawnPopDuration;
                         float c1 = 1.70158f;
                         float c3 = c1 + 1f;
                         scaleMult = 1f + c3 * Mathf.Pow(t - 1f, 3f) + c1 * Mathf.Pow(t - 1f, 2f);
                         scaleMult = Mathf.Max(0f, scaleMult);
                     }
+                }
+
+                // If already configured and particle is settled and spawn pop finished, SKIP all transform & color evaluations!
+                if (pooledConfigured[i] && p.isSettled && !isPopping)
+                {
+                    continue;
                 }
 
                 bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
@@ -417,32 +470,35 @@ namespace SandBlocks.Core.Rendering
 
                 var pass = (i < pooledPassengers.Count) ? pooledPassengers[i] : instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
 
-                if (runtimeRandomSeed == 0)
+                if (!pooledConfigured[i])
                 {
-                    runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
-                }
+                    if (runtimeRandomSeed == 0)
+                    {
+                        runtimeRandomSeed = randomizeSeedEveryRun ? UnityEngine.Random.Range(1000, 9999999) : customRandomSeed;
+                    }
 
-                // 2. Rotation: base rotation + back-side flip + dynamic organic random jitter (yaw & tilt)
-                int seedY = i * 2399 + runtimeRandomSeed * 10007 + 3;
-                int seedZ = i * 4001 + runtimeRandomSeed * 13337 + 5;
-                float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
-                    ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
-                    : 0f;
-                float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
-                    ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
-                    : 0f;
-                float curBaseRotY = isHorizontal
-                    ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
-                    : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
-                Vector3 baseEuler = new Vector3(characterRotationEuler.x, curBaseRotY, characterRotationEuler.z);
+                    // 2. Rotation: base rotation + back-side flip + dynamic organic random jitter (yaw & tilt)
+                    int seedY = i * 2399 + runtimeRandomSeed * 10007 + 3;
+                    int seedZ = i * 4001 + runtimeRandomSeed * 13337 + 5;
+                    float jitterY = (rotationJitterYRange.x != 0f || rotationJitterYRange.y != 0f)
+                        ? GetStableRandom(seedY, rotationJitterYRange.x, rotationJitterYRange.y)
+                        : 0f;
+                    float jitterZ = (rotationJitterZRange.x != 0f || rotationJitterZRange.y != 0f)
+                        ? GetStableRandom(seedZ, rotationJitterZRange.x, rotationJitterZRange.y)
+                        : 0f;
+                    float curBaseRotY = isHorizontal
+                        ? characterRotationEuler.y + (faceBackSide ? 0f : 180f)
+                        : characterRotationEuler.y + (faceBackSide ? 180f : 0f);
+                    Vector3 baseEuler = new Vector3(characterRotationEuler.x, curBaseRotY, characterRotationEuler.z);
 
-                if (pass != null)
-                {
-                    pass.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
-                }
-                else
-                {
-                    instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                    if (pass != null)
+                    {
+                        pass.ApplyRotationJitter(baseEuler, jitterY, jitterZ);
+                    }
+                    else
+                    {
+                        instance.transform.rotation = Quaternion.Euler(characterRotationEuler.x, curBaseRotY + jitterY, characterRotationEuler.z + jitterZ);
+                    }
                 }
 
                 // 3. Scale: uniform base * spawn pop * organic random scale variation
@@ -452,8 +508,8 @@ namespace SandBlocks.Core.Rendering
                     : 1f;
                 instance.transform.localScale = Vector3.one * (prefabScale * scaleMult * randScaleMult);
 
-                // 4. Color
-                if (palette != null)
+                // 4. Color (Only updated when colorId changes or not yet set)
+                if (palette != null && pooledCachedColorIds[i] != p.colorId)
                 {
                     Color c = palette.GetColor(p.colorId);
                     if (pass != null)
@@ -474,6 +530,12 @@ namespace SandBlocks.Core.Rendering
                             rends[r].SetPropertyBlock(propertyBlock);
                         }
                     }
+                    pooledCachedColorIds[i] = p.colorId;
+                }
+
+                if (!isPopping && p.isSettled)
+                {
+                    pooledConfigured[i] = true;
                 }
             }
 

@@ -96,6 +96,8 @@ namespace SandBlocks.Gameplay
 
         private float transferTimer;
         private readonly List<GameObject> inFlightCommuters = new List<GameObject>();
+        private readonly List<GameObject> commuterPool = new List<GameObject>();
+        private readonly List<VehicleBase> cachedCandidates = new List<VehicleBase>(8);
         private int consecutiveTransfers = 0;
         private float lastTransferTime = -1f;
         private VehicleBase lastCollectingBus = null;
@@ -115,6 +117,61 @@ namespace SandBlocks.Gameplay
             commuterScale = scale;
         }
 
+        private GameObject GetPooledCommuter(Vector3 pos, Quaternion rot, float scale, int colorId)
+        {
+            GameObject commuter = null;
+            for (int i = 0; i < commuterPool.Count; i++)
+            {
+                if (commuterPool[i] != null && !commuterPool[i].activeSelf)
+                {
+                    commuter = commuterPool[i];
+                    break;
+                }
+            }
+
+            if (commuter == null)
+            {
+                GameObject prefabToUse = commuterStreamPrefab != null ? commuterStreamPrefab : (lastCollectingBus is BusVehicle bv ? bv.PassengerPrefab : null);
+                if (prefabToUse != null)
+                {
+                    commuter = Instantiate(prefabToUse, pos, rot);
+                }
+                else
+                {
+                    commuter = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    var col = commuter.GetComponent<Collider>();
+                    if (col != null) Destroy(col);
+                }
+                var cols = commuter.GetComponentsInChildren<Collider>(true);
+                for (int c = 0; c < cols.Length; c++) cols[c].enabled = false;
+
+                commuter.transform.SetParent(transform);
+                commuterPool.Add(commuter);
+            }
+
+            commuter.transform.position = pos;
+            commuter.transform.rotation = rot;
+            commuter.transform.localScale = Vector3.one * scale;
+            commuter.SetActive(true);
+
+            var charPassenger = commuter.GetComponent<CharacterPassenger>() ?? commuter.AddComponent<CharacterPassenger>();
+            charPassenger.PlayRunning();
+            if (palette != null)
+            {
+                charPassenger.SetColor(palette.GetColor(colorId));
+            }
+
+            return commuter;
+        }
+
+        private void ReturnPooledCommuter(GameObject commuter)
+        {
+            if (commuter != null)
+            {
+                commuter.SetActive(false);
+            }
+        }
+
         public void ClearActiveTransfers()
         {
             StopAllCoroutines();
@@ -122,7 +179,7 @@ namespace SandBlocks.Gameplay
             {
                 if (inFlightCommuters[i] != null)
                 {
-                    Destroy(inFlightCommuters[i]);
+                    inFlightCommuters[i].SetActive(false);
                 }
             }
             inFlightCommuters.Clear();
@@ -312,7 +369,8 @@ namespace SandBlocks.Gameplay
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
             if (dragHandler == null) dragHandler = FindAnyObjectByType<VehicleDragHandler>();
 
-            var candidates = new List<VehicleBase>();
+            cachedCandidates.Clear();
+            var candidates = cachedCandidates;
 
             // 1. Actively hovered/dragged bus has TOP PRIORITY for collection!
             if (dragHandler != null && dragHandler.IsDragging)
@@ -409,36 +467,12 @@ namespace SandBlocks.Gameplay
             float activeScale = crowdRenderer != null ? crowdRenderer.CharacterScale : commuterScale;
             Vector3 baseRot = crowdRenderer != null ? crowdRenderer.CharacterRotationEuler : Vector3.zero;
 
-            GameObject commuter;
-            GameObject prefabToUse = commuterStreamPrefab != null ? commuterStreamPrefab : (targetBus != null ? targetBus.PassengerPrefab : null);
-
-            if (prefabToUse != null)
-            {
-                commuter = Instantiate(prefabToUse, start, Quaternion.Euler(baseRot));
-            }
-            else
-            {
-                commuter = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                commuter.transform.position = start;
-                var col = commuter.GetComponent<Collider>();
-                if (col != null) Destroy(col);
-            }
-
+            GameObject commuter = GetPooledCommuter(start, Quaternion.Euler(baseRot), activeScale, colorId);
             inFlightCommuters.Add(commuter);
+            var charPassenger = commuter.GetComponent<CharacterPassenger>();
+
             try
             {
-                commuter.transform.localScale = Vector3.one * activeScale;
-
-                // Manage passenger character animations, color, and colliders
-                var charPassenger = commuter.GetComponent<CharacterPassenger>() ?? commuter.AddComponent<CharacterPassenger>();
-                charPassenger.PlayRunning();
-
-                if (palette != null)
-                {
-                    Color c = palette.GetColor(colorId);
-                    charPassenger.SetColor(c);
-                }
-
                 // Calculate the seat's offset relative to the bus so it dynamically follows if bus is dragged
                 Vector3 localSeatOffset = (targetBus != null && targetSeatPos != Vector3.zero)
                     ? targetBus.transform.InverseTransformPoint(targetSeatPos)
@@ -465,12 +499,14 @@ namespace SandBlocks.Gameplay
                     Vector3 currentPos = oneMinusT * oneMinusT * start + 2f * oneMinusT * t * midPoint + t * t * endPos;
                     commuter.transform.position = currentPos;
 
-                    // Feet comes forward while jumping and landing so the whole character is visible to tilted camera
-                    charPassenger.ApplyJumpFlightTilt(t, landingFeetForwardTilt, baseRot);
+                    if (charPassenger != null)
+                    {
+                        charPassenger.ApplyJumpFlightTilt(t, landingFeetForwardTilt, baseRot);
+                    }
                     yield return null;
                 }
 
-                // Enable pre-placed seat passenger on the bus and destroy flying commuter
+                // Enable pre-placed seat passenger on the bus
                 if (targetBus != null)
                 {
                     bool prevPop = targetBus.EnablePassengerBoardPop;
@@ -482,10 +518,7 @@ namespace SandBlocks.Gameplay
             finally
             {
                 inFlightCommuters.Remove(commuter);
-                if (commuter != null)
-                {
-                    Destroy(commuter);
-                }
+                ReturnPooledCommuter(commuter);
             }
         }
 

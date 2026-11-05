@@ -33,6 +33,7 @@ namespace SandBlocks.Puzzle.Input
         private Vector3 initialWorldPos;
         private Vector2Int initialGridPos;
         private Vector2Int currentHoveredGrid;
+        private Vector2Int lastHighlightedGrid = new Vector2Int(-999, -999);
         private Vector2 currentVehicleFlatPos;
         private HashSet<Vector2Int> reachablePositions = new HashSet<Vector2Int>();
         private Plane dragPlane;
@@ -145,12 +146,11 @@ namespace SandBlocks.Puzzle.Input
                     initialWorldPos = vehicle.transform.position;
                     initialGridPos = vehicle.GridPosition;
                     currentHoveredGrid = initialGridPos;
+                    lastHighlightedGrid = currentHoveredGrid;
 
                     currentVehicleFlatPos = isHorizontal
                         ? new Vector2(initialWorldPos.x, initialWorldPos.z)
                         : new Vector2(initialWorldPos.x, initialWorldPos.y);
-
-
 
                     SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusSelect();
                     SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleSelect();
@@ -294,10 +294,11 @@ namespace SandBlocks.Puzzle.Input
                         SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDragStep();
                     }
 
-                    // Update tile hover highlight to follow the bus's current hovered path
-                    if (puzzleGrid != null)
+                    // Update tile hover highlight ONLY when cell actually changes
+                    if (puzzleGrid != null && currentHoveredGrid != lastHighlightedGrid)
                     {
                         puzzleGrid.HighlightHoverTiles(selectedVehicle, currentHoveredGrid);
+                        lastHighlightedGrid = currentHoveredGrid;
                     }
 
                     // 2. Continuous sub-cell visual tracking with directional obstacle resistance
@@ -340,19 +341,19 @@ namespace SandBlocks.Puzzle.Input
                         dragOffsetFromCell.y = Mathf.Max(dragOffsetFromCell.y, -maxAllowed);
                     }
 
-
-
                     Vector2 targetFlatPos = anchorFlat + dragOffsetFromCell;
-                    currentVehicleFlatPos = Vector2.Lerp(currentVehicleFlatPos, targetFlatPos, Time.deltaTime * smoothFollowDamping);
+                    // Mathematically stable exponential decay: 100% frame-rate independent across 30, 60, 90, 120 FPS without overshoot
+                    float decay = 1f - Mathf.Exp(-smoothFollowDamping * Time.deltaTime);
+                    currentVehicleFlatPos = Vector2.Lerp(currentVehicleFlatPos, targetFlatPos, decay);
 
-                    // 3. Apply position with smooth lift and visual shake offset
+                    // 3. Apply position directly from smoothed flat pos (no double-lerp lag or oscillation)
                     Vector3 shakeOffset = (selectedVehicle is BusVehicle bv) ? bv.VisualShakeOffset : Vector3.zero;
                     float liftAmount = 0.20f;
                     Vector3 idealWorldPos = isHorizontal
                         ? new Vector3(currentVehicleFlatPos.x + shakeOffset.x, initialWorldPos.y + liftAmount, currentVehicleFlatPos.y + shakeOffset.z)
                         : new Vector3(currentVehicleFlatPos.x + shakeOffset.x, currentVehicleFlatPos.y + shakeOffset.y, initialWorldPos.z - liftAmount);
 
-                    selectedVehicle.transform.position = Vector3.Lerp(selectedVehicle.transform.position, idealWorldPos, Time.deltaTime * 45f);
+                    selectedVehicle.transform.position = idealWorldPos;
                 }
                 }
             }
@@ -454,6 +455,7 @@ namespace SandBlocks.Puzzle.Input
             }
 
             if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+            lastHighlightedGrid = new Vector2Int(-999, -999);
             selectedVehicle.SetSelected(false);
             selectedVehicle = null;
             reachablePositions.Clear();

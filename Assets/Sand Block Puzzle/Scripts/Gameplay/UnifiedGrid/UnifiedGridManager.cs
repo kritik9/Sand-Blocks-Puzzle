@@ -157,6 +157,7 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         private int totalTransferredCount = 0;
         private bool isLevelCompleted = false;
         private int activeInFlightCount = 0;
+        private readonly List<GameObject> inFlightFlyerPool = new List<GameObject>();
         private Coroutine activeStartSequence;
         private Coroutine activeVictoryRoutine;
         private bool isLevelStartAnimating = false;
@@ -1001,11 +1002,43 @@ private void SpawnPassengerCell(UnifiedCellData data)
         }
 
         #region Commuter Flight Routines (Dynamic Tracking while Dragging)
+        private GameObject GetPooledFlyer(int colorId)
+        {
+            for (int i = 0; i < inFlightFlyerPool.Count; i++)
+            {
+                var f = inFlightFlyerPool[i];
+                if (f != null && !f.activeSelf)
+                {
+                    f.SetActive(true);
+                    var cp = f.GetComponent<CharacterPassenger>();
+                    if (cp != null)
+                    {
+                        cp.SetColor(palette != null ? palette.GetColor(colorId) : Color.white);
+                        cp.PlayRunning();
+                    }
+                    return f;
+                }
+            }
+
+            var newFlyer = CreatePassengerFigure(colorId);
+            newFlyer.transform.SetParent(transform);
+            inFlightFlyerPool.Add(newFlyer);
+            return newFlyer;
+        }
+
+        private void ReturnPooledFlyer(GameObject flyer)
+        {
+            if (flyer != null)
+            {
+                flyer.SetActive(false);
+            }
+        }
+
         private IEnumerator AnimatePassengerFlightToBus(Vector3 startPos, BusVehicle targetBus, Vector3 targetSeatPos, int colorId, Action onArrived)
         {
             activeInFlightCount++;
 
-            GameObject flyer = CreatePassengerFigure(colorId);
+            GameObject flyer = GetPooledFlyer(colorId);
             flyer.name = "InFlight_ToBus";
             flyer.transform.position = startPos;
             var cpFlyer = flyer.GetComponent<CharacterPassenger>();
@@ -1054,7 +1087,7 @@ private void SpawnPassengerCell(UnifiedCellData data)
                 yield return null;
             }
 
-            Destroy(flyer);
+            ReturnPooledFlyer(flyer);
             activeInFlightCount--;
             onArrived?.Invoke();
         }

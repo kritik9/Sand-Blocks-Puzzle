@@ -31,6 +31,9 @@ namespace SandBlocks.Core.Simulation
         private IContainerBoundary boundary;
         private bool isInitialized;
         private bool autoWakeCheckNeeded = true;
+        private bool hasAwakeParticles = true;
+
+        public bool HasAwakeParticles => hasAwakeParticles;
 
         public int ActiveCount => activeCount;
         public int RemainingActiveCount => (!isInitialized || activeCount == 0) ? 0 : remainingActiveCount;
@@ -69,11 +72,15 @@ namespace SandBlocks.Core.Simulation
             activeCount++;
             remainingActiveCount++;
             autoWakeCheckNeeded = true;
+            hasAwakeParticles = true;
         }
 
         public void StepSimulation(float deltaTime)
         {
             if (!isInitialized || activeCount == 0) return;
+
+            // When crowd is completely settled and no particle has woken, skip the entire physics loop
+            if (!autoWakeCheckNeeded && !hasAwakeParticles) return;
 
             float dt = Mathf.Min(deltaTime, 0.025f);
             float2 grav = new float2(0f, gravity * dt);
@@ -165,6 +172,7 @@ namespace SandBlocks.Core.Simulation
                 particles[i] = p;
             }
 
+            hasAwakeParticles = anyAwake;
             // If all particles are settled, skip expensive constraint solving entirely
             if (!anyAwake) return;
 
@@ -512,6 +520,8 @@ namespace SandBlocks.Core.Simulation
                 {
                     p.isSettled = false;
                     particles[i] = p;
+                    hasAwakeParticles = true;
+                    autoWakeCheckNeeded = true;
                 }
             }
         }
