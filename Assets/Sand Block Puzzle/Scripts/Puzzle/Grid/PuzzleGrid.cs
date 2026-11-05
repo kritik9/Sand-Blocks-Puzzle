@@ -255,13 +255,17 @@ namespace SandBlocks.Puzzle.Grid
 
 
         public void SetGridRotation(int degrees)
-
         {
-
             gridRotationDegrees = (degrees % 360 + 360) % 360;
-
-            transform.localRotation = Quaternion.Euler(0f, 0f, gridRotationDegrees);
-
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            if (isHorizontal)
+            {
+                transform.localRotation = Quaternion.Euler(0f, gridRotationDegrees, 0f);
+            }
+            else
+            {
+                transform.localRotation = Quaternion.Euler(0f, 0f, gridRotationDegrees);
+            }
         }
 
 
@@ -349,6 +353,11 @@ namespace SandBlocks.Puzzle.Grid
             blockedCells.Remove(pos);
             hiddenBlockedCells.Remove(pos);
 
+            if (visualRoot == null)
+            {
+                Transform existing = transform.Find("[VisualGrid]");
+                if (existing != null) visualRoot = existing.gameObject;
+            }
             if (visualRoot == null) return;
 
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
@@ -369,14 +378,20 @@ namespace SandBlocks.Puzzle.Grid
             if (blockedTile != null)
             {
                 blockedTile.name = $"Tile_{pos.x}_{pos.y}";
-                blockedTile.localPosition = unblockedPos;
+                Vector3 cur = blockedTile.localPosition;
+                if (isHorizontal) cur.y = unblockedPos.y;
+                else cur.z = unblockedPos.z;
+                blockedTile.localPosition = cur;
                 blockedTile.localRotation = unblockedRot;
                 blockedTile.localScale = unblockedScale;
                 targetTile = blockedTile.gameObject;
             }
             else if (existingTile != null)
             {
-                existingTile.localPosition = unblockedPos;
+                Vector3 cur = existingTile.localPosition;
+                if (isHorizontal) cur.y = unblockedPos.y;
+                else cur.z = unblockedPos.z;
+                existingTile.localPosition = cur;
                 existingTile.localRotation = unblockedRot;
                 existingTile.localScale = unblockedScale;
                 targetTile = existingTile.gameObject;

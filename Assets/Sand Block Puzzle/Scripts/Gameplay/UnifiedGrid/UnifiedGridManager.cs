@@ -158,12 +158,13 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         private bool isLevelCompleted = false;
         private int activeInFlightCount = 0;
         private Coroutine activeStartSequence;
+        private Coroutine activeVictoryRoutine;
         private bool isLevelStartAnimating = false;
 
         public GameObject BusPrefab => busPrefab;
         public bool IsLevelCompleted => isLevelCompleted;
         public int TotalTransferredCount => totalTransferredCount;
-        public bool IsUnifiedActive => currentLevel != null && currentLevel.gameplayMode == GameplayMode.UnifiedGrid;
+        public bool IsUnifiedActive => gameObject.activeInHierarchy && enabled && currentLevel != null && currentLevel.gameplayMode == GameplayMode.UnifiedGrid;
         public UnifiedMode CurrentUnifiedMode => currentLevel != null ? currentLevel.unifiedMode : UnifiedMode.DestinationDropOff;
         public float CharacterScale => characterScale;
         public Vector3 CharacterRotationEuler => characterRotationEuler;
@@ -266,6 +267,8 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         public void Initialize(LevelData level, PuzzleGrid grid, CrowdColorPalette pal)
         {
             FindDependencies();
+            Cleanup();
+
             if (grid != null) puzzleGrid = grid;
             if (pal != null) palette = pal;
             currentLevel = level;
@@ -277,8 +280,6 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             {
                 dragHandler.ResetDragState();
             }
-
-            Cleanup();
 
             if (level == null || puzzleGrid == null) return;
 
@@ -749,10 +750,19 @@ private void SpawnPassengerCell(UnifiedCellData data)
             destCell = Vector2Int.zero;
             if (bus == null) return false;
 
+            Vector2Int basePos = bus.GridPosition;
+            if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == bus)
+            {
+                if (dragHandler.CurrentHoveredGrid.x >= 0 && dragHandler.CurrentHoveredGrid.y >= 0)
+                {
+                    basePos = dragHandler.CurrentHoveredGrid;
+                }
+            }
+
             for (int i = 0; i < bus.Length; i++)
             {
-                int gx = bus.IsVertical ? bus.GridPosition.x : bus.GridPosition.x + i;
-                int gy = bus.IsVertical ? bus.GridPosition.y + i : bus.GridPosition.y;
+                int gx = bus.IsVertical ? basePos.x : basePos.x + i;
+                int gy = bus.IsVertical ? basePos.y + i : basePos.y;
                 Vector2Int cellPos = new Vector2Int(gx, gy);
 
                 Vector2Int[] neighbors = new Vector2Int[]
@@ -779,10 +789,19 @@ private void SpawnPassengerCell(UnifiedCellData data)
         {
             if (bus == null) return null;
 
+            Vector2Int basePos = bus.GridPosition;
+            if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == bus)
+            {
+                if (dragHandler.CurrentHoveredGrid.x >= 0 && dragHandler.CurrentHoveredGrid.y >= 0)
+                {
+                    basePos = dragHandler.CurrentHoveredGrid;
+                }
+            }
+
             for (int i = 0; i < bus.Length; i++)
             {
-                int gx = bus.IsVertical ? bus.GridPosition.x : bus.GridPosition.x + i;
-                int gy = bus.IsVertical ? bus.GridPosition.y + i : bus.GridPosition.y;
+                int gx = bus.IsVertical ? basePos.x : basePos.x + i;
+                int gy = bus.IsVertical ? basePos.y + i : basePos.y;
                 Vector2Int cellPos = new Vector2Int(gx, gy);
 
                 Vector2Int[] neighbors = new Vector2Int[]
@@ -814,43 +833,42 @@ private void SpawnPassengerCell(UnifiedCellData data)
         {
             if (bus == null || cell == null || cell.remainingCount <= 0 || bus.IsFull) return;
 
-            cell.remainingCount--;
-
-            UpdatePassengerCellFigures(cell);
-
             if (bus.TryReserveSeat(out Vector3 seatPos))
             {
+                cell.remainingCount--;
+                UpdatePassengerCellFigures(cell);
+
                 StartCoroutine(AnimatePassengerFlightToBus(cell.rootObject.transform.position, bus, seatPos, cell.colorId, () =>
                 {
                     bus.BoardPassenger();
                 }));
-            }
 
-            if (cell.remainingCount <= 0)
-            {
-                if (cell.walkableAfterCollection)
+                if (cell.remainingCount <= 0)
                 {
-                    if (puzzleGrid != null)
+                    if (cell.walkableAfterCollection)
                     {
-                        puzzleGrid.UnblockCell(cell.gridPos);
-                    }
+                        if (puzzleGrid != null)
+                        {
+                            puzzleGrid.UnblockCell(cell.gridPos);
+                        }
 
-                    if (cell.rootObject != null)
-                    {
-                        StartCoroutine(FadeAndDestroyClearedPad(cell.rootObject));
-                    }
+                        if (cell.rootObject != null)
+                        {
+                            StartCoroutine(FadeAndDestroyClearedPad(cell.rootObject));
+                        }
 
-                    if (dragHandler != null && dragHandler.IsDragging)
-                    {
-                        dragHandler.RefreshReachablePositions();
+                        if (dragHandler != null && dragHandler.IsDragging)
+                        {
+                            dragHandler.RefreshReachablePositions();
+                        }
                     }
-                }
-                else
-                {
-                    // Remains a blocked obstacle after collection
-                    if (cell.baseRenderer != null)
+                    else
                     {
-                        cell.baseRenderer.material.color = Color.gray;
+                        // Remains a blocked obstacle after collection
+                        if (cell.baseRenderer != null)
+                        {
+                            cell.baseRenderer.material.color = Color.gray;
+                        }
                     }
                 }
             }
@@ -1157,6 +1175,21 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
         {
             if (isLevelCompleted) return;
 
+            if (currentLevel == null || currentLevel.gameplayMode != GameplayMode.UnifiedGrid || !gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            if (passengerCells == null || passengerCells.Count == 0)
+            {
+                return;
+            }
+
+            if (spawnedBuses == null || spawnedBuses.Count == 0)
+            {
+                return;
+            }
+
             foreach (var kvp in passengerCells)
             {
                 if (kvp.Value.remainingCount > 0) return;
@@ -1185,7 +1218,8 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
 
-            StartCoroutine(VictorySequenceRoutine());
+            if (activeVictoryRoutine != null) StopCoroutine(activeVictoryRoutine);
+            activeVictoryRoutine = StartCoroutine(VictorySequenceRoutine());
         }
 
         private IEnumerator VictorySequenceRoutine()
@@ -1195,6 +1229,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             {
                 levelManager.NextLevel();
             }
+            activeVictoryRoutine = null;
         }
         #endregion
 
@@ -1387,6 +1422,12 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
         /// </summary>
         public void CancelLevelStartAnimation()
         {
+            if (activeVictoryRoutine != null)
+            {
+                StopCoroutine(activeVictoryRoutine);
+                activeVictoryRoutine = null;
+            }
+
             if (activeStartSequence != null)
             {
                 StopCoroutine(activeStartSequence);
@@ -1394,6 +1435,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             }
 
             isLevelStartAnimating = false;
+            isLevelCompleted = false;
             RestoreAllElementsToFullScale();
 
             if (dragHandler != null)
@@ -1475,12 +1517,20 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
 
         public void Cleanup()
         {
+            if (activeVictoryRoutine != null)
+            {
+                StopCoroutine(activeVictoryRoutine);
+                activeVictoryRoutine = null;
+            }
+
             if (activeStartSequence != null)
             {
                 StopCoroutine(activeStartSequence);
                 activeStartSequence = null;
             }
             isLevelStartAnimating = false;
+            isLevelCompleted = false;
+            currentLevel = null;
 
             if (dragHandler != null)
             {

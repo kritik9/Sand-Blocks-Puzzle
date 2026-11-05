@@ -57,9 +57,16 @@ namespace SandBlocks.Puzzle.Input
         {
             if (gameManager == null) gameManager = FindAnyObjectByType<SandBlocks.Gameplay.GameManager>();
 
-            // In Unified Grid mode, GameManager's classic container/crowd start animations do not apply
-            bool isUnified = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                             SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive;
+            bool isUnified = false;
+            if (SandBlocks.Gameplay.LevelManager.Instance != null && SandBlocks.Gameplay.LevelManager.Instance.CurrentLevel != null)
+            {
+                isUnified = (SandBlocks.Gameplay.LevelManager.Instance.CurrentLevel.gameplayMode == SandBlocks.Core.Data.GameplayMode.UnifiedGrid);
+            }
+            else
+            {
+                var ugm = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance;
+                isUnified = (ugm != null && ugm.IsUnifiedActive);
+            }
 
             if (!isUnified)
             {
@@ -70,8 +77,8 @@ namespace SandBlocks.Puzzle.Input
             }
             else
             {
-                if (SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsLevelStartAnimating ||
-                    SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsLevelCompleted)
+                var ugm = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance;
+                if (ugm != null && (ugm.IsLevelStartAnimating || ugm.IsLevelCompleted))
                 {
                     return;
                 }
@@ -575,10 +582,21 @@ namespace SandBlocks.Puzzle.Input
             VehicleBase closestVehicle = null;
             float closestDist = float.MaxValue;
 
-            bool isUnified = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                             SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive;
+            bool isUnified = false;
+            if (SandBlocks.Gameplay.LevelManager.Instance != null && SandBlocks.Gameplay.LevelManager.Instance.CurrentLevel != null)
+            {
+                isUnified = (SandBlocks.Gameplay.LevelManager.Instance.CurrentLevel.gameplayMode == SandBlocks.Core.Data.GameplayMode.UnifiedGrid);
+            }
+            else
+            {
+                var ugm = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance;
+                isUnified = (ugm != null && ugm.IsUnifiedActive);
+            }
+
+            var unifiedManager = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance;
             bool shouldStayForDropOff = isUnified &&
-                                        SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
+                                        unifiedManager != null &&
+                                        unifiedManager.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
 
             for (int i = 0; i < hits.Length; i++)
             {

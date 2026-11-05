@@ -219,6 +219,7 @@ namespace SandBlocks.Gameplay
         }
 
         private Coroutine activeStartSequence;
+        private Coroutine activeVictoryRoutine;
         private List<BusVehicle> spawnedBuses = new List<BusVehicle>();
         private bool isLevelStartAnimating = false;
         private bool isLevelCompleted = false;
@@ -992,6 +993,11 @@ namespace SandBlocks.Gameplay
         /// </summary>
         public void CancelLevelStartAnimation()
         {
+            if (activeVictoryRoutine != null)
+            {
+                StopCoroutine(activeVictoryRoutine);
+                activeVictoryRoutine = null;
+            }
             StopAllCoroutines();
             activeStartSequence = null;
             isLevelStartAnimating = false;
@@ -1099,13 +1105,13 @@ namespace SandBlocks.Gameplay
             if (isLevelCompleted) return;
 
             // Only check for ClassicTwoArea mode
-            if (currentLevel != null && currentLevel.gameplayMode != GameplayMode.ClassicTwoArea)
+            if (currentLevel == null || currentLevel.gameplayMode != GameplayMode.ClassicTwoArea)
             {
                 return;
             }
 
             // Must have active simulation with particles that were spawned
-            if (simulation == null || !simulation.IsInitialized || simulation.ActiveCount == 0)
+            if (simulation == null || !simulation.gameObject.activeInHierarchy || !simulation.IsInitialized || simulation.ActiveCount == 0)
             {
                 return;
             }
@@ -1133,7 +1139,8 @@ namespace SandBlocks.Gameplay
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
 
-            StartCoroutine(VictorySequenceRoutine());
+            if (activeVictoryRoutine != null) StopCoroutine(activeVictoryRoutine);
+            activeVictoryRoutine = StartCoroutine(VictorySequenceRoutine());
         }
 
         private IEnumerator VictorySequenceRoutine()
@@ -1144,6 +1151,7 @@ namespace SandBlocks.Gameplay
             {
                 levelManager.NextLevel();
             }
+            activeVictoryRoutine = null;
         }
         #endregion
     }

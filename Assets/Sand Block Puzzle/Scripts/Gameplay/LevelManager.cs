@@ -385,7 +385,11 @@ namespace SandBlocks.Gameplay
                     crowdTransfer.gameObject.SetActive(false);
                 }
                 var sim = FindAnyObjectByType<SandBlocks.Core.Simulation.PBDCrowdSimulation>(FindObjectsInactive.Include);
-                if (sim != null) sim.gameObject.SetActive(false);
+                if (sim != null)
+                {
+                    sim.Dispose();
+                    sim.gameObject.SetActive(false);
+                }
                 var rend = FindAnyObjectByType<SandBlocks.Core.Rendering.InstancedCrowdRenderer>(FindObjectsInactive.Include);
                 if (rend != null) rend.gameObject.SetActive(false);
 
@@ -393,6 +397,7 @@ namespace SandBlocks.Gameplay
                 if (gameManager != null)
                 {
                     gameManager.CancelLevelStartAnimation();
+                    gameManager.CurrentLevel = level;
                     if (puzzleGrid != null) puzzleGrid.Clear();
                 }
 

@@ -102,6 +102,29 @@ namespace SandBlocks.Puzzle.Vehicles
         [ContextMenu("Auto-Generate Seated Passengers Grid")]
         public void GeneratePassengerGrid()
         {
+            if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(gameObject))
+            {
+                string path = UnityEditor.AssetDatabase.GetAssetPath(gameObject);
+                if (!string.IsNullOrEmpty(path))
+                {
+                    GameObject root = UnityEditor.PrefabUtility.LoadPrefabContents(path);
+                    var piece = root.GetComponent<ModularBusPiece>();
+                    if (piece != null)
+                    {
+                        piece.GeneratePassengerGridInternal();
+                        UnityEditor.PrefabUtility.SaveAsPrefabAsset(root, path);
+                        Debug.Log($"[ModularBusPiece] Generated seated passengers for Prefab Asset at {path}");
+                    }
+                    UnityEditor.PrefabUtility.UnloadPrefabContents(root);
+                    return;
+                }
+            }
+
+            GeneratePassengerGridInternal();
+        }
+
+        private void GeneratePassengerGridInternal()
+        {
             if (characterPrefab == null)
             {
                 characterPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -189,6 +212,29 @@ namespace SandBlocks.Puzzle.Vehicles
 
         [ContextMenu("Clear Seated Passengers")]
         public void ClearPassengers()
+        {
+            if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(gameObject))
+            {
+                string path = UnityEditor.AssetDatabase.GetAssetPath(gameObject);
+                if (!string.IsNullOrEmpty(path))
+                {
+                    GameObject root = UnityEditor.PrefabUtility.LoadPrefabContents(path);
+                    var piece = root.GetComponent<ModularBusPiece>();
+                    if (piece != null)
+                    {
+                        piece.ClearPassengersInternal();
+                        UnityEditor.PrefabUtility.SaveAsPrefabAsset(root, path);
+                        Debug.Log($"[ModularBusPiece] Cleared seated passengers for Prefab Asset at {path}");
+                    }
+                    UnityEditor.PrefabUtility.UnloadPrefabContents(root);
+                    return;
+                }
+            }
+
+            ClearPassengersInternal();
+        }
+
+        private void ClearPassengersInternal()
         {
             Transform container = passengersParent != null ? passengersParent : transform.Find("Passengers");
             if (container != null)

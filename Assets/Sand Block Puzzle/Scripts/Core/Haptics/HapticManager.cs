@@ -78,6 +78,18 @@ namespace SandBlocks.Core.Haptics
         [Tooltip("Haptic when a passenger boards the bus")]
         [SerializeField] private bool hapticsOnPassengerBoard = true;
 
+        [Header("Rapid Crowd Boarding Throttling")]
+        [Tooltip("If true, throttles haptics during rapid/instantaneous crowd boarding to produce a rhythmic 2-3 vibrations per second instead of buzzing on every passenger.")]
+        [SerializeField] private bool throttleRapidBoardingHaptics = true;
+
+        [Tooltip("Minimum time (in seconds) between vibrations when crowd is boarding rapidly/instantaneously. E.g. 0.38s produces ~2-3 vibrations per second when collecting 5-10 passengers/sec.")]
+        [Range(0.15f, 1.0f)]
+        [SerializeField] private float rapidBoardingHapticInterval = 0.38f;
+
+        [Tooltip("Time threshold (in seconds) to consider boarding events part of a rapid/instantaneous group. If passengers board within this interval of each other, rapid throttling applies.")]
+        [Range(0.10f, 1.0f)]
+        [SerializeField] private float rapidBoardingDetectionWindow = 0.45f;
+
         [Tooltip("Haptic when a bus departs (drives away)")]
         [SerializeField] private bool hapticsOnBusDepart = true;
 
@@ -101,6 +113,8 @@ namespace SandBlocks.Core.Haptics
         [SerializeField] private bool debugLogs = false;
 
         private float lastHapticTime = -1f;
+        private float lastPassengerBoardCallTime = -10f;
+        private float lastPassengerBoardHapticTime = -10f;
 
         // Android predefined VibrationEffect constants (API 29+)
         private const int EFFECT_CLICK = 0;
@@ -199,6 +213,24 @@ namespace SandBlocks.Core.Haptics
         {
             get => hapticsOnPassengerBoard;
             set => hapticsOnPassengerBoard = value;
+        }
+
+        public bool ThrottleRapidBoardingHaptics
+        {
+            get => throttleRapidBoardingHaptics;
+            set => throttleRapidBoardingHaptics = value;
+        }
+
+        public float RapidBoardingHapticInterval
+        {
+            get => rapidBoardingHapticInterval;
+            set => rapidBoardingHapticInterval = Mathf.Clamp(value, 0.10f, 2.0f);
+        }
+
+        public float RapidBoardingDetectionWindow
+        {
+            get => rapidBoardingDetectionWindow;
+            set => rapidBoardingDetectionWindow = Mathf.Clamp(value, 0.05f, 2.0f);
         }
 
         public bool HapticsOnBusDepart
@@ -484,10 +516,33 @@ namespace SandBlocks.Core.Haptics
 
         /// <summary>
         /// Triggered when a passenger boards the bus or reaches destination.
+        /// When crowd enters instantaneously or in a rapid stream (e.g. 5+ passengers in 1 second),
+        /// haptics are throttled to a clean, rhythmic 2-3 pulses per second.
+        /// Isolated or slow boarding events vibrate normally for every passenger.
         /// </summary>
         public void TriggerPassengerBoard()
         {
             if (!hapticsOnPassengerBoard) return;
+
+            float now = Time.realtimeSinceStartup;
+
+            if (throttleRapidBoardingHaptics)
+            {
+                float timeSinceLastCall = now - lastPassengerBoardCallTime;
+                lastPassengerBoardCallTime = now;
+
+                // If crowd is boarding in rapid succession (within detection window)
+                if (timeSinceLastCall <= rapidBoardingDetectionWindow)
+                {
+                    // Throttle: only trigger haptic if the rapid boarding interval has elapsed
+                    if (now - lastPassengerBoardHapticTime < rapidBoardingHapticInterval)
+                    {
+                        return; // Skip this passenger's vibration during rapid/instantaneous collection
+                    }
+                }
+            }
+
+            lastPassengerBoardHapticTime = now;
             LightImpact();
         }
 
