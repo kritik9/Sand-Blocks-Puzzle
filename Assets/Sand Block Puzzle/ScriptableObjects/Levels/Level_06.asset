@@ -12,146 +12,116 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
   m_Name: Level_06
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
-  gameplayMode: 1
+  gameplayMode: 0
   levelName: Level 6
-  particleRadius: 0.15
-  maxParticles: 100
+  particleRadius: 0.1822
+  characterScale: 0
+  verticalSpacingMultiplier: 0
+  maxParticles: 420
   containerShape: 0
-  containerWidth: 4.67
-  containerHeight: 5.27
-  containerCenter: {x: 0, y: 1.5}
+  containerWidth: 8.5
+  containerHeight: 7
+  containerCenter: {x: 0, y: 0}
   leftBorderOffset: 0
   rightBorderOffset: 0
   topBorderOffset: 0
   bottomBorderOffset: 0
-  customPolygonPoints: []
-  patternType: 0
-  gridColumns: 6
-  gridRows: 6
-  customCrowdColors: 050000000500000005000000050000000500000005000000050000000000000000000000000000000000000005000000050000000200000002000000020000000200000005000000050000000300000004000000040000000300000005000000050000000300000003000000030000000300000005000000050000000500000005000000050000000500000005000000
+  customPolygonPoints:
+  - {x: -4.29, y: -1}
+  - {x: 4.29, y: -1}
+  - {x: 4.29, y: 5}
+  - {x: -4.29, y: 5}
+  patternType: 3
+  gridColumns: 18
+  gridRows: 19
+  customCrowdColors: 040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000050000000500000005000000050000000500000005000000050000000500000005000000050000000500000005000000040000000400000004000000050000000500000005000000050000000300000006000000060000000600000006000000060000000600000006000000060000000300000005000000050000000500000005000000050000000500000005000000050000000300000003000000030000000300000003000000030000000300000003000000030000000300000005000000050000000500000005000000050000000500000005000000050000000500000005000000060000000300000003000000030000000300000006000000050000000500000005000000050000000500000005000000050000000500000005000000040000000400000005000000050000000600000003000000030000000600000005000000050000000400000004000000050000000500000005000000050000000500000005000000040000000400000003000000020000000600000006000000060000000600000002000000030000000400000004000000050000000500000005000000050000000500000005000000040000000400000005000000060000000200000002000000060000000200000006000000050000000400000004000000050000000500000005000000050000000500000005000000050000000500000005000000060000000200000002000000020000000200000006000000050000000500000005000000050000000500000005000000020000000500000005000000050000000500000005000000060000000200000002000000060000000200000006000000050000000500000005000000050000000500000002000000020000000200000005000000050000000500000005000000060000000600000002000000060000000600000006000000050000000500000005000000050000000200000002000000020000000200000005000000050000000500000005000000050000000600000006000000060000000600000005000000050000000500000005000000050000000200000002000000020000000500000005000000050000000400000004000000050000000200000006000000060000000200000005000000040000000400000005000000050000000500000002000000050000000500000005000000050000000400000004000000030000000200000006000000060000000600000003000000040000000400000005000000050000000500000005000000050000000500000005000000050000000400000004000000050000000200000006000000060000000200000005000000040000000400000005000000050000000500000005000000050000000500000005000000050000000500000005000000050000000500000003000000030000000500000005000000050000000500000005000000050000000500000005000000050000000500000005000000050000000500000003000000030000000300000003000000030000000300000003000000030000000500000005000000050000000500000005000000060000000600000005000000050000000500000005000000050000000300000003000000030000000300000005000000050000000500000005000000050000000600000006000000060000000600000005000000050000000500000005000000050000000500000005000000050000000500000005000000050000000500000005000000050000000600000006000000
   colorMapTexture: {fileID: 0}
-  puzzleColumns: 6
-  puzzleRows: 6
-  buses: []
-  unifiedGridColumns: 10
-  unifiedGridRows: 10
-  unifiedGridRotation: 0
-  unifiedCellSize: 1
-  unifiedMode: 1
-  sharedDestinationPos: {x: 0, y: 1}
-  unifiedCells:
-  - gridPosition: {x: 1, y: 9}
-    cellType: 2
-    colorId: 2
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 2, y: 9}
-    cellType: 2
-    colorId: 2
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 5, y: 7}
-    cellType: 2
-    colorId: 4
-    passengerCount: 10
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 4, y: 7}
-    cellType: 2
-    colorId: 4
-    passengerCount: 10
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 7, y: 3}
-    cellType: 2
-    colorId: 3
-    passengerCount: 10
-    walkableAfterCollection: 1
-    hideVisual: 0
-  - gridPosition: {x: 8, y: 3}
-    cellType: 2
-    colorId: 3
-    passengerCount: 10
-    walkableAfterCollection: 1
-    hideVisual: 0
-  - gridPosition: {x: 8, y: 2}
-    cellType: 2
-    colorId: 3
-    passengerCount: 10
-    walkableAfterCollection: 1
-    hideVisual: 0
-  - gridPosition: {x: 7, y: 2}
-    cellType: 2
-    colorId: 3
-    passengerCount: 10
-    walkableAfterCollection: 1
-    hideVisual: 0
-  - gridPosition: {x: 0, y: 3}
-    cellType: 2
-    colorId: 7
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 1, y: 1}
-    cellType: 2
-    colorId: 7
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 0, y: 2}
-    cellType: 2
-    colorId: 7
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 0, y: 1}
-    cellType: 2
-    colorId: 7
-    passengerCount: 5
-    walkableAfterCollection: 0
-    hideVisual: 0
-  - gridPosition: {x: 3, y: 5}
-    cellType: 2
-    colorId: 1
-    passengerCount: 10
-    walkableAfterCollection: 1
-    hideVisual: 0
-  unifiedBuses:
+  puzzleColumns: 8
+  puzzleRows: 8
+  buses:
   - name: Yellow Bus
     colorId: 2
-    capacity: 10
+    capacity: 30
     length: 3
-    rotationDegrees: 90
-    gridPosition: {x: 8, y: 6}
-  - name: Pink Bus
-    colorId: 3
-    capacity: 20
-    length: 3
-    rotationDegrees: 90
-    gridPosition: {x: 0, y: 6}
-  - name: Blue Bus
-    colorId: 3
-    capacity: 20
+    rotationDegrees: 180
+    gridPosition: {x: 2, y: 3}
+  - name: Blue Bus Mid
+    colorId: 6
+    capacity: 30
     length: 3
     rotationDegrees: 0
-    gridPosition: {x: 4, y: 6}
-  - name: Blue Bus
-    colorId: 4
-    capacity: 20
-    length: 3
-    rotationDegrees: 0
-    gridPosition: {x: 4, y: 3}
-  - name: Bus 5
-    colorId: 1
-    capacity: 10
+    gridPosition: {x: 1, y: 2}
+  - name: Black Bus R
+    colorId: 5
+    capacity: 30
     length: 3
     rotationDegrees: 270
-    gridPosition: {x: 2, y: 1}
-  - name: Bus 6
-    colorId: 7
-    capacity: 20
-    length: 3
+    gridPosition: {x: 5, y: 1}
+  - name: Orange Bus
+    colorId: 5
+    capacity: 42
+    length: 4
     rotationDegrees: 0
-    gridPosition: {x: 4, y: 0}
+    gridPosition: {x: 1, y: 1}
+  - name: Pink Bus
+    colorId: 3
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 0}
+  - name: Green Bus
+    colorId: 5
+    capacity: 18
+    length: 2
+    rotationDegrees: 180
+    gridPosition: {x: 3, y: 0}
+  - name: Long White
+    colorId: 5
+    capacity: 54
+    length: 5
+    rotationDegrees: 90
+    gridPosition: {x: 0, y: 1}
+  - name: Bus 8
+    colorId: 5
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 4}
+  - name: Bus 9
+    colorId: 5
+    capacity: 18
+    length: 2
+    rotationDegrees: 180
+    gridPosition: {x: 5, y: 5}
+  - name: Bus 10
+    colorId: 4
+    capacity: 30
+    length: 3
+    rotationDegrees: 90
+    gridPosition: {x: 4, y: 4}
+  - name: Bus 11
+    colorId: 3
+    capacity: 18
+    length: 2
+    rotationDegrees: 270
+    gridPosition: {x: 2, y: 5}
+  - name: Bus 12
+    colorId: 6
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 6, y: 3}
+  - name: Bus 13
+    colorId: 4
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 5, y: 0}
+  unifiedGridColumns: 8
+  unifiedGridRows: 8
+  unifiedGridRotation: 0
+  unifiedCellSize: 1.35
+  unifiedMode: 0
+  sharedDestinationPos: {x: 0, y: 0}
+  unifiedCells: []
+  unifiedBuses: []

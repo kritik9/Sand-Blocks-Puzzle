@@ -1079,6 +1079,23 @@ namespace SandBlocks.Puzzle.Vehicles
                 }
             }
 
+            var dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
+            var grid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
+
+            // If the vehicle is currently snapping back to slot, wait for the short snap (0.08s) to complete first
+            if (dragHandler != null && dragHandler.HoveredVehicle != this && grid != null)
+            {
+                Vector3 targetSlotPos = grid.GridToWorld(GridPosition, Length, IsVertical);
+                if ((transform.position - targetSlotPos).sqrMagnitude > 0.01f)
+                {
+                    yield return new WaitForSeconds(0.08f);
+                }
+            }
+
+            Vector3 basePosition = (grid != null && (dragHandler == null || dragHandler.HoveredVehicle != this))
+                ? grid.GridToWorld(GridPosition, Length, IsVertical)
+                : transform.position;
+
             float duration = 0.22f;
             float elapsed = 0f;
 
@@ -1090,10 +1107,20 @@ namespace SandBlocks.Puzzle.Vehicles
                 float offset = Mathf.Sin(progress * Mathf.PI * 6f) * blockedShakeMagnitude * decay;
 
                 visualShakeOffset = shakeAxis * offset;
+
+                if (dragHandler == null || dragHandler.HoveredVehicle != this)
+                {
+                    transform.position = basePosition + visualShakeOffset;
+                }
+
                 yield return null;
             }
 
             visualShakeOffset = Vector3.zero;
+            if (dragHandler == null || dragHandler.HoveredVehicle != this)
+            {
+                transform.position = basePosition;
+            }
             activeShakeRoutine = null;
         }
 

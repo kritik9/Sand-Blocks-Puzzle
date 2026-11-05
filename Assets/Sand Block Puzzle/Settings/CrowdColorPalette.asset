@@ -26,11 +26,11 @@ MonoBehaviour:
     name: Pink
     color: {r: 1, g: 0.35, b: 0.65, a: 1}
   - id: 4
-    name: Black
-    color: {r: 0.18, g: 0.18, b: 0.22, a: 1}
+    name: Pastel Peach
+    color: {r: 1, g: 0.8392157, b: 0.7529412, a: 1}
   - id: 5
-    name: White
-    color: {r: 0.9150943, g: 0.9150943, b: 0.9150943, a: 1}
+    name: Pastel Cyan
+    color: {r: 0.65882355, g: 0.9019608, b: 0.88235295, a: 1}
   - id: 6
     name: Orange
     color: {r: 1, g: 0.5, b: 0.1, a: 1}
@@ -40,3 +40,9 @@ MonoBehaviour:
   - id: 8
     name: Neon
     color: {r: 0.10196078, g: 1, b: 0.6736915, a: 1}
+  - id: 9
+    name: Pastel Lavender
+    color: {r: 0.84313726, g: 0.77254903, b: 0.9607843, a: 1}
+  - id: 10
+    name: Pastel Yellow
+    color: {r: 0.9764706, g: 0.90588236, b: 0.62352943, a: 1}

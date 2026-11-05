@@ -174,6 +174,9 @@ namespace SandBlocks.Puzzle.Input
                     bool isAtTopRow = IsVehicleAtTopRow(selectedVehicle, initialGridPos);
                     if (!isAtTopRow && reachablePositions != null && reachablePositions.Count <= 1)
                     {
+                        // Cleanly restore to grid immediately so it never enters a detached or floating state
+                        puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
+
                         if (selectedVehicle is BusVehicle blockedBus)
                         {
                             blockedBus.PlayBlockedShake(Vector3.zero, showToast: false);
@@ -181,6 +184,13 @@ namespace SandBlocks.Puzzle.Input
                         SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
                         SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
                         SandBlocks.Gameplay.ToastManager.Show("Bus cannot move! Path is blocked.");
+
+                        if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+                        selectedVehicle.SetSelected(false);
+                        selectedVehicle = null;
+                        reachablePositions.Clear();
+                        currentHoveredGrid = new Vector2Int(-999, -999);
+                        return;
                     }
                 }
             }
@@ -343,60 +353,17 @@ namespace SandBlocks.Puzzle.Input
             {
                 if (selectedVehicle != null)
                 {
-                    if ((selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null) ||
-                        (selectedVehicle is BusVehicle busCheck && busCheck.IsDrivingAway))
-                    {
-                        OnVehicleFullOrDeparting(selectedVehicle);
-                        return;
-                    }
-
-                // Place the vehicle cleanly at the cell it reached step-by-step
-                Vector2Int finalGridPos = currentHoveredGrid;
-
-                if (puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
-                {
-                    puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
-                    Vector3 snapTarget = puzzleGrid.GridToWorld(finalGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
-                    activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
-
-                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
-                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehiclePlace();
+                    FinishVehicleDrop();
                 }
                 else
                 {
-                    // Fallback to start position with smooth snap
-                    puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
-                    Vector3 snapTarget = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
-                    activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
-
-                    bool wasAtTopRow = IsVehicleAtTopRow(selectedVehicle, initialGridPos);
-                    if (!wasAtTopRow)
-                    {
-                        if (selectedVehicle is BusVehicle bus)
-                        {
-                            bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up, showToast: false);
-                        }
-                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
-                        SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
-                        SandBlocks.Gameplay.ToastManager.Show("Cannot place bus here! Spot is blocked.");
-                    }
+                    if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+                    currentHoveredGrid = new Vector2Int(-999, -999);
                 }
-
-                if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
-                selectedVehicle.SetSelected(false);
-                selectedVehicle = null;
-                reachablePositions.Clear();
-                currentHoveredGrid = new Vector2Int(-999, -999);
-            }
-            else
-            {
-                if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
-                currentHoveredGrid = new Vector2Int(-999, -999);
-            }
             }
             else if (!isHeld && selectedVehicle != null)
             {
-                OnVehicleFullOrDeparting(selectedVehicle);
+                FinishVehicleDrop();
             }
 
             if (selectedVehicle == null && currentHoveredGrid.x != -999)
@@ -428,34 +395,99 @@ namespace SandBlocks.Puzzle.Input
             activeSnapRoutine = null;
         }
 
-        /// <summary>
-        /// Called when a vehicle becomes full or starts departing.
-        /// Immediately terminates any active drag, unselects the vehicle, and clears tile hover highlights.
-        /// </summary>
-        public void OnVehicleFullOrDeparting(VehicleBase vehicle)
+        private void FinishVehicleDrop()
         {
-            if (activeSnapRoutine != null)
+            if (selectedVehicle == null) return;
+
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+
+            if ((selectedVehicle.IsFull && SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance == null) ||
+                (selectedVehicle is BusVehicle busCheck && busCheck.IsDrivingAway))
             {
-                StopCoroutine(activeSnapRoutine);
-                activeSnapRoutine = null;
+                OnVehicleFullOrDeparting(selectedVehicle);
+                return;
             }
 
-            if (selectedVehicle != null)
+            // Safe fallback: never pass negative or corrupt coordinates to CanPlace
+            Vector2Int finalGridPos = (currentHoveredGrid.x >= 0 && currentHoveredGrid.y >= 0)
+                ? currentHoveredGrid
+                : initialGridPos;
+
+            Vector3 currentWorldPos = selectedVehicle.transform.position;
+
+            if (puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
             {
-                if (selectedVehicle == vehicle || vehicle == null || selectedVehicle.IsFull)
+                puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
+                Vector3 snapTarget = puzzleGrid.GridToWorld(finalGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                selectedVehicle.transform.position = currentWorldPos; // Preserve world position for smooth interpolation
+                activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
+
+                SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusPlace();
+                SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehiclePlace();
+            }
+            else
+            {
+                // Fallback to start position with smooth snap
+                puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
+                Vector3 snapTarget = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                selectedVehicle.transform.position = currentWorldPos; // Preserve world position for smooth interpolation
+                activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
+
+                bool wasAtTopRow = IsVehicleAtTopRow(selectedVehicle, initialGridPos);
+                if (!wasAtTopRow)
                 {
-                    selectedVehicle.SetSelected(false);
-                    selectedVehicle = null;
+                    if (selectedVehicle is BusVehicle bus)
+                    {
+                        bus.PlayBlockedShake(isHorizontal ? Vector3.forward : Vector3.up, showToast: false);
+                    }
+                    SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusBlocked();
+                    SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerVehicleBlocked();
+                    SandBlocks.Gameplay.ToastManager.Show("Cannot place bus here! Spot is blocked.");
                 }
             }
 
-            if (puzzleGrid != null)
-            {
-                puzzleGrid.ClearHoverTileHighlights();
-            }
-
-            reachablePositions?.Clear();
+            if (puzzleGrid != null) puzzleGrid.ClearHoverTileHighlights();
+            selectedVehicle.SetSelected(false);
+            selectedVehicle = null;
+            reachablePositions.Clear();
             currentHoveredGrid = new Vector2Int(-999, -999);
+        }
+
+        /// <summary>
+        /// Called when a vehicle becomes full or starts departing.
+        /// Immediately terminates any active drag on THAT vehicle, unselects it, and clears tile hover highlights.
+        /// </summary>
+        public void OnVehicleFullOrDeparting(VehicleBase vehicle)
+        {
+            if (selectedVehicle != null)
+            {
+                // Only terminate drag if the vehicle that filled or departed IS the one currently being dragged
+                if (selectedVehicle == vehicle || vehicle == null || selectedVehicle.IsFull)
+                {
+                    if (activeSnapRoutine != null)
+                    {
+                        StopCoroutine(activeSnapRoutine);
+                        activeSnapRoutine = null;
+                    }
+
+                    selectedVehicle.SetSelected(false);
+                    selectedVehicle = null;
+
+                    if (puzzleGrid != null)
+                    {
+                        puzzleGrid.ClearHoverTileHighlights();
+                    }
+
+                    reachablePositions?.Clear();
+                    currentHoveredGrid = new Vector2Int(-999, -999);
+                }
+                else
+                {
+                    // Another bus on the board became full/departed, opening up grid cells:
+                    // Refresh reachable positions for the bus currently being dragged
+                    RefreshReachablePositions();
+                }
+            }
         }
 
         /// <summary>
@@ -543,15 +575,22 @@ namespace SandBlocks.Puzzle.Input
             VehicleBase closestVehicle = null;
             float closestDist = float.MaxValue;
 
+            bool isUnified = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
+                             SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive;
+            bool shouldStayForDropOff = isUnified &&
+                                        SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
+
             for (int i = 0; i < hits.Length; i++)
             {
                 var v = hits[i].collider.GetComponentInParent<VehicleBase>();
-                bool shouldStayForDropOff = SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance != null &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.IsUnifiedActive &&
-                                            SandBlocks.Gameplay.UnifiedGrid.UnifiedGridManager.Instance.CurrentUnifiedMode == SandBlocks.Core.Data.UnifiedMode.DestinationDropOff;
 
                 if (v != null && (!v.IsFull || shouldStayForDropOff))
                 {
+                    if (v is BusVehicle busCheck && busCheck.IsDrivingAway)
+                    {
+                        continue;
+                    }
+
                     if (hits[i].distance < closestDist)
                     {
                         closestDist = hits[i].distance;
