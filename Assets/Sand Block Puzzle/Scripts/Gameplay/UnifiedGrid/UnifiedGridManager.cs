@@ -98,6 +98,16 @@ namespace SandBlocks.Gameplay.UnifiedGrid
         [SerializeField] private Color destinationColor = new Color(1f, 0.82f, 0.2f, 1f);
         [SerializeField] private Color blockedColor = new Color(0.28f, 0.28f, 0.32f, 1f);
 
+                [Header("Departure Settings")]
+        [Tooltip("Departure mode for full buses in BusDriveAway mode: Disappear in place or DriveAway off-screen")]
+        [SerializeField] private BusDepartureMode defaultBusDepartureMode = BusDepartureMode.Disappear;
+
+        public BusDepartureMode DefaultBusDepartureMode
+        {
+            get => defaultBusDepartureMode;
+            set => defaultBusDepartureMode = value;
+        }
+
         [Header("Streaming & Animation Tuning")]
         [Tooltip("Delay in seconds between consecutive passengers jumping to the bus")]
         [Range(0.02f, 0.5f)]
@@ -677,6 +687,7 @@ private void SpawnPassengerCell(UnifiedCellData data)
                     bus.Initialize(data.colorId, data.capacity, data.length, data.rotationDegrees, data.gridPosition);
                     bus.ClearPassengers();
                     bus.ApplyColor(palette);
+                    bus.DepartureMode = defaultBusDepartureMode;
                     bus.OnBusFullOverride = null;
 
                     puzzleGrid.PlaceVehicle(bus, data.gridPosition);

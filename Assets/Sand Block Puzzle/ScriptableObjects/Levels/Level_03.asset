@@ -21,7 +21,7 @@ MonoBehaviour:
   containerShape: 0
   containerWidth: 5.7199984
   containerHeight: 4.278
-  containerCenter: {x: 0, y: -1.5}
+  containerCenter: {x: 0, y: -1}
   leftBorderOffset: 0
   rightBorderOffset: 0
   topBorderOffset: 0

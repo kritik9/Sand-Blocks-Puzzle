@@ -27,6 +27,15 @@ namespace SandBlocks.Gameplay
         [Tooltip("Toggle the bus squash-and-stretch pop animation when a passenger fills into the bus")]
         [SerializeField] private bool enableBusPassengerPopAnimation = true;
 
+        [Tooltip("Departure behavior for full buses: Disappear in place or DriveAway off-screen")]
+        [SerializeField] private BusDepartureMode defaultBusDepartureMode = BusDepartureMode.Disappear;
+
+        public BusDepartureMode DefaultBusDepartureMode
+        {
+            get => defaultBusDepartureMode;
+            set => defaultBusDepartureMode = value;
+        }
+
         public bool EnableBusPassengerPopAnimation
         {
             get => enableBusPassengerPopAnimation;
@@ -759,6 +768,7 @@ namespace SandBlocks.Gameplay
             bus.Initialize(colorId, capacity, length, rotDegrees, gridPos);
             bus.SetPassengerScale(crowdRenderer != null ? crowdRenderer.CharacterScale : 0.1f);
             bus.ApplyColor(palette);
+            bus.DepartureMode = defaultBusDepartureMode;
             puzzleGrid.PlaceVehicle(bus, gridPos);
             return bus;
         }

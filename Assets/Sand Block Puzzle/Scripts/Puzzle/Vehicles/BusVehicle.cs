@@ -14,6 +14,12 @@ namespace SandBlocks.Puzzle.Vehicles
         FillFromFirstRowToPlayer = 1
     }
 
+    public enum BusDepartureMode
+    {
+        Disappear = 0,
+        DriveAway = 1
+    }
+
     public class BusVehicle : VehicleBase
     {
         public const int MaxBusCapacity = 256;
@@ -187,16 +193,34 @@ namespace SandBlocks.Puzzle.Vehicles
         [SerializeField] private float spawnOvershoot = 1.70158f;
 
         [Header("Departure Animation")]
-        [Tooltip("Pause delay in seconds after the bus is full before it begins driving away")]
-        [Range(0.0f, 1.5f)]
-        [SerializeField] private float driveAwayDelay = 0.25f;
+        [Tooltip("Departure mode when bus is full: Disappear in place or DriveAway off-screen")]
+        [SerializeField] private BusDepartureMode departureMode = BusDepartureMode.Disappear;
 
-        [Tooltip("Duration in seconds for the bus to drive off-screen (smaller = faster)")]
+        [Header("Departure Visual Effects")]
+        [Tooltip("Optional particle system to play when the bus is full/departing (assigned in Inspector)")]
+        [SerializeField] private ParticleSystem fullVFX;
+
+        [Tooltip("Pause delay in seconds after the bus is full before departure begins")]
+        [Range(0.0f, 1.5f)]
+        [SerializeField] private float driveAwayDelay = 0.15f;
+
+        [Tooltip("Duration in seconds for the bus to drive off-screen (used in DriveAway mode)")]
         [Range(0.1f, 2.5f)]
         [SerializeField] private float driveAwayDuration = 0.5f;
 
         [Tooltip("Distance the bus travels off-screen during departure before being destroyed")]
         [SerializeField] private float driveAwayDistance = 15f;
+
+        [Tooltip("Duration in seconds of the disappearance squash-pop-shrink animation (used in Disappear mode)")]
+        [Range(0.15f, 1.5f)]
+        [SerializeField] private float disappearDuration = 0.42f;
+
+        [Tooltip("Anticipation hop height along normal/up direction during disappearance")]
+        [Range(0.0f, 1.5f)]
+        [SerializeField] private float disappearHopHeight = 0.35f;
+
+        [Tooltip("Enable procedural confetti puff / shockwave burst visual effects on disappear")]
+        [SerializeField] private bool enableDisappearVFX = true;
 
         private readonly List<GameObject> allRoofPassengers = new List<GameObject>();
         private List<Vector3> seatLocalOffsets = new List<Vector3>();
@@ -1388,14 +1412,22 @@ namespace SandBlocks.Puzzle.Vehicles
                 // In DestinationDropOff mode, the bus stays on the grid for manual player driving to the destination
                 return;
             }
-            // Classic mode drive away:
+            // Classic mode & Unified BusDriveAway mode departure:
             var grid = FindAnyObjectByType<SandBlocks.Puzzle.Grid.PuzzleGrid>();
             if (grid != null)
             {
                 grid.RemoveVehicle(this);
                 grid.ClearHoverTileHighlights();
             }
-            StartCoroutine(DriveAwayRoutine());
+
+            if (departureMode == BusDepartureMode.Disappear)
+            {
+                StartCoroutine(DisappearRoutine());
+            }
+            else
+            {
+                StartCoroutine(DriveAwayRoutine());
+            }
         }
 
         private void OnDestroy()
@@ -1414,10 +1446,158 @@ namespace SandBlocks.Puzzle.Vehicles
             }
         }
 
+        public ParticleSystem FullVFX { get => fullVFX; set => fullVFX = value; }
+        public BusDepartureMode DepartureMode { get => departureMode; set => departureMode = value; }
+        public float DepartureDelay { get => driveAwayDelay; set => driveAwayDelay = value; }
         public float DriveAwayDelay { get => driveAwayDelay; set => driveAwayDelay = value; }
         public float DriveAwayDuration { get => driveAwayDuration; set => driveAwayDuration = value; }
         public float DriveAwayDistance { get => driveAwayDistance; set => driveAwayDistance = value; }
+        public float DisappearDuration { get => disappearDuration; set => disappearDuration = value; }
+        public float DisappearHopHeight { get => disappearHopHeight; set => disappearHopHeight = value; }
+        public bool EnableDisappearVFX { get => enableDisappearVFX; set => enableDisappearVFX = value; }
         public bool IsDrivingAway => isDrivingAway;
+        public bool IsDeparting => isDrivingAway;
+
+        public void PlayFullVFX()
+        {
+            if (fullVFX == null) return;
+
+            ParticleSystem vfxInstance;
+            if (fullVFX.gameObject.scene.IsValid())
+            {
+                vfxInstance = fullVFX;
+                // Detach from bus so it is not scaled to zero or destroyed prematurely when the bus vanishes
+                vfxInstance.transform.SetParent(null, true);
+            }
+            else
+            {
+                vfxInstance = Instantiate(fullVFX, transform.position, transform.rotation);
+            }
+
+            vfxInstance.gameObject.SetActive(true);
+            vfxInstance.Play(true);
+            Destroy(vfxInstance.gameObject, 3.0f);
+        }
+
+        private IEnumerator DisappearRoutine()
+        {
+            isDrivingAway = true;
+            SetSelected(false);
+
+            if (activePopRoutine != null)
+            {
+                StopCoroutine(activePopRoutine);
+                activePopRoutine = null;
+            }
+            if (activeShakeRoutine != null)
+            {
+                StopCoroutine(activeShakeRoutine);
+                activeShakeRoutine = null;
+            }
+
+            var dragHandler = FindAnyObjectByType<SandBlocks.Puzzle.Input.VehicleDragHandler>();
+            if (dragHandler != null)
+            {
+                dragHandler.OnVehicleFullOrDeparting(this);
+            }
+
+            if (driveAwayDelay > 0f)
+            {
+                yield return new WaitForSeconds(driveAwayDelay);
+            }
+
+            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
+            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
+            PlayFullVFX();
+
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            Vector3 upDir = isHorizontal ? Vector3.up : Vector3.back;
+
+            Vector3 startPos = transform.position;
+            InitScaleIfNeeded();
+            Vector3 baseScale = originalLocalScale;
+            Quaternion baseRot = transform.localRotation;
+
+            float duration = Mathf.Max(0.15f, disappearDuration);
+            float elapsed = 0f;
+
+            // Phase 1 (0 -> 0.28): Anticipation Squash
+            // Phase 2 (0.28 -> 0.58): Pop hop upward and stretch
+            // Phase 3 (0.58 -> 1.0): Spin wobble & elastic cubic shrink to zero
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = Mathf.Clamp01(elapsed / duration);
+
+                if (progress < 0.28f)
+                {
+                    float tSquash = progress / 0.28f;
+                    float squash = Mathf.Sin(tSquash * Mathf.PI);
+
+                    if (isHorizontal)
+                    {
+                        transform.localScale = new Vector3(
+                            baseScale.x * (1f + 0.14f * squash),
+                            baseScale.y * (1f - 0.25f * squash),
+                            baseScale.z * (1f + 0.14f * squash)
+                        );
+                    }
+                    else
+                    {
+                        transform.localScale = new Vector3(
+                            baseScale.x * (1f + 0.14f * squash),
+                            baseScale.y * (1f + 0.14f * squash),
+                            baseScale.z * (1f - 0.25f * squash)
+                        );
+                    }
+                    transform.position = startPos;
+                }
+                else if (progress < 0.58f)
+                {
+                    float tHop = (progress - 0.28f) / 0.30f;
+                    float hopCurve = Mathf.Sin(tHop * Mathf.PI);
+
+                    if (isHorizontal)
+                    {
+                        transform.localScale = new Vector3(
+                            baseScale.x * (1f - 0.15f * hopCurve),
+                            baseScale.y * (1f + 0.28f * hopCurve),
+                            baseScale.z * (1f - 0.15f * hopCurve)
+                        );
+                    }
+                    else
+                    {
+                        transform.localScale = new Vector3(
+                            baseScale.x * (1f - 0.15f * hopCurve),
+                            baseScale.y * (1f - 0.15f * hopCurve),
+                            baseScale.z * (1f + 0.28f * hopCurve)
+                        );
+                    }
+
+                    transform.position = startPos + upDir * (disappearHopHeight * hopCurve);
+
+                    float tilt = Mathf.Sin(tHop * Mathf.PI) * 7f;
+                    transform.localRotation = baseRot * Quaternion.Euler(0f, tilt, 0f);
+                }
+                else
+                {
+                    float tShrink = (progress - 0.58f) / 0.42f;
+                    float scaleFactor = 1f - tShrink;
+                    float popFactor = Mathf.Max(0f, scaleFactor * scaleFactor * scaleFactor);
+
+                    transform.localScale = baseScale * popFactor;
+                    transform.position = startPos + upDir * (disappearHopHeight * (1f - tShrink));
+
+                    float twist = 7f + tShrink * 30f;
+                    transform.localRotation = baseRot * Quaternion.Euler(0f, twist, 0f);
+                }
+
+                yield return null;
+            }
+
+            transform.localScale = Vector3.zero;
+            Destroy(gameObject);
+        }
 
         private IEnumerator DriveAwayRoutine()
         {
