@@ -46,3 +46,6 @@ MonoBehaviour:
   - id: 10
     name: Pastel Yellow
     color: {r: 0.9764706, g: 0.90588236, b: 0.62352943, a: 1}
+  - id: 11
+    name: Black
+    color: {r: 0.05660379, g: 0.05660379, b: 0.05660379, a: 1}

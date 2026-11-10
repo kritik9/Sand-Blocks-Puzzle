@@ -1,0 +1,69 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
+  m_Name: Level_22
+  m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
+  gameplayMode: 0
+  levelName: Level 22
+  particleRadius: 0.17
+  characterScale: 0
+  verticalSpacingMultiplier: 0
+  maxParticles: 140
+  containerShape: 0
+  containerWidth: 5.4
+  containerHeight: 3.6
+  containerCenter: {x: 0, y: -1.2}
+  leftBorderOffset: 0
+  rightBorderOffset: 0
+  topBorderOffset: 0
+  bottomBorderOffset: 0
+  customPolygonPoints: []
+  patternType: 3
+  gridColumns: 12
+  gridRows: 9
+  customCrowdColors: 020000000200000002000000020000000200000002000000020000000200000002000000020000000200000002000000000000000000000002000000020000000200000002000000020000000200000002000000020000000200000002000000000000000000000000000000020000000200000002000000020000000200000002000000020000000200000002000000010000000000000000000000000000000000000002000000020000000200000002000000020000000200000002000000010000000100000001000000000000000000000000000000000000000200000002000000020000000200000002000000010000000100000001000000010000000100000000000000000000000000000000000000020000000200000002000000010000000100000001000000010000000100000001000000000000000000000000000000000000000200000002000000010000000100000001000000010000000100000001000000010000000000000000000000000000000000000000000000010000000100000001000000010000000100000001000000010000000100000000000000000000000000000000000000
+  colorMapTexture: {fileID: 0}
+  puzzleColumns: 4
+  puzzleRows: 5
+  buses:
+  - name: Green Bus 1
+    colorId: 1
+    capacity: 30
+    length: 3
+    rotationDegrees: 180
+    gridPosition: {x: 0, y: 0}
+  - name: Yellow Bus 1
+    colorId: 2
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 2}
+  - name: Blue Bus 2
+    colorId: 0
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 1}
+  - name: Yellow Bus 2
+    colorId: 2
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 3}
+  unifiedGridColumns: 8
+  unifiedGridRows: 8
+  unifiedGridRotation: 0
+  unifiedCellSize: 1.35
+  unifiedMode: 0
+  sharedDestinationPos: {x: 0, y: 0}
+  unifiedCells: []
+  unifiedBuses: []

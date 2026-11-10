@@ -152,7 +152,7 @@ MonoBehaviour:
   spawnBounceDuration: 0.35
   spawnOvershoot: 1.70158
   departureMode: 0
-  fullVFX: {fileID: 4927997720132047218, guid: e4f1c29a554c31d4f86e822f07770922, type: 3}
+  fullVFX: {fileID: 4111753365830743931, guid: dfa60bb55a65dd540bd7d0e54228a52a, type: 3}
   driveAwayDelay: 0.25
   driveAwayDuration: 0.4
   driveAwayDistance: 15
