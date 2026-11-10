@@ -213,11 +213,11 @@ namespace SandBlocks.Puzzle.Vehicles
 
         [Tooltip("Duration in seconds of the disappearance squash-pop-shrink animation (used in Disappear mode)")]
         [Range(0.15f, 1.5f)]
-        [SerializeField] private float disappearDuration = 0.42f;
+        [SerializeField] private float disappearDuration = 0.38f;
 
         [Tooltip("Anticipation hop height along normal/up direction during disappearance")]
         [Range(0.0f, 1.5f)]
-        [SerializeField] private float disappearHopHeight = 0.35f;
+        [SerializeField] private float disappearHopHeight = 0.42f;
 
         [Tooltip("Enable procedural confetti puff / shockwave burst visual effects on disappear")]
         [SerializeField] private bool enableDisappearVFX = true;
@@ -1462,21 +1462,31 @@ namespace SandBlocks.Puzzle.Vehicles
         {
             if (fullVFX == null) return;
 
-            ParticleSystem vfxInstance;
-            if (fullVFX.gameObject.scene.IsValid())
+            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
+            Vector3 upDir = isHorizontal ? Vector3.up : Vector3.back;
+            Vector3 spawnPos = transform.position + upDir * 0.45f;
+            Quaternion spawnRot = isHorizontal ? Quaternion.identity : Quaternion.Euler(-90f, 0f, 0f);
+
+            ParticleSystem vfxInstance = Instantiate(fullVFX, spawnPos, spawnRot);
+            vfxInstance.gameObject.SetActive(true);
+
+            // Match circle shockwave color to bus color for extra visual satisfaction
+            Color busColor = colorPalette != null ? colorPalette.GetColor(colorId) : GetColorFallback(colorId);
+            var allSystems = vfxInstance.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < allSystems.Length; i++)
             {
-                vfxInstance = fullVFX;
-                // Detach from bus so it is not scaled to zero or destroyed prematurely when the bus vanishes
-                vfxInstance.transform.SetParent(null, true);
-            }
-            else
-            {
-                vfxInstance = Instantiate(fullVFX, transform.position, transform.rotation);
+                var ps = allSystems[i];
+                if (ps.gameObject.name.ToLowerInvariant().Contains("circle"))
+                {
+                    var main = ps.main;
+                    Color c = busColor;
+                    c.a = 0.85f;
+                    main.startColor = c;
+                }
+                ps.Play();
             }
 
-            vfxInstance.gameObject.SetActive(true);
-            vfxInstance.Play(true);
-            Destroy(vfxInstance.gameObject, 3.0f);
+            Destroy(vfxInstance.gameObject, 2.5f);
         }
 
         private IEnumerator DisappearRoutine()
@@ -1506,10 +1516,6 @@ namespace SandBlocks.Puzzle.Vehicles
                 yield return new WaitForSeconds(driveAwayDelay);
             }
 
-            SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
-            SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
-            PlayFullVFX();
-
             bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
             Vector3 upDir = isHorizontal ? Vector3.up : Vector3.back;
 
@@ -1518,12 +1524,14 @@ namespace SandBlocks.Puzzle.Vehicles
             Vector3 baseScale = originalLocalScale;
             Quaternion baseRot = transform.localRotation;
 
-            float duration = Mathf.Max(0.15f, disappearDuration);
+            float duration = Mathf.Max(0.25f, disappearDuration);
             float elapsed = 0f;
+            bool vfxTriggered = false;
 
-            // Phase 1 (0 -> 0.28): Anticipation Squash
-            // Phase 2 (0.28 -> 0.58): Pop hop upward and stretch
-            // Phase 3 (0.58 -> 1.0): Spin wobble & elastic cubic shrink to zero
+            // Highly polished 3-phase disappear animation:
+            // Phase 1 (0% -> 28%): Anticipation Squash on ground (builds elastic energy)
+            // Phase 2 (28% -> 55%): Spring Launch & Confetti Explosion at apex
+            // Phase 3 (55% -> 100%): Snappy Cubic Vanish Pop into the blast center
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
@@ -1531,65 +1539,84 @@ namespace SandBlocks.Puzzle.Vehicles
 
                 if (progress < 0.28f)
                 {
-                    float tSquash = progress / 0.28f;
-                    float squash = Mathf.Sin(tSquash * Mathf.PI);
+                    float p = progress / 0.28f;
+                    float squash = Mathf.Sin(p * Mathf.PI);
 
                     if (isHorizontal)
                     {
                         transform.localScale = new Vector3(
-                            baseScale.x * (1f + 0.14f * squash),
-                            baseScale.y * (1f - 0.25f * squash),
-                            baseScale.z * (1f + 0.14f * squash)
+                            baseScale.x * (1f + 0.12f * squash),
+                            baseScale.y * (1f - 0.22f * squash),
+                            baseScale.z * (1f + 0.12f * squash)
                         );
                     }
                     else
                     {
                         transform.localScale = new Vector3(
-                            baseScale.x * (1f + 0.14f * squash),
-                            baseScale.y * (1f + 0.14f * squash),
-                            baseScale.z * (1f - 0.25f * squash)
+                            baseScale.x * (1f + 0.12f * squash),
+                            baseScale.y * (1f + 0.12f * squash),
+                            baseScale.z * (1f - 0.22f * squash)
                         );
                     }
                     transform.position = startPos;
+                    transform.localRotation = baseRot;
                 }
-                else if (progress < 0.58f)
+                else if (progress < 0.55f)
                 {
-                    float tHop = (progress - 0.28f) / 0.30f;
-                    float hopCurve = Mathf.Sin(tHop * Mathf.PI);
+                    float u = (progress - 0.28f) / 0.27f;
+                    float stretch = Mathf.Sin(u * Mathf.PI);
+                    float hop = Mathf.Sin(u * Mathf.PI * 0.5f) * disappearHopHeight;
 
                     if (isHorizontal)
                     {
                         transform.localScale = new Vector3(
-                            baseScale.x * (1f - 0.15f * hopCurve),
-                            baseScale.y * (1f + 0.28f * hopCurve),
-                            baseScale.z * (1f - 0.15f * hopCurve)
+                            baseScale.x * (1f - 0.10f * stretch),
+                            baseScale.y * (1f + 0.24f * stretch),
+                            baseScale.z * (1f - 0.10f * stretch)
                         );
                     }
                     else
                     {
                         transform.localScale = new Vector3(
-                            baseScale.x * (1f - 0.15f * hopCurve),
-                            baseScale.y * (1f - 0.15f * hopCurve),
-                            baseScale.z * (1f + 0.28f * hopCurve)
+                            baseScale.x * (1f - 0.10f * stretch),
+                            baseScale.y * (1f - 0.10f * stretch),
+                            baseScale.z * (1f + 0.24f * stretch)
                         );
                     }
 
-                    transform.position = startPos + upDir * (disappearHopHeight * hopCurve);
+                    transform.position = startPos + upDir * hop;
 
-                    float tilt = Mathf.Sin(tHop * Mathf.PI) * 7f;
-                    transform.localRotation = baseRot * Quaternion.Euler(0f, tilt, 0f);
+                    // Playful, subtle celebratory pitch wobble (no clipping yaw spin)
+                    float wobble = Mathf.Sin(u * Mathf.PI) * 3.5f;
+                    transform.localRotation = baseRot * Quaternion.Euler(wobble, 0f, 0f);
+
+                    // Trigger the celebratory particle explosion right at apex
+                    if (!vfxTriggered && u >= 0.75f)
+                    {
+                        vfxTriggered = true;
+                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
+                        SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
+                        PlayFullVFX();
+                    }
                 }
                 else
                 {
-                    float tShrink = (progress - 0.58f) / 0.42f;
-                    float scaleFactor = 1f - tShrink;
-                    float popFactor = Mathf.Max(0f, scaleFactor * scaleFactor * scaleFactor);
+                    if (!vfxTriggered)
+                    {
+                        vfxTriggered = true;
+                        SandBlocks.Core.Audio.AudioManager.Instance?.PlayBusDriveAway();
+                        SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerBusDepart();
+                        PlayFullVFX();
+                    }
 
-                    transform.localScale = baseScale * popFactor;
-                    transform.position = startPos + upDir * (disappearHopHeight * (1f - tShrink));
+                    float v = (progress - 0.55f) / 0.45f;
+                    float rem = 1f - v;
+                    // Snappy cubic-out shrink to zero
+                    float scaleFactor = rem * rem * rem;
 
-                    float twist = 7f + tShrink * 30f;
-                    transform.localRotation = baseRot * Quaternion.Euler(0f, twist, 0f);
+                    transform.localScale = baseScale * scaleFactor;
+                    transform.position = startPos + upDir * (disappearHopHeight * (1f - v * 0.15f));
+                    transform.localRotation = baseRot;
                 }
 
                 yield return null;

@@ -152,12 +152,12 @@ MonoBehaviour:
   spawnBounceDuration: 0.35
   spawnOvershoot: 1.70158
   departureMode: 0
-  fullVFX: {fileID: 4111753365830743931, guid: dfa60bb55a65dd540bd7d0e54228a52a, type: 3}
-  driveAwayDelay: 0.25
+  fullVFX: {fileID: 4927997720132047218, guid: e4f1c29a554c31d4f86e822f07770922, type: 3}
+  driveAwayDelay: 0.15
   driveAwayDuration: 0.4
   driveAwayDistance: 15
-  disappearDuration: 0.35
-  disappearHopHeight: 0.35
+  disappearDuration: 0.38
+  disappearHopHeight: 0.42
   enableDisappearVFX: 1
 --- !u!1 &1000000005
 GameObject:
