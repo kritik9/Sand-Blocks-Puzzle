@@ -123,6 +123,7 @@ MonoBehaviour:
   frontPiecePrefab: {fileID: 5205989319355451938, guid: d0872101d5d49754bb8812a72a35595c, type: 3}
   midPiecePrefab: {fileID: 8135809062307911796, guid: 96251ca7bfc15f04d8b062bcedc29442, type: 3}
   rearPiecePrefab: {fileID: 7263818575268031438, guid: 74740bb57f6e1d4418e6d7c5fde61c86, type: 3}
+  cornerPiecePrefab: {fileID: 7263818575268031438, guid: f01e4a62a70bd004da31dedb1bd7d9ef, type: 3}
   piecesParent: {fileID: 1000000006}
   pieceLength: 1.34
   spawnedPieces:

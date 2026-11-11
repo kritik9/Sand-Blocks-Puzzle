@@ -232,7 +232,7 @@ namespace SandBlocks.Puzzle.Input
                     {
                         maxStepsThisFrame--;
 
-                        Vector3 cellWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        Vector3 cellWorld = puzzleGrid.GridToWorld(selectedVehicle, currentHoveredGrid);
                         Vector2 cellFlat = isHorizontal ? new Vector2(cellWorld.x, cellWorld.z) : new Vector2(cellWorld.x, cellWorld.y);
                         Vector2 toPointer = pointerFlat - cellFlat;
 
@@ -302,7 +302,7 @@ namespace SandBlocks.Puzzle.Input
                     }
 
                     // 2. Continuous sub-cell visual tracking with directional obstacle resistance
-                    Vector3 anchorWorld = puzzleGrid.GridToWorld(currentHoveredGrid, selectedVehicle.Length, selectedVehicle.IsVertical);
+                    Vector3 anchorWorld = puzzleGrid.GridToWorld(selectedVehicle, currentHoveredGrid);
                     Vector2 anchorFlat = isHorizontal ? new Vector2(anchorWorld.x, anchorWorld.z) : new Vector2(anchorWorld.x, anchorWorld.y);
                     Vector2 dragOffsetFromCell = pointerFlat - anchorFlat;
 
@@ -426,7 +426,7 @@ namespace SandBlocks.Puzzle.Input
             if (puzzleGrid.CanPlace(selectedVehicle, finalGridPos))
             {
                 puzzleGrid.PlaceVehicle(selectedVehicle, finalGridPos);
-                Vector3 snapTarget = puzzleGrid.GridToWorld(finalGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                Vector3 snapTarget = puzzleGrid.GridToWorld(selectedVehicle, finalGridPos);
                 selectedVehicle.transform.position = currentWorldPos; // Preserve world position for smooth interpolation
                 activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
 
@@ -437,7 +437,7 @@ namespace SandBlocks.Puzzle.Input
             {
                 // Fallback to start position with smooth snap
                 puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
-                Vector3 snapTarget = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                Vector3 snapTarget = puzzleGrid.GridToWorld(selectedVehicle, initialGridPos);
                 selectedVehicle.transform.position = currentWorldPos; // Preserve world position for smooth interpolation
                 activeSnapRoutine = StartCoroutine(SmoothSnapToSlotRoutine(selectedVehicle, snapTarget));
 
@@ -534,7 +534,7 @@ namespace SandBlocks.Puzzle.Input
                     if (!isPlaced)
                     {
                         puzzleGrid.PlaceVehicle(selectedVehicle, initialGridPos);
-                        selectedVehicle.transform.position = puzzleGrid.GridToWorld(initialGridPos, selectedVehicle.Length, selectedVehicle.IsVertical);
+                        selectedVehicle.transform.position = puzzleGrid.GridToWorld(selectedVehicle, initialGridPos);
                     }
                 }
 
@@ -573,8 +573,12 @@ namespace SandBlocks.Puzzle.Input
         {
             if (vehicle == null || puzzleGrid == null) return false;
             int topRow = puzzleGrid.Rows - 1;
-            int maxOccupiedY = vehicle.IsVertical ? (gridPos.y + vehicle.Length - 1) : gridPos.y;
-            return maxOccupiedY >= topRow;
+            var cells = vehicle.GetOccupiedCells(gridPos);
+            for (int i = 0; i < cells.Count; i++)
+            {
+                if (cells[i].y >= topRow) return true;
+            }
+            return false;
         }
 
         private VehicleBase RaycastVehicle(Vector2 screenPos)

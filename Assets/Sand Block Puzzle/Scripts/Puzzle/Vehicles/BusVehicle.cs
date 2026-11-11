@@ -26,6 +26,7 @@ namespace SandBlocks.Puzzle.Vehicles
         public const int DefaultFrontPieceCapacity = 9;
         public const int DefaultMidPieceCapacity = 12;
         public const int DefaultRearPieceCapacity = 9;
+        public const int DefaultCornerPieceCapacity = 11;
 
         /// <summary>
         /// Calculates modular bus passenger capacity based on piece count:
@@ -38,6 +39,18 @@ namespace SandBlocks.Puzzle.Vehicles
             int len = Mathf.Max(2, busLength);
             if (len == 2) return frontCap + rearCap;
             return frontCap + (len - 2) * midCap + rearCap;
+        }
+
+        /// <summary>
+        /// Calculates L-shaped modular bus passenger capacity based on arm piece counts:
+        /// Size 3 (Standard 1+1+1): Rear (9) + Corner (11) + Front (9) = 29
+        /// Size 4 (2+1+1): Rear (9) + Mid (12) + Corner (11) + Front (9) = 41
+        /// </summary>
+        public static int CalculateLCapacity(int arm1Len, int arm2Len, int frontCap = DefaultFrontPieceCapacity, int midCap = DefaultMidPieceCapacity, int rearCap = DefaultRearPieceCapacity, int cornerCap = DefaultCornerPieceCapacity)
+        {
+            int arm1ExtraMids = Mathf.Max(0, arm1Len - 1);
+            int arm2ExtraMids = Mathf.Max(0, arm2Len - 1);
+            return rearCap + arm1ExtraMids * midCap + cornerCap + arm2ExtraMids * midCap + frontCap;
         }
         [Header("Orientation & Alignment")]
         [Tooltip("Fixed in-plane puzzle rotation (0 = Right, 90 = Up, 180 = Left, 270 = Down)")]
@@ -70,6 +83,22 @@ namespace SandBlocks.Puzzle.Vehicles
 
         [Tooltip("Prefab or model reference for the rear section of the modular bus (assigned in Inspector)")]
         [SerializeField] private GameObject rearPiecePrefab;
+
+        [Tooltip("Prefab or model reference for the corner section of the modular bus (assigned in Inspector)")]
+        [SerializeField] private GameObject cornerPiecePrefab;
+
+        [Header("Bus Shape Configuration")]
+        [Tooltip("Bus shape: Straight (standard) or L_Shape (corner turn)")]
+        [SerializeField] private BusShape shape = BusShape.Straight;
+
+        [Tooltip("Turn direction for L-shaped bus (TurnRight = clockwise towards Front, TurnLeft = counter-clockwise towards Front)")]
+        [SerializeField] private LTurnDirection turnDirection = LTurnDirection.TurnRight;
+
+        [Tooltip("Length in cells of Arm 1 (Rear arm leading into corner, default 1)")]
+        [SerializeField] private int arm1Length = 1;
+
+        [Tooltip("Length in cells of Arm 2 (Front arm leading out of corner, default 1)")]
+        [SerializeField] private int arm2Length = 1;
 
         [Tooltip("Parent transform to hold spawned bus pieces (assigned in Inspector)")]
         [SerializeField] private Transform piecesParent;
@@ -278,6 +307,12 @@ namespace SandBlocks.Puzzle.Vehicles
                 public GameObject FrontPiecePrefab { get => frontPiecePrefab; set => frontPiecePrefab = value; }
         public GameObject MidPiecePrefab { get => midPiecePrefab; set => midPiecePrefab = value; }
         public GameObject RearPiecePrefab { get => rearPiecePrefab; set => rearPiecePrefab = value; }
+        public GameObject CornerPiecePrefab { get => cornerPiecePrefab; set => cornerPiecePrefab = value; }
+
+        public BusShape Shape { get => shape; set => shape = value; }
+        public LTurnDirection TurnDirection { get => turnDirection; set => turnDirection = value; }
+        public int Arm1Length { get => arm1Length; set => arm1Length = Mathf.Max(1, value); }
+        public int Arm2Length { get => arm2Length; set => arm2Length = Mathf.Max(1, value); }
 
         public int GetFrontPieceCapacity()
         {
@@ -315,9 +350,30 @@ namespace SandBlocks.Puzzle.Vehicles
             return DefaultRearPieceCapacity;
         }
 
+        public int GetCornerPieceCapacity()
+        {
+            if (cornerPiecePrefab != null)
+            {
+                var piece = cornerPiecePrefab.GetComponent<ModularBusPiece>();
+                if (piece != null && piece.PieceCapacity > 0) return piece.PieceCapacity;
+                var list = piece != null ? piece.GetPassengers() : null;
+                if (list != null && list.Count > 0) return list.Count;
+            }
+            return DefaultCornerPieceCapacity;
+        }
+
         public int CalculateCapacityForLength(int busLength)
         {
+            if (shape == BusShape.L_Shape)
+            {
+                return CalculateLCapacity(arm1Length, arm2Length, GetFrontPieceCapacity(), GetMidPieceCapacity(), GetRearPieceCapacity(), GetCornerPieceCapacity());
+            }
             return CalculateModularCapacity(busLength, GetFrontPieceCapacity(), GetMidPieceCapacity(), GetRearPieceCapacity());
+        }
+
+        public int CalculateLCapacityForArms(int arm1, int arm2)
+        {
+            return CalculateLCapacity(arm1, arm2, GetFrontPieceCapacity(), GetMidPieceCapacity(), GetRearPieceCapacity(), GetCornerPieceCapacity());
         }
         public Transform PiecesParent { get => piecesParent; set => piecesParent = value; }
         public float PieceLength { get => pieceLength; set => pieceLength = value; }
@@ -416,6 +472,7 @@ namespace SandBlocks.Puzzle.Vehicles
 
         public void EnsureCentered()
         {
+            if (shape == BusShape.L_Shape) return;
             var boxCol = GetComponent<BoxCollider>();
             if (boxCol != null && Mathf.Abs(boxCol.center.z) > 0.05f)
             {
@@ -467,6 +524,24 @@ namespace SandBlocks.Puzzle.Vehicles
 
             Quaternion lookRot = Quaternion.LookRotation(forwardDir, upDir);
             transform.rotation = lookRot * Quaternion.Euler(visualRotationOffset);
+        }
+
+        public override List<Vector2Int> GetOccupiedCells(Vector2Int basePos)
+        {
+            if (shape == BusShape.L_Shape)
+            {
+                var data = new BusSpawnData
+                {
+                    shape = shape,
+                    turnDirection = turnDirection,
+                    arm1Length = arm1Length,
+                    arm2Length = arm2Length,
+                    rotationDegrees = rotationDegrees,
+                    gridPosition = basePos
+                };
+                return LevelData.GetOccupiedCells(data);
+            }
+            return base.GetOccupiedCells(basePos);
         }
 
         private void OnValidate()
@@ -728,30 +803,106 @@ namespace SandBlocks.Puzzle.Vehicles
             {
                 return;
             }
+            if (cornerPiecePrefab == null)
+            {
+                cornerPiecePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Sand Block Puzzle/Prefabs/Bus/Pieces_v2/ModularBusCorner.prefab");
+            }
 #endif
+            Transform container = piecesParent != null ? piecesParent : transform;
+            ClearModularPieces();
+            if (spawnedPieces == null) spawnedPieces = new List<GameObject>();
+
+            // --- L-SHAPED BUS ASSEMBLY ---
+            if (shape == BusShape.L_Shape && cornerPiecePrefab != null && frontPiecePrefab != null && rearPiecePrefab != null)
+            {
+                int arm1 = Mathf.Max(1, arm1Length);
+                int arm2 = Mathf.Max(1, arm2Length);
+                length = arm1 + 1 + arm2;
+
+                // 1. Corner Piece centered at local (0, 0, 0)
+                Quaternion cornerRot = (turnDirection == LTurnDirection.TurnRight)
+                    ? Quaternion.identity
+                    : Quaternion.Euler(0f, -90f, 0f);
+                GameObject cornerGo = InstantiatePiece(cornerPiecePrefab, container, Vector3.zero, cornerRot);
+                if (cornerGo != null) spawnedPieces.Add(cornerGo);
+
+                // 2. Front Arm (extends along local +Z, step 1 to arm2)
+                GameObject frontGo = null;
+                if (arm2 > 1 && midPiecePrefab != null)
+                {
+                    for (int m = 1; m < arm2; m++)
+                    {
+                        GameObject midGo = InstantiatePiece(midPiecePrefab, container, new Vector3(0f, 0f, m * pieceLength), Quaternion.identity);
+                        if (midGo != null) spawnedPieces.Add(midGo);
+                    }
+                }
+                frontGo = InstantiatePiece(frontPiecePrefab, container, new Vector3(0f, 0f, arm2 * pieceLength), Quaternion.identity);
+                if (frontGo != null) spawnedPieces.Add(frontGo);
+
+                // 3. Rear Arm (extends along local +X for TurnRight, or -X for TurnLeft)
+                GameObject rearGo = null;
+                float rearDirSign = (turnDirection == LTurnDirection.TurnRight) ? 1f : -1f;
+                Quaternion rearRot = (turnDirection == LTurnDirection.TurnRight)
+                    ? Quaternion.Euler(0f, -90f, 0f)
+                    : Quaternion.Euler(0f, 90f, 0f);
+
+                if (arm1 > 1 && midPiecePrefab != null)
+                {
+                    for (int m = 1; m < arm1; m++)
+                    {
+                        GameObject midGo = InstantiatePiece(midPiecePrefab, container, new Vector3(rearDirSign * m * pieceLength, 0f, 0f), rearRot);
+                        if (midGo != null) spawnedPieces.Add(midGo);
+                    }
+                }
+                rearGo = InstantiatePiece(rearPiecePrefab, container, new Vector3(rearDirSign * arm1 * pieceLength, 0f, 0f), rearRot);
+                if (rearGo != null) spawnedPieces.Add(rearGo);
+
+                // 4. Update BoxColliders
+                EnsureCollider();
+
+                // 5. Update renderers directly from the instantiated piece references
+                if (bodyRenderers == null) bodyRenderers = new List<Renderer>();
+                bodyRenderers.Clear();
+                for (int i = 0; i < spawnedPieces.Count; i++)
+                {
+                    if (spawnedPieces[i] == null) continue;
+                    var rends = spawnedPieces[i].GetComponentsInChildren<Renderer>(true);
+                    for (int r = 0; r < rends.Length; r++)
+                    {
+                        if (rends[r] != null) bodyRenderers.Add(rends[r]);
+                    }
+                }
+
+                if (frontGo != null) headlightRenderer = frontGo.GetComponentInChildren<Renderer>(true);
+                if (rearGo != null) taillightRenderer = rearGo.GetComponentInChildren<Renderer>(true);
+
+                // 6. Apply colors and lights
+                InitializeHeadlights();
+                ApplyColor(colorPalette);
+
+                // 7. Refresh passengers / UI
+                SetupPassengerSlots();
+                UpdatePassengerCountUI();
+                return;
+            }
+
+            // --- STRAIGHT BUS ASSEMBLY ---
             int effLength = Mathf.Max(2, targetLength);
             length = effLength;
 
-            // Pure reference-based: requires front and rear piece prefabs from Inspector
             if (frontPiecePrefab == null || rearPiecePrefab == null)
             {
                 EnsureCollider();
                 return;
             }
 
-            Transform container = piecesParent != null ? piecesParent : transform;
-
-            // Thoroughly clear previous pieces
-            ClearModularPieces();
-
-            if (spawnedPieces == null) spawnedPieces = new List<GameObject>();
-
             float halfSpan = (effLength - 1) * 0.5f;
 
             // 1. Rear piece at index 0 (z = -halfSpan * pieceLength)
             float rearZ = -halfSpan * pieceLength;
-            GameObject rearGo = InstantiatePiece(rearPiecePrefab, container, new Vector3(0f, 0f, rearZ));
-            if (rearGo != null) spawnedPieces.Add(rearGo);
+            GameObject rearGoStraight = InstantiatePiece(rearPiecePrefab, container, new Vector3(0f, 0f, rearZ), Quaternion.identity);
+            if (rearGoStraight != null) spawnedPieces.Add(rearGoStraight);
 
             // 2. Mid pieces for index 1 to effLength - 2
             int midCount = effLength - 2;
@@ -760,15 +911,15 @@ namespace SandBlocks.Puzzle.Vehicles
                 for (int i = 1; i <= midCount; i++)
                 {
                     float midZ = (i - halfSpan) * pieceLength;
-                    GameObject midGo = InstantiatePiece(midPiecePrefab, container, new Vector3(0f, 0f, midZ));
+                    GameObject midGo = InstantiatePiece(midPiecePrefab, container, new Vector3(0f, 0f, midZ), Quaternion.identity);
                     if (midGo != null) spawnedPieces.Add(midGo);
                 }
             }
 
             // 3. Front piece at index effLength - 1 (z = +halfSpan * pieceLength)
             float frontZ = halfSpan * pieceLength;
-            GameObject frontGo = InstantiatePiece(frontPiecePrefab, container, new Vector3(0f, 0f, frontZ));
-            if (frontGo != null) spawnedPieces.Add(frontGo);
+            GameObject frontGoStraight = InstantiatePiece(frontPiecePrefab, container, new Vector3(0f, 0f, frontZ), Quaternion.identity);
+            if (frontGoStraight != null) spawnedPieces.Add(frontGoStraight);
 
             // 4. Update BoxCollider to encapsulate full modular length
             EnsureCollider();
@@ -786,13 +937,13 @@ namespace SandBlocks.Puzzle.Vehicles
                 }
             }
 
-            if (frontGo != null)
+            if (frontGoStraight != null)
             {
-                headlightRenderer = frontGo.GetComponentInChildren<Renderer>(true);
+                headlightRenderer = frontGoStraight.GetComponentInChildren<Renderer>(true);
             }
-            if (rearGo != null)
+            if (rearGoStraight != null)
             {
-                taillightRenderer = rearGo.GetComponentInChildren<Renderer>(true);
+                taillightRenderer = rearGoStraight.GetComponentInChildren<Renderer>(true);
             }
 
             // 6. Apply colors and lights
@@ -804,7 +955,7 @@ namespace SandBlocks.Puzzle.Vehicles
             UpdatePassengerCountUI();
         }
 
-        private GameObject InstantiatePiece(GameObject prefab, Transform parent, Vector3 localPos)
+        private GameObject InstantiatePiece(GameObject prefab, Transform parent, Vector3 localPos, Quaternion localRot)
         {
             if (prefab == null) return null;
 #if UNITY_EDITOR
@@ -817,22 +968,43 @@ namespace SandBlocks.Puzzle.Vehicles
             if (go != null)
             {
                 go.transform.localPosition = localPos;
-                go.transform.localRotation = Quaternion.identity;
+                go.transform.localRotation = localRot;
                 go.transform.localScale = Vector3.one;
             }
             return go;
         }
 
+        private GameObject InstantiatePiece(GameObject prefab, Transform parent, Vector3 localPos)
+        {
+            return InstantiatePiece(prefab, parent, localPos, Quaternion.identity);
+        }
+
         public override void Initialize(int id, int cap, int len, bool vertical, Vector2Int startPos)
         {
-            Initialize(id, cap, len, vertical ? 90 : 0, startPos);
+            Initialize(id, cap, len, vertical ? 90 : 0, startPos, BusShape.Straight);
         }
 
         public void Initialize(int id, int cap, int len, int rotDegrees, Vector2Int startPos)
         {
+            Initialize(id, cap, len, rotDegrees, startPos, BusShape.Straight);
+        }
+
+        public void Initialize(int id, int cap, int len, int rotDegrees, Vector2Int startPos, BusShape busShape, LTurnDirection turnDir = LTurnDirection.TurnRight, int arm1 = 1, int arm2 = 1)
+        {
             colorId = id;
             capacity = Mathf.Clamp(cap, 1, MaxBusCapacity);
-            length = Mathf.Max(2, len);
+            shape = busShape;
+            turnDirection = turnDir;
+            arm1Length = Mathf.Max(1, arm1);
+            arm2Length = Mathf.Max(1, arm2);
+            if (shape == BusShape.L_Shape)
+            {
+                length = arm1Length + 1 + arm2Length;
+            }
+            else
+            {
+                length = Mathf.Max(2, len);
+            }
             rotationDegrees = Mathf.RoundToInt(rotDegrees / 90f) * 90 % 360;
             if (rotationDegrees < 0) rotationDegrees += 360;
             isVertical = (rotationDegrees == 90 || rotationDegrees == 270);
@@ -842,7 +1014,7 @@ namespace SandBlocks.Puzzle.Vehicles
             CleanupOldChildColliders();
             EnsureCentered();
             ApplyRotation();
-            if (frontPiecePrefab != null || rearPiecePrefab != null || piecesParent != null)
+            if (frontPiecePrefab != null || rearPiecePrefab != null || cornerPiecePrefab != null || piecesParent != null)
             {
                 RebuildModularMesh(length);
             }
@@ -850,6 +1022,11 @@ namespace SandBlocks.Puzzle.Vehicles
             AutoDetectHierarchyAndSeats();
             UpdatePassengerCountUI();
             BuildSeatOffsets();
+        }
+
+        public void Initialize(BusSpawnData data)
+        {
+            Initialize(data.colorId, data.capacity, data.length, data.rotationDegrees, data.gridPosition, data.shape, data.turnDirection, data.arm1Length, data.arm2Length);
         }
 
         private void CleanupOldChildColliders()
@@ -868,9 +1045,48 @@ namespace SandBlocks.Puzzle.Vehicles
             {
                 box = gameObject.AddComponent<BoxCollider>();
             }
-            int effLength = Mathf.Max(2, length);
-            box.size = new Vector3(1.35f, 1.2f, effLength * pieceLength);
-            box.center = new Vector3(0f, 0.75f, 0f);
+
+            if (shape == BusShape.L_Shape)
+            {
+                int arm1 = Mathf.Max(1, arm1Length);
+                int arm2 = Mathf.Max(1, arm2Length);
+
+                // Box 1 (root) covers Corner + Front Arm along Z
+                box.size = new Vector3(pieceLength, 1.2f, (arm2 + 1) * pieceLength);
+                box.center = new Vector3(0f, 0.75f, arm2 * 0.5f * pieceLength);
+
+                // Box 2 (child) covers Rear Arm along X
+                Transform arm2Child = transform.Find("[VehicleCollider_Arm2]");
+                if (arm2Child == null)
+                {
+                    var go = new GameObject("[VehicleCollider_Arm2]");
+                    go.transform.SetParent(transform, false);
+                    arm2Child = go.transform;
+                }
+                arm2Child.localPosition = Vector3.zero;
+                arm2Child.localRotation = Quaternion.identity;
+                arm2Child.localScale = Vector3.one;
+
+                var arm2Box = arm2Child.GetComponent<BoxCollider>();
+                if (arm2Box == null) arm2Box = arm2Child.gameObject.AddComponent<BoxCollider>();
+
+                float armSign = (turnDirection == LTurnDirection.TurnRight) ? 1f : -1f;
+                arm2Box.size = new Vector3(arm1 * pieceLength, 1.2f, pieceLength);
+                arm2Box.center = new Vector3(armSign * (0.5f + arm1 * 0.5f) * pieceLength, 0.75f, 0f);
+            }
+            else
+            {
+                // Clean up any L-shape child collider
+                Transform arm2Child = transform.Find("[VehicleCollider_Arm2]");
+                if (arm2Child != null)
+                {
+                    SafeDestroy(arm2Child.gameObject);
+                }
+
+                int effLength = Mathf.Max(2, length);
+                box.size = new Vector3(1.35f, 1.2f, effLength * pieceLength);
+                box.center = new Vector3(0f, 0.75f, 0f);
+            }
         }
 
         public void ApplyColor(CrowdColorPalette palette)

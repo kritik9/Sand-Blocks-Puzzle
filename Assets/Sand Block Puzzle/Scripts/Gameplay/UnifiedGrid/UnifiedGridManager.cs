@@ -684,7 +684,7 @@ private void SpawnPassengerCell(UnifiedCellData data)
                 var bus = busGo.GetComponent<BusVehicle>();
                 if (bus != null)
                 {
-                    bus.Initialize(data.colorId, data.capacity, data.length, data.rotationDegrees, data.gridPosition);
+                    bus.Initialize(data);
                     bus.ClearPassengers();
                     bus.ApplyColor(palette);
                     bus.DepartureMode = defaultBusDepartureMode;

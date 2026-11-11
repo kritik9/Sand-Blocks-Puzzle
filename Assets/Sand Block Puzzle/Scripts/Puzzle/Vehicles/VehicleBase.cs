@@ -28,6 +28,23 @@ namespace SandBlocks.Puzzle.Vehicles
             set => gridPosition = value;
         }
 
+        public virtual System.Collections.Generic.List<Vector2Int> GetOccupiedCells(Vector2Int basePos)
+        {
+            var cells = new System.Collections.Generic.List<Vector2Int>(Mathf.Max(1, length));
+            for (int i = 0; i < length; i++)
+            {
+                int gx = isVertical ? basePos.x : basePos.x + i;
+                int gy = isVertical ? basePos.y + i : basePos.y;
+                cells.Add(new Vector2Int(gx, gy));
+            }
+            return cells;
+        }
+
+        public System.Collections.Generic.List<Vector2Int> GetOccupiedCells()
+        {
+            return GetOccupiedCells(gridPosition);
+        }
+
         [Header("Selection & Outline")]
         [SerializeField] protected SandBlocks.Core.Rendering.SelectionOutline selectionOutline;
         protected bool isSelected;

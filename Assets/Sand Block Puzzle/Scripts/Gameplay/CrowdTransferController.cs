@@ -320,19 +320,47 @@ namespace SandBlocks.Gameplay
             if (puzzleGrid == null || boundary == null) return false;
 
             int totalCols = puzzleGrid.Columns > 0 ? puzzleGrid.Columns : 6;
+            int topRow = puzzleGrid.Rows - 1;
 
-            // Determine occupied columns on the puzzle grid
-            int colMin = bus.GridPosition.x;
+            // Determine occupied columns on the puzzle grid at the collection row
+            Vector2Int anchorGrid = bus.GridPosition;
             if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == bus)
             {
-                colMin = dragHandler.CurrentHoveredGrid.x;
+                anchorGrid = dragHandler.CurrentHoveredGrid;
             }
             else if (puzzleGrid.TryGetGridDropPosition(bus.transform.position, bus.Length, bus.IsVertical, out Vector2Int cand))
             {
-                colMin = cand.x;
+                anchorGrid = cand;
             }
 
-            int colMax = bus.IsVertical ? colMin : (colMin + bus.Length - 1);
+            var occCells = bus.GetOccupiedCells(anchorGrid);
+            int colMin = int.MaxValue;
+            int colMax = int.MinValue;
+
+            for (int i = 0; i < occCells.Count; i++)
+            {
+                if (occCells[i].y == topRow)
+                {
+                    if (occCells[i].x < colMin) colMin = occCells[i].x;
+                    if (occCells[i].x > colMax) colMax = occCells[i].x;
+                }
+            }
+
+            if (colMin > colMax)
+            {
+                for (int i = 0; i < occCells.Count; i++)
+                {
+                    if (occCells[i].x < colMin) colMin = occCells[i].x;
+                    if (occCells[i].x > colMax) colMax = occCells[i].x;
+                }
+            }
+
+            if (colMin > colMax)
+            {
+                colMin = anchorGrid.x;
+                colMax = anchorGrid.x;
+            }
+
             colMin = Mathf.Clamp(colMin, 0, totalCols - 1);
             colMax = Mathf.Clamp(colMax, 0, totalCols - 1);
 
@@ -406,23 +434,18 @@ namespace SandBlocks.Gameplay
             // 0. Active dragging hover check: matches immediately while user drags bus to top row
             if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == vehicle)
             {
-                int hTopY = vehicle.IsVertical 
-                    ? (dragHandler.CurrentHoveredGrid.y + vehicle.Length - 1) 
-                    : dragHandler.CurrentHoveredGrid.y;
-                if (hTopY == topRow)
+                var hCells = vehicle.GetOccupiedCells(dragHandler.CurrentHoveredGrid);
+                for (int i = 0; i < hCells.Count; i++)
                 {
-                    return true;
+                    if (hCells[i].y == topRow) return true;
                 }
             }
 
             // 1. Grid coordinate check: works for placed vehicles and hovering vehicles whose GridPosition is updated
-            int vTopGridY = vehicle.IsVertical 
-                ? (vehicle.GridPosition.y + vehicle.Length - 1) 
-                : vehicle.GridPosition.y;
-
-            if (vTopGridY == topRow)
+            var vCells = vehicle.GetOccupiedCells(vehicle.GridPosition);
+            for (int i = 0; i < vCells.Count; i++)
             {
-                return true;
+                if (vCells[i].y == topRow) return true;
             }
 
             // 2. Candidate drop grid check from current world position (for when hovering/dragging)
@@ -430,10 +453,10 @@ namespace SandBlocks.Gameplay
             {
                 if (puzzleGrid.TryGetGridDropPosition(vehicle.transform.position, vehicle.Length, vehicle.IsVertical, out Vector2Int cand))
                 {
-                    int candTopY = vehicle.IsVertical ? (cand.y + vehicle.Length - 1) : cand.y;
-                    if (candTopY == topRow)
+                    var candCells = vehicle.GetOccupiedCells(cand);
+                    for (int i = 0; i < candCells.Count; i++)
                     {
-                        return true;
+                        if (candCells[i].y == topRow) return true;
                     }
                 }
             }

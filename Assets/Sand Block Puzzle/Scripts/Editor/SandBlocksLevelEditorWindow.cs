@@ -46,6 +46,7 @@ namespace SandBlocks.Editor
         private int frontPieceCapacity = 9;
         private int midPieceCapacity = 12;
         private int rearPieceCapacity = 9;
+        private int cornerPieceCapacity = 11;
         private bool showPieceCapacitiesFoldout = true;
         private bool showUnifiedJumpSettingsFoldout = true;
 
@@ -106,6 +107,7 @@ namespace SandBlocks.Editor
             frontPieceCapacity = EditorPrefs.GetInt("SandBlocks_FrontPieceCap", 9);
             midPieceCapacity = EditorPrefs.GetInt("SandBlocks_MidPieceCap", 12);
             rearPieceCapacity = EditorPrefs.GetInt("SandBlocks_RearPieceCap", 9);
+            cornerPieceCapacity = EditorPrefs.GetInt("SandBlocks_CornerPieceCap", 11);
 
             if (modularBusPrefab == null)
             {
@@ -136,6 +138,7 @@ namespace SandBlocks.Editor
                     frontPieceCapacity = bus.GetFrontPieceCapacity();
                     midPieceCapacity = bus.GetMidPieceCapacity();
                     rearPieceCapacity = bus.GetRearPieceCapacity();
+                    cornerPieceCapacity = bus.GetCornerPieceCapacity();
                     SavePieceCapacities();
                 }
             }
@@ -146,11 +149,23 @@ namespace SandBlocks.Editor
             EditorPrefs.SetInt("SandBlocks_FrontPieceCap", frontPieceCapacity);
             EditorPrefs.SetInt("SandBlocks_MidPieceCap", midPieceCapacity);
             EditorPrefs.SetInt("SandBlocks_RearPieceCap", rearPieceCapacity);
+            EditorPrefs.SetInt("SandBlocks_CornerPieceCap", cornerPieceCapacity);
         }
 
         public int CalculateBusCapacity(int length)
         {
             return BusVehicle.CalculateModularCapacity(length, frontPieceCapacity, midPieceCapacity, rearPieceCapacity);
+        }
+
+        public int CalculateBusCapacity(BusSpawnData bus)
+        {
+            if (bus.shape == BusShape.L_Shape)
+            {
+                int arm1 = Mathf.Max(1, bus.arm1Length);
+                int arm2 = Mathf.Max(1, bus.arm2Length);
+                return BusVehicle.CalculateLCapacity(arm1, arm2, frontPieceCapacity, midPieceCapacity, rearPieceCapacity, cornerPieceCapacity);
+            }
+            return CalculateBusCapacity(bus.length);
         }
 
         private void ApplyPieceCapacitiesToAllBuses()
@@ -163,7 +178,7 @@ namespace SandBlocks.Editor
                 for (int i = 0; i < selectedLevel.buses.Count; i++)
                 {
                     var b = selectedLevel.buses[i];
-                    b.capacity = CalculateBusCapacity(b.length);
+                    b.capacity = CalculateBusCapacity(b);
                     selectedLevel.buses[i] = b;
                     changed++;
                 }
@@ -173,7 +188,7 @@ namespace SandBlocks.Editor
                 for (int i = 0; i < selectedLevel.unifiedBuses.Count; i++)
                 {
                     var b = selectedLevel.unifiedBuses[i];
-                    b.capacity = CalculateBusCapacity(b.length);
+                    b.capacity = CalculateBusCapacity(b);
                     selectedLevel.unifiedBuses[i] = b;
                     changed++;
                 }
@@ -187,7 +202,7 @@ namespace SandBlocks.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.BeginHorizontal();
             showPieceCapacitiesFoldout = EditorGUILayout.Foldout(showPieceCapacitiesFoldout,
-                $"Modular Bus Piece Capacities (Front: {frontPieceCapacity}, Mid: {midPieceCapacity}, Rear: {rearPieceCapacity})", true, EditorStyles.boldLabel);
+                $"Modular Bus Piece Capacities (Front: {frontPieceCapacity}, Mid: {midPieceCapacity}, Rear: {rearPieceCapacity}, Corner: {cornerPieceCapacity})", true, EditorStyles.boldLabel);
             if (GUILayout.Button("Auto-Read from Prefabs", EditorStyles.miniButton, GUILayout.Width(140)))
             {
                 AutoDetectPieceCapacities();
@@ -202,6 +217,7 @@ namespace SandBlocks.Editor
                 frontPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Front Piece Capacity:", frontPieceCapacity));
                 midPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Mid Piece Capacity:", midPieceCapacity));
                 rearPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Rear Piece Capacity:", rearPieceCapacity));
+                cornerPieceCapacity = Mathf.Max(1, EditorGUILayout.IntField("Corner Piece Capacity:", cornerPieceCapacity));
                 if (EditorGUI.EndChangeCheck())
                 {
                     SavePieceCapacities();
@@ -210,8 +226,8 @@ namespace SandBlocks.Editor
                 int s2 = CalculateBusCapacity(2);
                 int s3 = CalculateBusCapacity(3);
                 int s4 = CalculateBusCapacity(4);
-                int s5 = CalculateBusCapacity(5);
-                EditorGUILayout.HelpBox($"Calculated Capacities -> Size 2: {s2} | Size 3: {s3} | Size 4: {s4} | Size 5: {s5}", MessageType.None);
+                int sL = CalculateBusCapacity(new BusSpawnData { shape = BusShape.L_Shape, arm1Length = 1, arm2Length = 1 });
+                EditorGUILayout.HelpBox($"Calculated Capacities -> Size 2: {s2} | Size 3: {s3} | Size 4: {s4} | Standard L (1+1+1): {sL}", MessageType.None);
 
                 if (GUILayout.Button("Apply Piece Capacities to All Buses in Level", EditorStyles.miniButton))
                 {
@@ -1691,6 +1707,45 @@ namespace SandBlocks.Editor
             var cells = LevelData.GetOccupiedCells(bus);
             if (cells.Count == 0) return;
 
+            if (bus.shape == BusShape.L_Shape)
+            {
+                Color busColorL = GetColor(bus.colorId);
+                bool isSelectedL = (selectedBusIndex == index || selectedUnifiedBusIndex == index);
+                Color borderColL = isSelectedL ? new Color(1f, 0.85f, 0.1f, 1f) : new Color(0.15f, 0.15f, 0.15f, 0.7f);
+
+                for (int i = 0; i < cells.Count; i++)
+                {
+                    int visualR = (gridRows - 1) - cells[i].y;
+                    float cx = boardRect.x + cells[i].x * cellW + 3f;
+                    float cy = boardRect.y + visualR * cellH + 3f;
+                    Rect cRect = new Rect(cx, cy, cellW - 6f, cellH - 6f);
+                    EditorGUI.DrawRect(cRect, busColorL);
+
+                    Handles.color = borderColL;
+                    Handles.DrawPolyLine(
+                        new Vector3(cRect.xMin, cRect.yMin),
+                        new Vector3(cRect.xMax, cRect.yMin),
+                        new Vector3(cRect.xMax, cRect.yMax),
+                        new Vector3(cRect.xMin, cRect.yMax),
+                        new Vector3(cRect.xMin, cRect.yMin)
+                    );
+
+                    if (cells[i] == bus.gridPosition)
+                    {
+                        var cornerStyle = new GUIStyle(EditorStyles.boldLabel)
+                        {
+                            alignment = TextAnchor.MiddleCenter,
+                            fontSize = 9,
+                            normal = { textColor = (bus.colorId == 4 || bus.colorId == 0) ? Color.white : Color.black }
+                        };
+                        string turnSymbol = (bus.turnDirection == LTurnDirection.TurnRight) ? "⬑" : "⬏";
+                        string rotSymbol = GetRotationArrow(bus.rotationDegrees);
+                        GUI.Label(cRect, $"{turnSymbol}{rotSymbol} {bus.capacity}", cornerStyle);
+                    }
+                }
+                return;
+            }
+
             int minX = int.MaxValue, maxX = int.MinValue;
             int minY = int.MaxValue, maxY = int.MinValue;
 
@@ -1823,28 +1878,69 @@ namespace SandBlocks.Editor
             int maxGridY = Mathf.Max(0, maxGridRows - 1);
             int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
 
-            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
-            int oldLength = Mathf.Max(2, bus.length);
-            int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
-            int autoCap = CalculateBusCapacity(newLength);
-
+            // Bus Shape Selection
             EditorGUILayout.BeginHorizontal();
-            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
-            if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
-            {
-                bus.capacity = autoCap;
-            }
+            bus.shape = (BusShape)EditorGUILayout.EnumPopup("Bus Shape:", bus.shape);
             EditorGUILayout.EndHorizontal();
 
-            if (newLength != oldLength)
+            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
+
+            if (bus.shape == BusShape.L_Shape)
             {
-                bus.length = newLength;
-                bus.capacity = autoCap;
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.LabelField("L-Shaped Corner Bus Configuration", EditorStyles.miniBoldLabel);
+
+                bus.turnDirection = (LTurnDirection)EditorGUILayout.EnumPopup("Turn Direction:", bus.turnDirection);
+
+                int oldArm1 = Mathf.Max(1, bus.arm1Length);
+                int oldArm2 = Mathf.Max(1, bus.arm2Length);
+                bus.arm1Length = EditorGUILayout.IntSlider("Arm 1 (Rear) Length:", oldArm1, 1, 4);
+                bus.arm2Length = EditorGUILayout.IntSlider("Arm 2 (Front) Length:", oldArm2, 1, 4);
+
+                int totalCells = bus.arm1Length + 1 + bus.arm2Length;
+                bus.length = totalCells;
+                int autoCap = CalculateBusCapacity(bus);
+
+                EditorGUILayout.LabelField($"Occupied: {totalCells} Cells (Arm1: {bus.arm1Length} + Corner: 1 + Arm2: {bus.arm2Length})", EditorStyles.miniLabel);
+
+                EditorGUILayout.BeginHorizontal();
+                bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+                if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (bus.arm1Length != oldArm1 || bus.arm2Length != oldArm2)
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndVertical();
+            }
+            else
+            {
+                int oldLength = Mathf.Max(2, bus.length);
+                int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
+                int autoCap = CalculateBusCapacity(newLength);
+
+                EditorGUILayout.BeginHorizontal();
+                bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+                if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (newLength != oldLength)
+                {
+                    bus.length = newLength;
+                    bus.capacity = autoCap;
+                }
             }
 
             // Rotation Buttons
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel("Rotation Direction:");
+            EditorGUILayout.PrefixLabel(bus.shape == BusShape.L_Shape ? "Front Arm Direction:" : "Rotation Direction:");
             if (GUILayout.Toggle(bus.rotationDegrees == 0, "Right (0° →)", EditorStyles.miniButtonLeft)) bus.rotationDegrees = 0;
             if (GUILayout.Toggle(bus.rotationDegrees == 90, "Up (90° ↑)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 90;
             if (GUILayout.Toggle(bus.rotationDegrees == 180, "Left (180° ←)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 180;
@@ -1853,8 +1949,10 @@ namespace SandBlocks.Editor
 
             // Grid Coordinates & Quick Nudge
             EditorGUILayout.BeginHorizontal();
-            bus.gridPosition.x = EditorGUILayout.IntSlider($"Grid X (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
-            bus.gridPosition.y = EditorGUILayout.IntSlider($"Grid Y (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
+            string coordLabelX = (bus.shape == BusShape.L_Shape) ? "Corner Grid X:" : "Grid X:";
+            string coordLabelY = (bus.shape == BusShape.L_Shape) ? "Corner Grid Y:" : "Grid Y:";
+            bus.gridPosition.x = EditorGUILayout.IntSlider($"{coordLabelX} (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
+            bus.gridPosition.y = EditorGUILayout.IntSlider($"{coordLabelY} (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
             EditorGUILayout.EndHorizontal();
 
             // Nudge D-Pad
@@ -2821,28 +2919,69 @@ namespace SandBlocks.Editor
             int maxGridY = Mathf.Max(0, maxGridRows - 1);
             int maxAllowedLength = Mathf.Max(6, Mathf.Max(maxGridCols, maxGridRows));
 
-            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
-            int oldLength = Mathf.Max(2, bus.length);
-            int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
-            int autoCap = CalculateBusCapacity(newLength);
-
+            // Bus Shape Selection
             EditorGUILayout.BeginHorizontal();
-            bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
-            if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
-            {
-                bus.capacity = autoCap;
-            }
+            bus.shape = (BusShape)EditorGUILayout.EnumPopup("Bus Shape:", bus.shape);
             EditorGUILayout.EndHorizontal();
 
-            if (newLength != oldLength)
+            int maxCap = Mathf.Max(200, CalculateBusCapacity(maxAllowedLength));
+
+            if (bus.shape == BusShape.L_Shape)
             {
-                bus.length = newLength;
-                bus.capacity = autoCap;
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.LabelField("L-Shaped Corner Bus Configuration", EditorStyles.miniBoldLabel);
+
+                bus.turnDirection = (LTurnDirection)EditorGUILayout.EnumPopup("Turn Direction:", bus.turnDirection);
+
+                int oldArm1 = Mathf.Max(1, bus.arm1Length);
+                int oldArm2 = Mathf.Max(1, bus.arm2Length);
+                bus.arm1Length = EditorGUILayout.IntSlider("Arm 1 (Rear) Length:", oldArm1, 1, 4);
+                bus.arm2Length = EditorGUILayout.IntSlider("Arm 2 (Front) Length:", oldArm2, 1, 4);
+
+                int totalCells = bus.arm1Length + 1 + bus.arm2Length;
+                bus.length = totalCells;
+                int autoCap = CalculateBusCapacity(bus);
+
+                EditorGUILayout.LabelField($"Occupied: {totalCells} Cells (Arm1: {bus.arm1Length} + Corner: 1 + Arm2: {bus.arm2Length})", EditorStyles.miniLabel);
+
+                EditorGUILayout.BeginHorizontal();
+                bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+                if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (bus.arm1Length != oldArm1 || bus.arm2Length != oldArm2)
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndVertical();
+            }
+            else
+            {
+                int oldLength = Mathf.Max(2, bus.length);
+                int newLength = EditorGUILayout.IntSlider("Length (Grid Cells):", oldLength, 2, maxAllowedLength);
+                int autoCap = CalculateBusCapacity(newLength);
+
+                EditorGUILayout.BeginHorizontal();
+                bus.capacity = EditorGUILayout.IntSlider("Capacity (Passengers):", bus.capacity, 1, maxCap);
+                if (GUILayout.Button($"Auto ({autoCap})", EditorStyles.miniButton, GUILayout.Width(80)))
+                {
+                    bus.capacity = autoCap;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (newLength != oldLength)
+                {
+                    bus.length = newLength;
+                    bus.capacity = autoCap;
+                }
             }
 
             // Rotation Buttons
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel("Rotation Direction:");
+            EditorGUILayout.PrefixLabel(bus.shape == BusShape.L_Shape ? "Front Arm Direction:" : "Rotation Direction:");
             if (GUILayout.Toggle(bus.rotationDegrees == 0, "Right (0° →)", EditorStyles.miniButtonLeft)) bus.rotationDegrees = 0;
             if (GUILayout.Toggle(bus.rotationDegrees == 90, "Up (90° ↑)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 90;
             if (GUILayout.Toggle(bus.rotationDegrees == 180, "Left (180° ←)", EditorStyles.miniButtonMid)) bus.rotationDegrees = 180;
@@ -2851,8 +2990,10 @@ namespace SandBlocks.Editor
 
             // Coordinates
             EditorGUILayout.BeginHorizontal();
-            bus.gridPosition.x = EditorGUILayout.IntSlider($"Grid X (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
-            bus.gridPosition.y = EditorGUILayout.IntSlider($"Grid Y (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
+            string coordLabelX = (bus.shape == BusShape.L_Shape) ? "Corner Grid X:" : "Grid X:";
+            string coordLabelY = (bus.shape == BusShape.L_Shape) ? "Corner Grid Y:" : "Grid Y:";
+            bus.gridPosition.x = EditorGUILayout.IntSlider($"{coordLabelX} (0..{maxGridX}):", bus.gridPosition.x, 0, maxGridX);
+            bus.gridPosition.y = EditorGUILayout.IntSlider($"{coordLabelY} (0..{maxGridY}):", bus.gridPosition.y, 0, maxGridY);
             EditorGUILayout.EndHorizontal();
 
             // Nudge D-Pad

@@ -1,8 +1,7 @@
 using System.Collections.Generic;
-
 using UnityEngine;
-
 using SandBlocks.Puzzle.Vehicles;
+using SandBlocks.Core.Data;
 
 
 
@@ -923,18 +922,19 @@ namespace SandBlocks.Puzzle.Grid
                 }
             }
 
-            HighlightHoverTiles(gridPos, vehicle.Length, vehicle.IsVertical, highlightColor);
+            var cells = vehicle.GetOccupiedCells(gridPos);
+            HighlightHoverCells(cells, highlightColor);
         }
 
-        public void HighlightHoverTiles(Vector2Int gridPos, int length, bool isVertical, Color highlightColor)
+        public void HighlightHoverCells(List<Vector2Int> cells, Color highlightColor)
         {
-            if (!enableTileHoverHighlight) return;
+            if (!enableTileHoverHighlight || cells == null) return;
 
-            List<Vector2Int> newCells = new List<Vector2Int>(length);
-            for (int i = 0; i < length; i++)
+            List<Vector2Int> newCells = new List<Vector2Int>(cells.Count);
+            for (int i = 0; i < cells.Count; i++)
             {
-                int cx = isVertical ? gridPos.x : (gridPos.x + i);
-                int cy = isVertical ? (gridPos.y + i) : gridPos.y;
+                int cx = cells[i].x;
+                int cy = cells[i].y;
                 if (cx >= 0 && cx < columns && cy >= 0 && cy < rows)
                 {
                     newCells.Add(new Vector2Int(cx, cy));
@@ -987,6 +987,21 @@ namespace SandBlocks.Puzzle.Grid
             currentHighlightedCells.AddRange(newCells);
         }
 
+        public void HighlightHoverTiles(Vector2Int gridPos, int length, bool isVertical, Color highlightColor)
+        {
+            if (!enableTileHoverHighlight) return;
+
+            List<Vector2Int> newCells = new List<Vector2Int>(length);
+            for (int i = 0; i < length; i++)
+            {
+                int cx = isVertical ? gridPos.x : (gridPos.x + i);
+                int cy = isVertical ? (gridPos.y + i) : gridPos.y;
+                newCells.Add(new Vector2Int(cx, cy));
+            }
+
+            HighlightHoverCells(newCells, highlightColor);
+        }
+
         /// <summary>
         /// Clears all active tile hover highlights back to their default appearance.
         /// </summary>
@@ -1026,6 +1041,16 @@ namespace SandBlocks.Puzzle.Grid
                 if (a[i] != b[i]) return false;
             }
             return true;
+        }
+
+        public Vector3 GridToWorld(VehicleBase vehicle, Vector2Int gridPos)
+        {
+            if (vehicle is BusVehicle bus && bus.Shape == BusShape.L_Shape)
+            {
+                // L-shape vehicle is anchored at its corner cell
+                return GridToWorld(gridPos, 1, false);
+            }
+            return GridToWorld(gridPos, vehicle != null ? vehicle.Length : 1, vehicle != null && vehicle.IsVertical);
         }
 
         public Vector3 GridToWorld(Vector2Int gridPos, int length, bool isVertical)
@@ -1126,111 +1151,57 @@ namespace SandBlocks.Puzzle.Grid
 
 
         public bool CanPlace(VehicleBase vehicle, Vector2Int pos)
-
         {
+            if (vehicle == null) return false;
 
-            int reqCols = vehicle.IsVertical ? 1 : vehicle.Length;
-
-            int reqRows = vehicle.IsVertical ? vehicle.Length : 1;
-
-
-
-            if (pos.x < 0 || pos.x + reqCols > columns) return false;
-
-            if (pos.y < 0 || pos.y + reqRows > rows) return false;
-
-
-
-            for (int i = 0; i < vehicle.Length; i++)
-
+            var cells = vehicle.GetOccupiedCells(pos);
+            for (int i = 0; i < cells.Count; i++)
             {
-
-                int gx = vehicle.IsVertical ? pos.x : pos.x + i;
-
-                int gy = vehicle.IsVertical ? pos.y + i : pos.y;
-
-
+                int gx = cells[i].x;
+                int gy = cells[i].y;
 
                 if (gx < 0 || gx >= columns || gy < 0 || gy >= rows) return false;
-
                 if (IsCellBlocked(gx, gy)) return false;
 
-
-
                 VehicleBase occupant = grid[gx, gy];
-
                 if (occupant != null && occupant != vehicle) return false;
-
             }
 
             return true;
-
         }
 
-
-
         public void PlaceVehicle(VehicleBase vehicle, Vector2Int pos)
-
         {
-
             RemoveVehicle(vehicle);
-
             vehicle.GridPosition = pos;
 
-
-
-            for (int i = 0; i < vehicle.Length; i++)
-
+            var cells = vehicle.GetOccupiedCells(pos);
+            for (int i = 0; i < cells.Count; i++)
             {
-
-                int gx = vehicle.IsVertical ? pos.x : pos.x + i;
-
-                int gy = vehicle.IsVertical ? pos.y + i : pos.y;
-
+                int gx = cells[i].x;
+                int gy = cells[i].y;
                 if (gx >= 0 && gx < columns && gy >= 0 && gy < rows)
-
                 {
-
                     grid[gx, gy] = vehicle;
-
                 }
-
             }
-
-
 
             if (!registeredVehicles.Contains(vehicle)) registeredVehicles.Add(vehicle);
-
-            vehicle.transform.position = GridToWorld(pos, vehicle.Length, vehicle.IsVertical);
-
-
+            vehicle.transform.position = GridToWorld(vehicle, pos);
 
             // Align rotation with orientation
-
             if (vehicle is BusVehicle bus)
-
             {
-
                 bus.ApplyRotation();
-
             }
-
             else if (vehicle.IsVertical)
-
             {
-
                 vehicle.transform.rotation = Quaternion.Euler(0f, 0f, 90f);
-
             }
-
             else
-
             {
-
                 vehicle.transform.rotation = Quaternion.identity;
-
             }
-
         }
 
 

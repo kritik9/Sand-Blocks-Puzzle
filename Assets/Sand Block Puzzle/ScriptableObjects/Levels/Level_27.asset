@@ -17,7 +17,7 @@ MonoBehaviour:
   particleRadius: 0.17
   characterScale: 0
   verticalSpacingMultiplier: 0
-  maxParticles: 255
+  maxParticles: 360
   containerShape: 0
   containerWidth: 9
   containerHeight: 5
@@ -41,48 +41,80 @@ MonoBehaviour:
     length: 4
     rotationDegrees: 0
     gridPosition: {x: 0, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: White Bus 2
     colorId: 5
     capacity: 30
     length: 3
     rotationDegrees: 0
-    gridPosition: {x: 3, y: 1}
+    gridPosition: {x: 1, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Red Bus 1
     colorId: 7
     capacity: 30
     length: 3
-    rotationDegrees: 0
-    gridPosition: {x: 0, y: 2}
+    rotationDegrees: 180
+    gridPosition: {x: 5, y: 0}
+    shape: 1
+    turnDirection: 0
+    arm1Length: 1
+    arm2Length: 1
   - name: Bus 7
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
-    gridPosition: {x: 3, y: 3}
+    gridPosition: {x: 6, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 10
     colorId: 0
     capacity: 42
     length: 4
     rotationDegrees: 270
-    gridPosition: {x: 7, y: 1}
+    gridPosition: {x: 0, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 7
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
-    gridPosition: {x: 0, y: 1}
+    gridPosition: {x: 6, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 7
     colorId: 5
     capacity: 30
     length: 3
     rotationDegrees: 0
-    gridPosition: {x: 4, y: 0}
+    gridPosition: {x: 4, y: 3}
+    shape: 1
+    turnDirection: 0
+    arm1Length: 1
+    arm2Length: 1
   - name: Bus 8
     colorId: 0
     capacity: 30
     length: 3
     rotationDegrees: 0
-    gridPosition: {x: 4, y: 2}
+    gridPosition: {x: 1, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   unifiedGridColumns: 8
   unifiedGridRows: 8
   unifiedGridRotation: 0

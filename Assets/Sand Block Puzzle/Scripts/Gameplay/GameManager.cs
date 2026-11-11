@@ -718,7 +718,7 @@ namespace SandBlocks.Gameplay
                 for (int i = 0; i < currentLevel.buses.Count; i++)
                 {
                     var b = currentLevel.buses[i];
-                    var bus = CreateBus(b.colorId, b.capacity, b.length, b.rotationDegrees, b.gridPosition, b.name);
+                    var bus = CreateBus(b);
                     spawnedBuses.Add(bus);
                 }
             }
@@ -748,6 +748,21 @@ namespace SandBlocks.Gameplay
                     }
                 }
             }
+        }
+
+        private BusVehicle CreateBus(BusSpawnData b)
+        {
+            var bus = busContainer != null 
+                ? Instantiate(busPrefab, busContainer) 
+                : Instantiate(busPrefab);
+
+            bus.name = !string.IsNullOrEmpty(b.name) ? b.name : $"Bus_{b.gridPosition.x}_{b.gridPosition.y}";
+            bus.Initialize(b);
+            bus.SetPassengerScale(crowdRenderer != null ? crowdRenderer.CharacterScale : 0.1f);
+            bus.ApplyColor(palette);
+            bus.DepartureMode = defaultBusDepartureMode;
+            puzzleGrid.PlaceVehicle(bus, b.gridPosition);
+            return bus;
         }
 
         private BusVehicle CreateBus(int colorId, int capacity, int length, int rotDegrees, Vector2Int gridPos, string busName = null)

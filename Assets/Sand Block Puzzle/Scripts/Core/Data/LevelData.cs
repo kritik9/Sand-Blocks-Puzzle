@@ -96,6 +96,18 @@ namespace SandBlocks.Core.Data
 
 
 
+    public enum BusShape
+    {
+        Straight = 0,
+        L_Shape = 1
+    }
+
+    public enum LTurnDirection
+    {
+        TurnRight = 0,
+        TurnLeft = 1
+    }
+
     [Serializable]
 
     public struct BusSpawnData
@@ -118,9 +130,23 @@ namespace SandBlocks.Core.Data
 
         public Vector2Int gridPosition;
 
+        [Tooltip("Bus shape: Straight (standard 1D) or L_Shape (corner turn)")]
+        public BusShape shape;
 
+        [Tooltip("Turn direction for L-shaped bus (TurnRight = clockwise towards Front, TurnLeft = counter-clockwise towards Front)")]
+        public LTurnDirection turnDirection;
+
+        [Tooltip("Length in cells of Arm 1 (Rear arm leading into corner, default 1)")]
+        public int arm1Length;
+
+        [Tooltip("Length in cells of Arm 2 (Front arm leading out of corner, default 1)")]
+        public int arm2Length;
 
         public bool isVertical => (rotationDegrees == 90 || rotationDegrees == 270);
+
+        public int TotalCells => (shape == BusShape.L_Shape)
+            ? (Mathf.Max(1, arm1Length) + 1 + Mathf.Max(1, arm2Length))
+            : Mathf.Max(2, length);
 
     }
 
@@ -1124,25 +1150,58 @@ namespace SandBlocks.Core.Data
 
 
         public static List<Vector2Int> GetOccupiedCells(BusSpawnData bus)
-
         {
-
             var cells = new List<Vector2Int>();
 
-            for (int i = 0; i < bus.length; i++)
-
+            if (bus.shape == BusShape.L_Shape)
             {
+                // Front heading vector from rotationDegrees (0=Right, 90=Up, 180=Left, 270=Down)
+                Vector2Int frontDir;
+                switch (bus.rotationDegrees)
+                {
+                    case 90:  frontDir = new Vector2Int(0, 1);  break;
+                    case 180: frontDir = new Vector2Int(-1, 0); break;
+                    case 270: frontDir = new Vector2Int(0, -1); break;
+                    case 0:
+                    default:  frontDir = new Vector2Int(1, 0);  break;
+                }
 
+                // Rear arm direction perpendicular to front:
+                // TurnRight: coming from rear and turning clockwise/right gives frontDir -> rearDir = (frontDir.y, -frontDir.x)
+                // TurnLeft:  coming from rear and turning counter-clockwise/left gives frontDir -> rearDir = (-frontDir.y, frontDir.x)
+                Vector2Int rearDir = (bus.turnDirection == LTurnDirection.TurnRight)
+                    ? new Vector2Int(frontDir.y, -frontDir.x)
+                    : new Vector2Int(-frontDir.y, frontDir.x);
+
+                // 1. Corner anchor cell
+                cells.Add(bus.gridPosition);
+
+                // 2. Rear arm cells (step 1 to arm1Length)
+                int arm1 = Mathf.Max(1, bus.arm1Length);
+                for (int i = 1; i <= arm1; i++)
+                {
+                    cells.Add(bus.gridPosition + rearDir * i);
+                }
+
+                // 3. Front arm cells (step 1 to arm2Length)
+                int arm2 = Mathf.Max(1, bus.arm2Length);
+                for (int i = 1; i <= arm2; i++)
+                {
+                    cells.Add(bus.gridPosition + frontDir * i);
+                }
+
+                return cells;
+            }
+
+            int len = Mathf.Max(2, bus.length);
+            for (int i = 0; i < len; i++)
+            {
                 int gx = bus.isVertical ? bus.gridPosition.x : bus.gridPosition.x + i;
-
                 int gy = bus.isVertical ? bus.gridPosition.y + i : bus.gridPosition.y;
-
                 cells.Add(new Vector2Int(gx, gy));
-
             }
 
             return cells;
-
         }
 
 

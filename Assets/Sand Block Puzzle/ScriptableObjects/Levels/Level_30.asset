@@ -17,7 +17,7 @@ MonoBehaviour:
   particleRadius: 0.17
   characterScale: 0
   verticalSpacingMultiplier: 0
-  maxParticles: 204
+  maxParticles: 312
   containerShape: 0
   containerWidth: 9
   containerHeight: 4.35
@@ -41,60 +41,100 @@ MonoBehaviour:
     length: 4
     rotationDegrees: 0
     gridPosition: {x: 0, y: 0}
+    shape: 1
+    turnDirection: 1
+    arm1Length: 1
+    arm2Length: 2
   - name: White Bus 1
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 3, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: White Bus 2
     colorId: 2
     capacity: 30
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 2, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Red Bus 1
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 4, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 6
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 0, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 7
     colorId: 7
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 5, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 10
     colorId: 1
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 5, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Bus 9
     colorId: 2
     capacity: 30
     length: 3
-    rotationDegrees: 0
-    gridPosition: {x: 4, y: 3}
+    rotationDegrees: 90
+    gridPosition: {x: 6, y: 3}
+    shape: 1
+    turnDirection: 1
+    arm1Length: 1
+    arm2Length: 1
   - name: Orange Bus 1 (Copy)
     colorId: 1
     capacity: 30
     length: 3
     rotationDegrees: 0
-    gridPosition: {x: 0, y: 4}
+    gridPosition: {x: 2, y: 3}
+    shape: 1
+    turnDirection: 0
+    arm1Length: 1
+    arm2Length: 1
   - name: Bus 6 (Copy)
     colorId: 1
     capacity: 18
     length: 2
     rotationDegrees: 0
     gridPosition: {x: 0, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   unifiedGridColumns: 8
   unifiedGridRows: 8
   unifiedGridRotation: 0

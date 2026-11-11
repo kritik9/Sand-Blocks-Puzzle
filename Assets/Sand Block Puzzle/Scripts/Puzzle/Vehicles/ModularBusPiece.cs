@@ -60,6 +60,11 @@ namespace SandBlocks.Puzzle.Vehicles
                 pieceType = BusPieceType.Rear;
                 pieceCapacity = 20;
             }
+            else if (nm.Contains("corner"))
+            {
+                pieceType = BusPieceType.Corner;
+                pieceCapacity = 11;
+            }
             else
             {
                 pieceType = BusPieceType.Mid;
