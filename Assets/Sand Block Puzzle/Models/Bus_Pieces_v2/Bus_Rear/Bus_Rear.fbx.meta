@@ -8,17 +8,17 @@ ModelImporter:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: BrakeLamp_Material
-    second: {fileID: 2100000, guid: 8dd9f2bd0ac069a4b808ae75076a0e0f, type: 2}
+    second: {fileID: 2100000, guid: 263cd4cb37db7d942bd1203ea172bebf, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: Bus-Wheel_Material
-    second: {fileID: 2100000, guid: 0f7d8ab4782edc84ba5a9d02e5a906df, type: 2}
+    second: {fileID: 2100000, guid: bc08b3893207e8b419e4216a99677a57, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: Bus_Material
-    second: {fileID: 2100000, guid: 8d5462917de8dea46ac89d6486494292, type: 2}
+    second: {fileID: 2100000, guid: edd18f36bd43438418bfb92c057fc8c1, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
