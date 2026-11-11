@@ -208,12 +208,7 @@ namespace SandBlocks.Gameplay
 
         private void RegisterSuccessfulTransfer(VehicleBase bus)
         {
-            if (lastCollectingBus != bus)
-            {
-                consecutiveTransfers = 0;
-                lastCollectingBus = bus;
-            }
-
+            lastCollectingBus = bus;
             consecutiveTransfers++;
             lastTransferTime = Time.time;
         }
@@ -271,6 +266,7 @@ namespace SandBlocks.Gameplay
             {
                 var bus = candidates[i];
                 if (bus == null || bus.IsFull) continue;
+                if (bus is BusVehicle bv && bv.IsDrivingAway) continue;
 
                 if (!TryGetBusCollectionRange(bus, out float minX, out float maxX))
                 {
@@ -294,7 +290,6 @@ namespace SandBlocks.Gameplay
                         {
                             RegisterSuccessfulTransfer(bus);
                             StartCoroutine(AnimateCommuterFlight(startPos, busVehicle, seatPos, bus.ColorId, GetActiveFlightDuration()));
-                            break;
                         }
                     }
                     else
@@ -303,7 +298,6 @@ namespace SandBlocks.Gameplay
                         {
                             RegisterSuccessfulTransfer(bus);
                             StartCoroutine(AnimateCommuterFlightLegacy(startPos, bus, seatPos, bus.ColorId, GetActiveFlightDuration()));
-                            break;
                         }
                     }
                 }
@@ -376,7 +370,7 @@ namespace SandBlocks.Gameplay
             if (dragHandler != null && dragHandler.IsDragging)
             {
                 var dragged = dragHandler.HoveredVehicle;
-                if (dragged != null && !dragged.IsFull && IsVehicleInCollectionZone(dragged))
+                if (dragged != null && !dragged.IsFull && !(dragged is BusVehicle dbv && dbv.IsDrivingAway) && IsVehicleInCollectionZone(dragged))
                 {
                     candidates.Add(dragged);
                 }
@@ -389,7 +383,7 @@ namespace SandBlocks.Gameplay
                 for (int x = 0; x < puzzleGrid.Columns; x++)
                 {
                     var v = puzzleGrid.GetVehicleAt(x, topRow);
-                    if (v != null && !v.IsFull && !candidates.Contains(v) && IsVehicleInCollectionZone(v))
+                    if (v != null && !v.IsFull && !(v is BusVehicle vbv && vbv.IsDrivingAway) && !candidates.Contains(v) && IsVehicleInCollectionZone(v))
                     {
                         candidates.Add(v);
                     }
@@ -401,7 +395,7 @@ namespace SandBlocks.Gameplay
 
         private bool IsVehicleInCollectionZone(VehicleBase vehicle)
         {
-            if (vehicle == null || vehicle.IsFull) return false;
+            if (vehicle == null || vehicle.IsFull || (vehicle is BusVehicle bv && bv.IsDrivingAway)) return false;
 
             if (puzzleGrid == null) puzzleGrid = FindAnyObjectByType<PuzzleGrid>();
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();

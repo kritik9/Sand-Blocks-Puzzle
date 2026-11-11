@@ -19,8 +19,8 @@ MonoBehaviour:
   verticalSpacingMultiplier: 0
   maxParticles: 204
   containerShape: 0
-  containerWidth: 6.51
-  containerHeight: 4.3199997
+  containerWidth: 9
+  containerHeight: 4.35
   containerCenter: {x: 0, y: -0.9}
   leftBorderOffset: 0
   rightBorderOffset: 0
