@@ -32,6 +32,7 @@ namespace SandBlocks.Gameplay
         [SerializeField] private GameObject[] variationObjects;
 
         private static readonly int IsRunningHash = Animator.StringToHash("isRunning");
+        private static readonly int IsWalkingHash = Animator.StringToHash("IsWalking");
         private static readonly int IsSittingHash = Animator.StringToHash("IsSitting");
         private static readonly int BaseColorProp = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorProp = Shader.PropertyToID("_Color");
@@ -254,6 +255,22 @@ namespace SandBlocks.Gameplay
                 animator.enabled = true;
                 animator.SetBool(IsSittingHash, false);
                 animator.SetBool(IsRunningHash, false);
+                animator.SetBool(IsWalkingHash, false);
+            }
+        }
+
+        /// <summary>
+        /// Plays the walking animation (used when crowd slides/falls towards the bottom boundary).
+        /// </summary>
+        public void PlayWalk()
+        {
+            FindComponents();
+            if (animator != null)
+            {
+                animator.enabled = true;
+                animator.SetBool(IsSittingHash, false);
+                animator.SetBool(IsRunningHash, false);
+                animator.SetBool(IsWalkingHash, true);
             }
         }
 
@@ -268,6 +285,7 @@ namespace SandBlocks.Gameplay
             {
                 animator.enabled = true;
                 animator.SetBool(IsSittingHash, false);
+                animator.SetBool(IsWalkingHash, false);
                 animator.SetBool(IsRunningHash, true);
             }
         }
@@ -283,6 +301,7 @@ namespace SandBlocks.Gameplay
             {
                 animator.enabled = true;
                 animator.SetBool(IsRunningHash, false);
+                animator.SetBool(IsWalkingHash, false);
                 animator.SetBool(IsSittingHash, true);
                 animator.Update(0f);
                 // Freeze animator when sitting to save CPU skinning on seated passengers

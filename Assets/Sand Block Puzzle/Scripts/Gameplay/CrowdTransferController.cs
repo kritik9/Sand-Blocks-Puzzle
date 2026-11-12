@@ -328,12 +328,9 @@ namespace SandBlocks.Gameplay
             {
                 anchorGrid = dragHandler.CurrentHoveredGrid;
             }
-            else if (puzzleGrid.TryGetGridDropPosition(bus.transform.position, bus.Length, bus.IsVertical, out Vector2Int cand))
-            {
-                anchorGrid = cand;
-            }
 
             var occCells = bus.GetOccupiedCells(anchorGrid);
+            bool touchesTopRow = false;
             int colMin = int.MaxValue;
             int colMax = int.MinValue;
 
@@ -341,30 +338,22 @@ namespace SandBlocks.Gameplay
             {
                 if (occCells[i].y == topRow)
                 {
-                    if (occCells[i].x < colMin) colMin = occCells[i].x;
-                    if (occCells[i].x > colMax) colMax = occCells[i].x;
+                    touchesTopRow = true;
                 }
+                if (occCells[i].x < colMin) colMin = occCells[i].x;
+                if (occCells[i].x > colMax) colMax = occCells[i].x;
             }
 
-            if (colMin > colMax)
+            // Must have at least one cell on topRow to have a valid collection range
+            if (!touchesTopRow || colMin > colMax)
             {
-                for (int i = 0; i < occCells.Count; i++)
-                {
-                    if (occCells[i].x < colMin) colMin = occCells[i].x;
-                    if (occCells[i].x > colMax) colMax = occCells[i].x;
-                }
-            }
-
-            if (colMin > colMax)
-            {
-                colMin = anchorGrid.x;
-                colMax = anchorGrid.x;
+                return false;
             }
 
             colMin = Mathf.Clamp(colMin, 0, totalCols - 1);
             colMax = Mathf.Clamp(colMax, 0, totalCols - 1);
 
-            // Calculate percentage across the puzzle width [0.0, 1.0]
+            // Calculate percentage across the puzzle width [0.0, 1.0] strictly matching this bus's occupied width
             float minPct = (float)colMin / totalCols;
             float maxPct = (float)(colMax + 1) / totalCols;
 
@@ -376,9 +365,9 @@ namespace SandBlocks.Gameplay
             minX = crowdLeft + minPct * crowdWidth;
             maxX = crowdLeft + maxPct * crowdWidth;
 
-            // Safe column-proportional edge tolerance buffer (clamps to at most 25% of column span)
+            // Safe column-proportional edge tolerance buffer (clamps to at most 15% of column span)
             float colSpan = crowdWidth / totalCols;
-            float toleranceBuffer = Mathf.Min(0.35f, colSpan * 0.25f);
+            float toleranceBuffer = Mathf.Min(0.20f, colSpan * 0.15f);
             minX -= toleranceBuffer;
             maxX += toleranceBuffer;
 
@@ -411,9 +400,16 @@ namespace SandBlocks.Gameplay
                 for (int x = 0; x < puzzleGrid.Columns; x++)
                 {
                     var v = puzzleGrid.GetVehicleAt(x, topRow);
-                    if (v != null && !v.IsFull && !(v is BusVehicle vbv && vbv.IsDrivingAway) && !candidates.Contains(v) && IsVehicleInCollectionZone(v))
+                    if (v != null && !v.IsFull && !(v is BusVehicle vbv && vbv.IsDrivingAway))
                     {
-                        candidates.Add(v);
+                        // Ignore vehicle if it is currently being dragged (handled in section 1 by hover)
+                        if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == v)
+                            continue;
+
+                        if (!candidates.Contains(v) && IsVehicleInCollectionZone(v))
+                        {
+                            candidates.Add(v);
+                        }
                     }
                 }
             }
@@ -429,9 +425,8 @@ namespace SandBlocks.Gameplay
             if (boundary == null) boundary = FindAnyObjectByType<ContainerBoundary>();
 
             int topRow = puzzleGrid != null ? puzzleGrid.Rows - 1 : 4;
-            float cellSize = puzzleGrid != null ? puzzleGrid.CellSize : 1.35f;
 
-            // 0. Active dragging hover check: matches immediately while user drags bus to top row
+            // 0. Active dragging hover check: when user drags bus, its collection state matches its drag shadow/hover exclusively!
             if (dragHandler != null && dragHandler.IsDragging && dragHandler.HoveredVehicle == vehicle)
             {
                 var hCells = vehicle.GetOccupiedCells(dragHandler.CurrentHoveredGrid);
@@ -439,39 +434,15 @@ namespace SandBlocks.Gameplay
                 {
                     if (hCells[i].y == topRow) return true;
                 }
+                // When actively dragging, if the shadow/hover is not on the top row, DO NOT collect!
+                return false;
             }
 
-            // 1. Grid coordinate check: works for placed vehicles and hovering vehicles whose GridPosition is updated
+            // 1. Placed vehicle check: check occupied cells at vehicle.GridPosition
             var vCells = vehicle.GetOccupiedCells(vehicle.GridPosition);
             for (int i = 0; i < vCells.Count; i++)
             {
                 if (vCells[i].y == topRow) return true;
-            }
-
-            // 2. Candidate drop grid check from current world position (for when hovering/dragging)
-            if (puzzleGrid != null)
-            {
-                if (puzzleGrid.TryGetGridDropPosition(vehicle.transform.position, vehicle.Length, vehicle.IsVertical, out Vector2Int cand))
-                {
-                    var candCells = vehicle.GetOccupiedCells(cand);
-                    for (int i = 0; i < candCells.Count; i++)
-                    {
-                        if (candCells[i].y == topRow) return true;
-                    }
-                }
-            }
-
-            // 3. World proximity fallback: within half a cell of the top row
-            bool isHorizontal = (SandBlocks.Gameplay.GameManager.CurrentOrientation == SandBlocks.Core.Data.BoardOrientation.Horizontal_XZ);
-            float topRowWorldCoord = puzzleGrid != null 
-                ? (puzzleGrid.Origin.y + topRow * cellSize) 
-                : -3.8f;
-            float halfSpan = vehicle.IsVertical ? (vehicle.Length - 1) * 0.5f * cellSize : 0f;
-            float busTopWorldCoord = (isHorizontal ? vehicle.transform.position.z : vehicle.transform.position.y) + halfSpan;
-
-            if (Mathf.Abs(busTopWorldCoord - topRowWorldCoord) <= cellSize * 0.65f)
-            {
-                return true;
             }
 
             return false;

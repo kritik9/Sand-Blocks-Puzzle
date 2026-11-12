@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Unity.Collections;
+using Unity.Mathematics;
 using UnityEngine;
 using SandBlocks.Core.Data;
 using SandBlocks.Core.Simulation;
@@ -197,6 +198,7 @@ namespace SandBlocks.Core.Rendering
         private List<SandBlocks.Gameplay.CharacterPassenger> pooledPassengers = new List<SandBlocks.Gameplay.CharacterPassenger>();
         private List<int> pooledCachedColorIds = new List<int>();
         private List<bool> pooledConfigured = new List<bool>();
+        private List<bool> pooledIsWalking = new List<bool>();
         private float defaultPrefabScale = -1f;
 
         public void SetCharacterScale(float scale)
@@ -305,6 +307,7 @@ namespace SandBlocks.Core.Rendering
             pooledPassengers.Clear();
             pooledCachedColorIds.Clear();
             pooledConfigured.Clear();
+            pooledIsWalking.Clear();
             if (defaultPrefabScale < 0f) defaultPrefabScale = prefabScale;
 
             // Setup fallback mesh and material
@@ -366,6 +369,7 @@ namespace SandBlocks.Core.Rendering
                 pooledPassengers.Add(instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>());
                 pooledCachedColorIds.Add(-999);
                 pooledConfigured.Add(false);
+                pooledIsWalking.Add(false);
             }
         }
 
@@ -416,6 +420,7 @@ namespace SandBlocks.Core.Rendering
                 pooledPassengers.Add(instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>());
                 pooledCachedColorIds.Add(-999);
                 pooledConfigured.Add(false);
+                pooledIsWalking.Add(false);
             }
 
             for (int i = 0; i < count; i++)
@@ -430,6 +435,7 @@ namespace SandBlocks.Core.Rendering
                         instance.SetActive(false);
                         pooledConfigured[i] = false;
                         pooledCachedColorIds[i] = -999;
+                        if (i < pooledIsWalking.Count) pooledIsWalking[i] = false;
                     }
                     continue;
                 }
@@ -457,8 +463,9 @@ namespace SandBlocks.Core.Rendering
                     }
                 }
 
-                // If already configured and particle is settled and spawn pop finished, SKIP all transform & color evaluations!
-                if (pooledConfigured[i] && p.isSettled && !isPopping)
+                // If already configured and particle is settled and spawn pop finished and not walking, SKIP all evaluations!
+                bool wasWalking = (i < pooledIsWalking.Count && pooledIsWalking[i]);
+                if (pooledConfigured[i] && p.isSettled && !isPopping && !wasWalking)
                 {
                     continue;
                 }
@@ -469,6 +476,25 @@ namespace SandBlocks.Core.Rendering
                 instance.transform.position = GetCalculatedWorldPosition(p.position);
 
                 var pass = (i < pooledPassengers.Count) ? pooledPassengers[i] : instance.GetComponent<SandBlocks.Gameplay.CharacterPassenger>();
+
+                // Check if particle is moving/sliding down towards the bottom boundary
+                bool isMovingDown = (!p.isSettled && !isPopping && (math.lengthsq(p.velocity) > 0.04f || p.velocity.y < -0.05f));
+                if (isMovingDown)
+                {
+                    if (i < pooledIsWalking.Count && !pooledIsWalking[i])
+                    {
+                        if (pass != null) pass.PlayWalk();
+                        pooledIsWalking[i] = true;
+                    }
+                }
+                else if (p.isSettled || math.lengthsq(p.velocity) <= 0.02f)
+                {
+                    if (i < pooledIsWalking.Count && pooledIsWalking[i])
+                    {
+                        if (pass != null) pass.PlayIdle();
+                        pooledIsWalking[i] = false;
+                    }
+                }
 
                 if (!pooledConfigured[i])
                 {
