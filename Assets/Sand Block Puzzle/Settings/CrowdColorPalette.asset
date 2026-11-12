@@ -52,3 +52,9 @@ MonoBehaviour:
   - id: 12
     name: Gray
     color: {r: 0.9433962, g: 0.9433962, b: 0.9433962, a: 1}
+  - id: 13
+    name: Purple
+    color: {r: 0.6745098, g: 0.3137255, b: 0.9568628, a: 1}
+  - id: 14
+    name: Sky Blue
+    color: {r: 0, g: 0.909804, b: 0.9490197, a: 1}

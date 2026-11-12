@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
-  m_Name: Level_22
+  m_Name: Level_2
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
   gameplayMode: 0
-  levelName: Level 22
+  levelName: Level 2
   particleRadius: 0.17
   characterScale: 0
   verticalSpacingMultiplier: 0

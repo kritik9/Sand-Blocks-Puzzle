@@ -26,7 +26,7 @@ namespace SandBlocks.Puzzle.Vehicles
         public const int DefaultFrontPieceCapacity = 9;
         public const int DefaultMidPieceCapacity = 12;
         public const int DefaultRearPieceCapacity = 9;
-        public const int DefaultCornerPieceCapacity = 11;
+        public const int DefaultCornerPieceCapacity = 12;
 
         /// <summary>
         /// Calculates modular bus passenger capacity based on piece count:
@@ -43,8 +43,9 @@ namespace SandBlocks.Puzzle.Vehicles
 
         /// <summary>
         /// Calculates L-shaped modular bus passenger capacity based on arm piece counts:
-        /// Size 3 (Standard 1+1+1): Rear (9) + Corner (11) + Front (9) = 29
-        /// Size 4 (2+1+1): Rear (9) + Mid (12) + Corner (11) + Front (9) = 41
+        /// Size 3 (Standard 1+1): Rear (9) + Corner (12) + Front (9) = 30
+        /// Size 4 (2+1 or 1+2): Rear (9) + Mid (12) + Corner (12) + Front (9) = 42
+        /// Size 5 (2+2): Rear (9) + 2xMid (24) + Corner (12) + Front (9) = 54
         /// </summary>
         public static int CalculateLCapacity(int arm1Len, int arm2Len, int frontCap = DefaultFrontPieceCapacity, int midCap = DefaultMidPieceCapacity, int rearCap = DefaultRearPieceCapacity, int cornerCap = DefaultCornerPieceCapacity)
         {

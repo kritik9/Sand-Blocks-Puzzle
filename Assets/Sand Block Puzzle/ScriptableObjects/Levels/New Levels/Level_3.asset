@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
-  m_Name: Level_23
+  m_Name: Level_3
   m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
   gameplayMode: 0
-  levelName: Level 23
+  levelName: Level 3
   particleRadius: 0.15
   characterScale: 0
   verticalSpacingMultiplier: 0
@@ -41,30 +41,50 @@ MonoBehaviour:
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 1, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Red Bus
     colorId: 7
     capacity: 30
     length: 3
     rotationDegrees: 90
     gridPosition: {x: 1, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Yellow Bus
     colorId: 2
     capacity: 30
     length: 3
     rotationDegrees: 90
     gridPosition: {x: 2, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Blue Bus
     colorId: 0
     capacity: 30
     length: 3
     rotationDegrees: 90
     gridPosition: {x: 3, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   - name: Green Bus 2
     colorId: 1
     capacity: 30
     length: 3
     rotationDegrees: 0
     gridPosition: {x: 1, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
   unifiedGridColumns: 8
   unifiedGridRows: 8
   unifiedGridRotation: 0

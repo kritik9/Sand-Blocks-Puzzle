@@ -46,7 +46,7 @@ namespace SandBlocks.Editor
         private int frontPieceCapacity = 9;
         private int midPieceCapacity = 12;
         private int rearPieceCapacity = 9;
-        private int cornerPieceCapacity = 11;
+        private int cornerPieceCapacity = 12;
         private bool showPieceCapacitiesFoldout = true;
         private bool showUnifiedJumpSettingsFoldout = true;
 
@@ -61,12 +61,23 @@ namespace SandBlocks.Editor
         private bool unifiedWalkableAfterCollection = false;
 
         // Image Import State
+        public enum ImageBalanceMode
+        {
+            QuantizeToValidBusCapacities = 0,
+            MatchExistingBuses = 1,
+            AutoGenerateBusFleet = 2
+        }
+
         private bool showImageImportSection = true;
         private int importGridCols = 16;
         private int importGridRows = 16;
         private float importMarginPercent = 4.5f;
         private float whiteThreshold = 0.82f;
         private bool flipVertical = false;
+        private bool autoBalanceImageOnImport = true;
+        private ImageBalanceMode imageBalanceMode = ImageBalanceMode.QuantizeToValidBusCapacities;
+        private bool allowLShapesInAutoBalance = true;
+        private List<ColorBalanceReport> cachedBalanceReports = null;
 
         // Default colors if palette asset not loaded
         private readonly Color[] fallbackColors = new Color[]
@@ -107,7 +118,12 @@ namespace SandBlocks.Editor
             frontPieceCapacity = EditorPrefs.GetInt("SandBlocks_FrontPieceCap", 9);
             midPieceCapacity = EditorPrefs.GetInt("SandBlocks_MidPieceCap", 12);
             rearPieceCapacity = EditorPrefs.GetInt("SandBlocks_RearPieceCap", 9);
-            cornerPieceCapacity = EditorPrefs.GetInt("SandBlocks_CornerPieceCap", 11);
+            cornerPieceCapacity = EditorPrefs.GetInt("SandBlocks_CornerPieceCap", 12);
+            if (cornerPieceCapacity == 11)
+            {
+                cornerPieceCapacity = 12;
+                SavePieceCapacities();
+            }
 
             if (modularBusPrefab == null)
             {
@@ -805,20 +821,54 @@ namespace SandBlocks.Editor
 
                 flipVertical = EditorGUILayout.Toggle("Flip Y (Invert Rows):", flipVertical);
 
-                EditorGUILayout.Space(2);
+                EditorGUILayout.Space(3);
+
+                // Smart Capacity Balancing Configuration on Image Import
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.BeginHorizontal();
+                autoBalanceImageOnImport = EditorGUILayout.ToggleLeft("Auto-Balance Crowd Capacity to Bus Pieces", autoBalanceImageOnImport, EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("🔍 Open Capacity Analyzer", EditorStyles.miniButton, GUILayout.Width(170)))
+                {
+                    selectedTab = 2; // Jump to Tab 3 (Balance & Scene)
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (autoBalanceImageOnImport)
+                {
+                    imageBalanceMode = (ImageBalanceMode)EditorGUILayout.EnumPopup("Balancing Strategy:", imageBalanceMode);
+                    allowLShapesInAutoBalance = EditorGUILayout.Toggle("Allow L-Shaped Buses:", allowLShapesInAutoBalance);
+
+                    if (imageBalanceMode == ImageBalanceMode.QuantizeToValidBusCapacities)
+                    {
+                        EditorGUILayout.HelpBox("• Quantize to Bus Pieces: Snaps each color's crowd pixel count to the nearest reachable modular bus combination (Straight: 18, 30, 42, 54... and L-Shapes: 29, 41, 53...) by slightly trimming/expanding outer border pixels.", MessageType.None);
+                    }
+                    else if (imageBalanceMode == ImageBalanceMode.MatchExistingBuses)
+                    {
+                        EditorGUILayout.HelpBox("• Match Existing Buses: Adjusts crowd boundary pixels to exactly match the total seats of your existing buses for each color.", MessageType.None);
+                    }
+                    else if (imageBalanceMode == ImageBalanceMode.AutoGenerateBusFleet)
+                    {
+                        EditorGUILayout.HelpBox("• Auto-Generate Bus Fleet: Snaps crowd counts to valid bus pieces AND automatically creates, sizes, and packs matching buses onto your puzzle grid with 0 vacant seats!", MessageType.None);
+                    }
+                }
+                EditorGUILayout.EndVertical();
+
+                EditorGUILayout.Space(3);
 
                 EditorGUILayout.BeginHorizontal();
                 GUI.backgroundColor = new Color(0.2f, 0.85f, 0.35f, 1f);
-                if (GUILayout.Button("Auto-Convert Image to Crowd Grid", GUILayout.Height(30)))
+                if (GUILayout.Button("Auto-Convert Image to Crowd Grid", GUILayout.Height(32)))
                 {
                     ImportImageToCrowdGrid();
                 }
                 GUI.backgroundColor = Color.white;
 
-                if (GUILayout.Button("Reset to Lips", GUILayout.Width(100), GUILayout.Height(30)))
+                if (GUILayout.Button("Reset to Lips", GUILayout.Width(100), GUILayout.Height(32)))
                 {
                     Undo.RecordObject(selectedLevel, "Bake Lips");
                     selectedLevel.BakeLipsShape();
+                    cachedBalanceReports = null;
                     EditorUtility.SetDirty(selectedLevel);
                 }
                 EditorGUILayout.EndHorizontal();
@@ -902,8 +952,29 @@ namespace SandBlocks.Editor
                 }
 
                 selectedLevel.patternType = LevelPatternType.CustomGrid;
+
+                if (autoBalanceImageOnImport)
+                {
+                    ApplyImageCapacityBalancing();
+                }
+                cachedBalanceReports = null;
+
+                // Sync maxParticles to total non-background crowd
+                int totalCrowd = 0;
+                if (selectedLevel.customCrowdColors != null)
+                {
+                    for (int i = 0; i < selectedLevel.customCrowdColors.Length; i++)
+                    {
+                        if (selectedLevel.customCrowdColors[i] != 5) totalCrowd++;
+                    }
+                }
+                if (totalCrowd > 0)
+                {
+                    selectedLevel.maxParticles = Mathf.Max(selectedLevel.maxParticles, totalCrowd);
+                }
+
                 EditorUtility.SetDirty(selectedLevel);
-                Debug.Log($"<color=green>[SandBlocks]</color> Successfully converted image into {importGridCols}x{importGridRows} crowd grid!");
+                Debug.Log($"<color=green>[SandBlocks]</color> Successfully converted image into {importGridCols}x{importGridRows} crowd grid (Capacity-Balanced: {autoBalanceImageOnImport}, Total Crowd: {totalCrowd})!");
             }
             finally
             {
@@ -1522,6 +1593,15 @@ namespace SandBlocks.Editor
                 }
             }
 
+            EditorGUILayout.Space(3);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("🔍 Analyze Crowd & Bus Balance & Suggestions ↗", EditorStyles.miniButton, GUILayout.Height(24)))
+            {
+                selectedTab = 2; // Switch to Balance tab
+            }
+            EditorGUILayout.EndHorizontal();
+
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.EndVertical();
@@ -1537,7 +1617,14 @@ namespace SandBlocks.Editor
             int currentCols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
             int currentRows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
 
+            EditorGUILayout.BeginHorizontal();
             GUILayout.Label($"1. Puzzle Grid Visualization ({currentCols} Columns x {currentRows} Rows)", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("🔍 Check Capacity Balance & Suggestions", EditorStyles.miniButton, GUILayout.Width(250)))
+            {
+                selectedTab = 2; // Jump to Balance & Scene Tab
+            }
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.HelpBox("Click any bus in the grid or list below to edit its properties, rotation, length, or capacity. Overlaps are highlighted in red.", MessageType.None);
 
             EditorGUILayout.BeginHorizontal();
@@ -2017,25 +2104,13 @@ namespace SandBlocks.Editor
         }
 
         // =========================================================================
-        // TAB 3: BALANCE & SCENE PREVIEW
+        // TAB 3: BALANCE & SCENE PREVIEW (SMART CAPACITY ANALYZER & SOLVER)
         // =========================================================================
 
         private void DrawBalanceAndSceneTab()
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label("1. Level Balance Analysis (Crowd vs Bus Seats)", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("Verify that bus capacities match the painted crowd colors so all passengers can be collected.", MessageType.None);
-
-            DrawBalanceTable();
-
-            EditorGUILayout.Space(6);
-
-            if (GUILayout.Button("Auto-Balance Bus Capacities (Match Crowd)"))
-            {
-                AutoBalanceBusCapacities();
-            }
-
-            EditorGUILayout.EndVertical();
+            // Capacity Balance Analyzer Dashboard
+            DrawCapacityBalanceAnalyzer();
 
             EditorGUILayout.Space(8);
 
@@ -2070,138 +2145,1027 @@ namespace SandBlocks.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawBalanceTable()
+        // =========================================================================
+        // MODULAR BUS CAPACITY ANALYZER & SOLVER SYSTEM
+        // =========================================================================
+
+        public struct BusPieceSpec
         {
-            List<int> colorIds = new List<int>();
+            public BusShape shape;
+            public int length;
+            public int arm1Length;
+            public int arm2Length;
+            public int capacity;
+            public string displayName;
+
+            public BusPieceSpec(BusShape shape, int length, int arm1, int arm2, int capacity, string displayName)
+            {
+                this.shape = shape;
+                this.length = length;
+                this.arm1Length = arm1;
+                this.arm2Length = arm2;
+                this.capacity = capacity;
+                this.displayName = displayName;
+            }
+        }
+
+        public class BusCombination
+        {
+            public List<BusPieceSpec> buses = new List<BusPieceSpec>();
+
+            public int TotalCapacity
+            {
+                get
+                {
+                    int sum = 0;
+                    for (int i = 0; i < buses.Count; i++) sum += buses[i].capacity;
+                    return sum;
+                }
+            }
+
+            public string Summary
+            {
+                get
+                {
+                    if (buses == null || buses.Count == 0) return "No buses";
+                    var parts = new List<string>();
+                    for (int i = 0; i < buses.Count; i++) parts.Add(buses[i].displayName);
+                    return string.Join(" + ", parts) + $" = {TotalCapacity} seats";
+                }
+            }
+        }
+
+        public class ColorBalanceReport
+        {
+            public int colorId;
+            public string colorName;
+            public Color color;
+            public int crowdCount;
+            public int busCapacity;
+            public int busCount;
+            public List<int> busIndices = new List<int>();
+            public int Delta => crowdCount - busCapacity;
+            public bool IsBalanced => Delta == 0 && crowdCount > 0 && busCapacity > 0;
+            public bool isCrowdReachable;
+            public BusCombination bestCombination;
+            public int nearestReachableCount;
+            public BusCombination nearestCombination;
+            public int crowdAdjustmentNeeded => nearestReachableCount - crowdCount;
+            public List<string> suggestions = new List<string>();
+        }
+
+        public List<BusPieceSpec> GetAvailableBusSpecs(bool allowLShapes = true)
+        {
+            var list = new List<BusPieceSpec>();
+
+            // Straight buses of lengths 2 to 5
+            for (int len = 2; len <= 5; len++)
+            {
+                int cap = BusVehicle.CalculateModularCapacity(len, frontPieceCapacity, midPieceCapacity, rearPieceCapacity);
+                list.Add(new BusPieceSpec(BusShape.Straight, len, 0, 0, cap, $"Straight-{len} ({cap} seats)"));
+            }
+
+            if (allowLShapes)
+            {
+                // L-Shape combinations
+                int cap11 = BusVehicle.CalculateLCapacity(1, 1, frontPieceCapacity, midPieceCapacity, rearPieceCapacity, cornerPieceCapacity);
+                list.Add(new BusPieceSpec(BusShape.L_Shape, 3, 1, 1, cap11, $"L-Bus [1+1] ({cap11} seats)"));
+
+                int cap12 = BusVehicle.CalculateLCapacity(1, 2, frontPieceCapacity, midPieceCapacity, rearPieceCapacity, cornerPieceCapacity);
+                list.Add(new BusPieceSpec(BusShape.L_Shape, 4, 1, 2, cap12, $"L-Bus [1+2] ({cap12} seats)"));
+
+                int cap22 = BusVehicle.CalculateLCapacity(2, 2, frontPieceCapacity, midPieceCapacity, rearPieceCapacity, cornerPieceCapacity);
+                list.Add(new BusPieceSpec(BusShape.L_Shape, 5, 2, 2, cap22, $"L-Bus [2+2] ({cap22} seats)"));
+            }
+
+            list.Sort((a, b) => a.capacity.CompareTo(b.capacity));
+            return list;
+        }
+
+        public List<BusCombination> FindExactBusCombinations(int targetCapacity, int maxBuses = 4, bool allowL = true)
+        {
+            var results = new List<BusCombination>();
+            var specs = GetAvailableBusSpecs(allowL);
+            if (specs.Count == 0 || targetCapacity < specs[0].capacity) return results;
+
+            void Search(int remaining, int startIndex, List<BusPieceSpec> current)
+            {
+                if (remaining == 0)
+                {
+                    var combo = new BusCombination();
+                    combo.buses = new List<BusPieceSpec>(current);
+                    results.Add(combo);
+                    return;
+                }
+                if (current.Count >= maxBuses || remaining < specs[0].capacity) return;
+
+                for (int i = startIndex; i < specs.Count; i++)
+                {
+                    if (specs[i].capacity <= remaining)
+                    {
+                        current.Add(specs[i]);
+                        Search(remaining - specs[i].capacity, i, current);
+                        current.RemoveAt(current.Count - 1);
+                    }
+                }
+            }
+
+            Search(targetCapacity, 0, new List<BusPieceSpec>());
+
+            // Sort: fewest buses first, then fewer L-shapes
+            results.Sort((a, b) =>
+            {
+                int c = a.buses.Count.CompareTo(b.buses.Count);
+                if (c != 0) return c;
+                int aL = 0, bL = 0;
+                for (int i = 0; i < a.buses.Count; i++) if (a.buses[i].shape == BusShape.L_Shape) aL++;
+                for (int i = 0; i < b.buses.Count; i++) if (b.buses[i].shape == BusShape.L_Shape) bL++;
+                return aL.CompareTo(bL);
+            });
+
+            return results;
+        }
+
+        public int FindNearestReachableCapacity(int targetCapacity, out BusCombination bestCombo, int maxBuses = 4, bool allowL = true)
+        {
+            for (int delta = 0; delta <= 30; delta++)
+            {
+                int high = targetCapacity + delta;
+                var combosHigh = FindExactBusCombinations(high, maxBuses, allowL);
+                if (combosHigh.Count > 0)
+                {
+                    bestCombo = combosHigh[0];
+                    return high;
+                }
+
+                if (delta > 0)
+                {
+                    int low = targetCapacity - delta;
+                    if (low >= 18)
+                    {
+                        var combosLow = FindExactBusCombinations(low, maxBuses, allowL);
+                        if (combosLow.Count > 0)
+                        {
+                            bestCombo = combosLow[0];
+                            return low;
+                        }
+                    }
+                }
+            }
+
+            bestCombo = null;
+            return targetCapacity;
+        }
+
+        public List<ColorBalanceReport> AnalyzeLevelCapacityBalance()
+        {
+            var reports = new List<ColorBalanceReport>();
+            if (selectedLevel == null) return reports;
+
+            bool isUnified = (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid);
+
+            // Collect all unique non-background colors present in crowd or buses
+            var colorIds = new HashSet<int>();
             if (palette != null && palette.Entries != null)
             {
                 for (int i = 0; i < palette.Entries.Length; i++)
                 {
-                    colorIds.Add(palette.Entries[i].id);
+                    if (palette.Entries[i].id != 5) colorIds.Add(palette.Entries[i].id);
                 }
             }
             else
             {
                 for (int i = 0; i < fallbackColors.Length; i++)
                 {
-                    colorIds.Add(i);
+                    if (i != 5) colorIds.Add(i);
                 }
             }
 
-            // Also check any extra colorId in buses
-            if (selectedLevel.buses != null)
+            if (!isUnified && selectedLevel.customCrowdColors != null)
             {
-                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                for (int i = 0; i < selectedLevel.customCrowdColors.Length; i++)
                 {
-                    int cid = selectedLevel.buses[i].colorId;
-                    if (!colorIds.Contains(cid)) colorIds.Add(cid);
+                    int c = selectedLevel.customCrowdColors[i];
+                    if (c != 5) colorIds.Add(c);
+                }
+            }
+            else if (isUnified && selectedLevel.unifiedCells != null)
+            {
+                for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                {
+                    if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Passenger)
+                    {
+                        colorIds.Add(selectedLevel.unifiedCells[i].colorId);
+                    }
                 }
             }
 
-            // Tally bus seats per color
-            Dictionary<int, int> busSeats = new Dictionary<int, int>();
-            for (int i = 0; i < colorIds.Count; i++) busSeats[colorIds[i]] = 0;
-
-            if (selectedLevel.buses != null)
+            var busList = isUnified ? selectedLevel.unifiedBuses : selectedLevel.buses;
+            if (busList != null)
             {
-                for (int i = 0; i < selectedLevel.buses.Count; i++)
+                for (int i = 0; i < busList.Count; i++)
                 {
-                    int cId = selectedLevel.buses[i].colorId;
-                    if (!busSeats.ContainsKey(cId)) busSeats[cId] = 0;
-                    busSeats[cId] += selectedLevel.buses[i].capacity;
+                    colorIds.Add(busList[i].colorId);
                 }
             }
 
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Color", EditorStyles.boldLabel, GUILayout.Width(70));
-            GUILayout.Label("Crowd Count", EditorStyles.boldLabel, GUILayout.Width(100));
-            GUILayout.Label("Bus Seats", EditorStyles.boldLabel, GUILayout.Width(80));
-            GUILayout.Label("Status", EditorStyles.boldLabel, GUILayout.Width(100));
-            EditorGUILayout.EndHorizontal();
-
-            for (int i = 0; i < colorIds.Count; i++)
+            foreach (int cId in colorIds)
             {
-                int cId = colorIds[i];
-                int crowdCount = selectedLevel.CountColorPixels(cId);
-                int seats = busSeats.ContainsKey(cId) ? busSeats[cId] : 0;
+                int crowd = isUnified ? selectedLevel.GetUnifiedPassengersByColor(cId) : selectedLevel.CountColorPixels(cId);
+                int cap = 0;
+                var matchingBusIndices = new List<int>();
 
-                if (crowdCount == 0 && seats == 0) continue;
-
-                EditorGUILayout.BeginHorizontal();
-                Color c = GetColor(cId);
-                Color prevC = GUI.backgroundColor;
-                GUI.backgroundColor = Color.Lerp(c, Color.white, 0.3f);
-                GUILayout.Label(GetColorName(cId), EditorStyles.helpBox, GUILayout.Width(70));
-                GUI.backgroundColor = prevC;
-
-                GUILayout.Label($"{crowdCount} pixels", GUILayout.Width(100));
-                GUILayout.Label($"{seats} seats", GUILayout.Width(80));
-
-                if (seats == crowdCount)
+                if (busList != null)
                 {
-                    GUILayout.Label("✓ Balanced", EditorStyles.boldLabel, GUILayout.Width(100));
+                    for (int b = 0; b < busList.Count; b++)
+                    {
+                        if (busList[b].colorId == cId)
+                        {
+                            matchingBusIndices.Add(b);
+                            cap += busList[b].capacity;
+                        }
+                    }
                 }
-                else if (seats < crowdCount)
+
+                if (crowd == 0 && cap == 0) continue;
+
+                var rep = new ColorBalanceReport
                 {
-                    GUILayout.Label($"⚠ Need +{crowdCount - seats}", EditorStyles.boldLabel, GUILayout.Width(100));
+                    colorId = cId,
+                    colorName = GetColorName(cId),
+                    color = GetColor(cId),
+                    crowdCount = crowd,
+                    busCapacity = cap,
+                    busCount = matchingBusIndices.Count,
+                    busIndices = matchingBusIndices
+                };
+
+                if (crowd > 0)
+                {
+                    var exactCombos = FindExactBusCombinations(crowd, 4, allowLShapesInAutoBalance);
+                    if (exactCombos.Count > 0)
+                    {
+                        rep.isCrowdReachable = true;
+                        rep.bestCombination = exactCombos[0];
+                        rep.nearestReachableCount = crowd;
+                        rep.nearestCombination = exactCombos[0];
+                    }
+                    else
+                    {
+                        rep.isCrowdReachable = false;
+                        rep.nearestReachableCount = FindNearestReachableCapacity(crowd, out rep.nearestCombination, 4, allowLShapesInAutoBalance);
+                    }
+                }
+
+                GenerateSuggestionsForColor(rep, busList);
+                reports.Add(rep);
+            }
+
+            return reports;
+        }
+
+        private void GenerateSuggestionsForColor(ColorBalanceReport rep, List<BusSpawnData> busList)
+        {
+            rep.suggestions.Clear();
+
+            if (rep.IsBalanced)
+            {
+                rep.suggestions.Add($"✓ Perfectly balanced! {rep.crowdCount} crowd fills {rep.busCount} bus(es) with 0 empty seats.");
+                return;
+            }
+
+            if (rep.busCount == 0 && rep.crowdCount > 0)
+            {
+                if (rep.isCrowdReachable)
+                {
+                    rep.suggestions.Add($"• Missing bus! Add {rep.bestCombination.Summary} to collect this crowd.");
                 }
                 else
                 {
-                    GUILayout.Label($"+{seats - crowdCount} Extra", EditorStyles.miniLabel, GUILayout.Width(100));
+                    int diff = rep.nearestReachableCount - rep.crowdCount;
+                    string sign = diff > 0 ? $"+{diff}" : $"{diff}";
+                    rep.suggestions.Add($"• Crowd ({rep.crowdCount}) cannot be formed directly. Adjust crowd by {sign} to {rep.nearestReachableCount}, then add: {rep.nearestCombination?.Summary}.");
+                }
+                return;
+            }
+
+            if (rep.crowdCount == 0 && rep.busCapacity > 0)
+            {
+                rep.suggestions.Add($"• Unused bus! {rep.busCount} bus(es) ({rep.busCapacity} seats) exist but 0 crowd. Remove or change color of bus(es).");
+                return;
+            }
+
+            int delta = rep.Delta;
+            if (delta > 0)
+            {
+                rep.suggestions.Add($"⚠ Overcrowded by +{delta}: {rep.crowdCount} passengers vs {rep.busCapacity} seats (leftover crowd!).");
+            }
+            else
+            {
+                rep.suggestions.Add($"⚠ Underfilled: {rep.busCapacity} seats vs {rep.crowdCount} passengers ({Mathf.Abs(delta)} vacant seats).");
+            }
+
+            // Bus recommendation
+            if (rep.isCrowdReachable && rep.bestCombination != null)
+            {
+                rep.suggestions.Add($"💡 Bus Solution: Reconfigure {rep.colorName} buses to: {rep.bestCombination.Summary}.");
+            }
+            else if (rep.nearestCombination != null)
+            {
+                int diff = rep.nearestReachableCount - rep.crowdCount;
+                string sign = diff > 0 ? $"+{diff}" : $"{diff}";
+                rep.suggestions.Add($"💡 Bus Solution: Adjust crowd by {sign} to {rep.nearestReachableCount}, then configure: {rep.nearestCombination.Summary}.");
+            }
+
+            // Crowd recommendation
+            var busCombos = FindExactBusCombinations(rep.busCapacity, 4, allowLShapesInAutoBalance);
+            if (busCombos.Count > 0)
+            {
+                if (delta > 0)
+                {
+                    rep.suggestions.Add($"💡 Crowd Solution: Trim {delta} outer edge pixels to match current {rep.busCapacity} bus seats.");
+                }
+                else
+                {
+                    rep.suggestions.Add($"💡 Crowd Solution: Expand crowd by {Mathf.Abs(delta)} pixels into background to fill all {rep.busCapacity} seats.");
+                }
+            }
+        }
+
+        private void DrawCapacityBalanceAnalyzer()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Title bar
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("1. Level Capacity Balance Analyzer (Crowd vs Buses)", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("🔄 Re-Analyze", EditorStyles.miniButton, GUILayout.Width(90)))
+            {
+                cachedBalanceReports = null;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (cachedBalanceReports == null)
+            {
+                cachedBalanceReports = AnalyzeLevelCapacityBalance();
+            }
+
+            var reports = cachedBalanceReports;
+
+            int totalCrowd = 0;
+            int totalSeats = 0;
+            int balancedColors = 0;
+            for (int i = 0; i < reports.Count; i++)
+            {
+                totalCrowd += reports[i].crowdCount;
+                totalSeats += reports[i].busCapacity;
+                if (reports[i].IsBalanced) balancedColors++;
+            }
+
+            bool allBalanced = (balancedColors == reports.Count && reports.Count > 0);
+
+            // Global Status Box
+            Color prevBg = GUI.backgroundColor;
+            if (allBalanced)
+            {
+                GUI.backgroundColor = new Color(0.3f, 0.9f, 0.4f, 0.35f);
+                EditorGUILayout.HelpBox($"✓ PERFECT BALANCE: All {reports.Count} colors match bus seats perfectly! (Total Crowd: {totalCrowd} | Total Bus Seats: {totalSeats}) - 0 vacant seats, 0 leftover crowd.", MessageType.Info);
+            }
+            else
+            {
+                GUI.backgroundColor = new Color(1f, 0.6f, 0.2f, 0.35f);
+                EditorGUILayout.HelpBox($"⚠ CAPACITY MISMATCH: {reports.Count - balancedColors} of {reports.Count} colors need adjustments. (Total Crowd: {totalCrowd} | Total Bus Seats: {totalSeats})", MessageType.Warning);
+            }
+            GUI.backgroundColor = prevBg;
+
+            EditorGUILayout.Space(4);
+
+            // Color Reports Table
+            for (int i = 0; i < reports.Count; i++)
+            {
+                var rep = reports[i];
+                EditorGUILayout.BeginVertical("box");
+
+                EditorGUILayout.BeginHorizontal();
+                Color prevC = GUI.backgroundColor;
+                GUI.backgroundColor = rep.color;
+                GUILayout.Box("", GUILayout.Width(16), GUILayout.Height(16));
+                GUI.backgroundColor = prevC;
+
+                GUILayout.Label(rep.colorName, EditorStyles.boldLabel, GUILayout.Width(75));
+                GUILayout.Label($"Crowd: {rep.crowdCount}", GUILayout.Width(85));
+                GUILayout.Label($"Bus Seats: {rep.busCapacity} ({rep.busCount} buses)", GUILayout.Width(150));
+
+                if (rep.IsBalanced)
+                {
+                    GUI.color = Color.green;
+                    GUILayout.Label("✓ Balanced (100% Fill)", EditorStyles.boldLabel);
+                    GUI.color = Color.white;
+                }
+                else if (rep.busCount == 0)
+                {
+                    GUI.color = Color.red;
+                    GUILayout.Label("✕ Missing Bus!", EditorStyles.boldLabel);
+                    GUI.color = Color.white;
+                }
+                else if (rep.Delta > 0)
+                {
+                    GUI.color = new Color(1f, 0.45f, 0.2f);
+                    GUILayout.Label($"⚠ Need +{rep.Delta} seats", EditorStyles.boldLabel);
+                    GUI.color = Color.white;
+                }
+                else
+                {
+                    GUI.color = new Color(0.4f, 0.7f, 1f);
+                    GUILayout.Label($"⚠ {Mathf.Abs(rep.Delta)} vacant seats", EditorStyles.boldLabel);
+                    GUI.color = Color.white;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                // Detailed Suggestions
+                if (rep.suggestions.Count > 0)
+                {
+                    for (int s = 0; s < rep.suggestions.Count; s++)
+                    {
+                        EditorGUILayout.LabelField(rep.suggestions[s], EditorStyles.wordWrappedMiniLabel);
+                    }
                 }
 
-                EditorGUILayout.EndHorizontal();
+                // Quick Action Buttons for this Color
+                if (!rep.IsBalanced)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.FlexibleSpace();
+
+                    if (GUILayout.Button($"⚡ Solve Buses for {rep.colorName}", EditorStyles.miniButton, GUILayout.Width(170)))
+                    {
+                        AutoSolveBusesForColor(rep);
+                        cachedBalanceReports = null;
+                    }
+
+                    if (rep.busCapacity > 0 && GUILayout.Button($"🎯 Fit Crowd to {rep.busCapacity} Seats", EditorStyles.miniButton, GUILayout.Width(160)))
+                    {
+                        AdjustCrowdColorCount(rep.colorId, rep.busCapacity);
+                        cachedBalanceReports = null;
+                    }
+
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(2);
+            }
+
+            EditorGUILayout.Space(6);
+
+            // Master Solver Action Buttons
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.2f, 0.85f, 0.35f);
+            if (GUILayout.Button("⚡ Auto-Solve All Buses to Match Crowd", GUILayout.Height(32)))
+            {
+                AutoSolveAllBusesToMatchCrowd();
+                cachedBalanceReports = null;
+            }
+
+            GUI.backgroundColor = new Color(0.3f, 0.65f, 1f);
+            if (GUILayout.Button("🎯 Auto-Fit Crowd to Current Buses", GUILayout.Height(32)))
+            {
+                AutoFitCrowdToCurrentBuses();
+                cachedBalanceReports = null;
+            }
+
+            GUI.backgroundColor = new Color(0.95f, 0.75f, 0.2f);
+            if (GUILayout.Button("🚌 Auto-Generate Full Bus Fleet", GUILayout.Height(32)))
+            {
+                AutoGenerateFullBusFleet();
+                cachedBalanceReports = null;
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+        }
+
+        // =========================================================================
+        // MORPHOLOGICAL CROWD ADJUSTMENT (BORDER TRIM & DILATION)
+        // =========================================================================
+
+        private void TrimCrowdPixels(int colorId, int toTrim)
+        {
+            if (selectedLevel == null || toTrim <= 0) return;
+            int cols = selectedLevel.gridColumns;
+            int rows = selectedLevel.gridRows;
+
+            var cells = new List<Vector2Int>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    if (selectedLevel.GetPixel(c, r) == colorId)
+                    {
+                        cells.Add(new Vector2Int(c, r));
+                    }
+                }
+            }
+
+            if (cells.Count <= toTrim)
+            {
+                toTrim = Mathf.Max(0, cells.Count - 1);
+            }
+
+            Vector2Int[] dirs = { Vector2Int.left, Vector2Int.right, Vector2Int.up, Vector2Int.down };
+
+            for (int t = 0; t < toTrim; t++)
+            {
+                Vector2Int bestCell = cells[0];
+                float bestScore = float.MinValue;
+
+                for (int i = 0; i < cells.Count; i++)
+                {
+                    var p = cells[i];
+                    int bgNeighbors = 0;
+                    int otherNeighbors = 0;
+
+                    for (int d = 0; d < dirs.Length; d++)
+                    {
+                        Vector2Int np = p + dirs[d];
+                        if (np.x < 0 || np.x >= cols || np.y < 0 || np.y >= rows)
+                        {
+                            bgNeighbors++;
+                        }
+                        else
+                        {
+                            int nc = selectedLevel.GetPixel(np.x, np.y);
+                            if (nc == 5) bgNeighbors++;
+                            else if (nc != colorId) otherNeighbors++;
+                        }
+                    }
+
+                    // Score: higher score on outer border and corners
+                    float score = bgNeighbors * 10f + otherNeighbors * 2f;
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestCell = p;
+                    }
+                }
+
+                selectedLevel.SetPixel(bestCell.x, bestCell.y, 5); // Trim to background
+                cells.Remove(bestCell);
+                if (cells.Count == 0) break;
+            }
+        }
+
+        private void ExpandCrowdPixels(int colorId, int toAdd)
+        {
+            if (selectedLevel == null || toAdd <= 0) return;
+            int cols = selectedLevel.gridColumns;
+            int rows = selectedLevel.gridRows;
+            Vector2Int[] dirs = { Vector2Int.left, Vector2Int.right, Vector2Int.up, Vector2Int.down };
+
+            for (int t = 0; t < toAdd; t++)
+            {
+                var candidates = new List<Vector2Int>();
+                var scores = new List<float>();
+
+                for (int r = 0; r < rows; r++)
+                {
+                    for (int c = 0; c < cols; c++)
+                    {
+                        if (selectedLevel.GetPixel(c, r) != 5) continue;
+
+                        int colorNeighbors = 0;
+                        for (int d = 0; d < dirs.Length; d++)
+                        {
+                            Vector2Int np = new Vector2Int(c, r) + dirs[d];
+                            if (np.x >= 0 && np.x < cols && np.y >= 0 && np.y < rows)
+                            {
+                                if (selectedLevel.GetPixel(np.x, np.y) == colorId)
+                                {
+                                    colorNeighbors++;
+                                }
+                            }
+                        }
+
+                        if (colorNeighbors > 0)
+                        {
+                            candidates.Add(new Vector2Int(c, r));
+                            scores.Add(colorNeighbors * 10f);
+                        }
+                    }
+                }
+
+                if (candidates.Count == 0) break;
+
+                int bestIdx = 0;
+                float maxScore = scores[0];
+                for (int i = 1; i < candidates.Count; i++)
+                {
+                    if (scores[i] > maxScore)
+                    {
+                        maxScore = scores[i];
+                        bestIdx = i;
+                    }
+                }
+
+                selectedLevel.SetPixel(candidates[bestIdx].x, candidates[bestIdx].y, colorId);
+            }
+        }
+
+        public void AdjustCrowdColorCount(int colorId, int targetCount)
+        {
+            if (selectedLevel == null) return;
+            bool isUnified = (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid);
+
+            Undo.RecordObject(selectedLevel, $"Adjust Crowd Color {GetColorName(colorId)}");
+
+            if (!isUnified)
+            {
+                int current = selectedLevel.CountColorPixels(colorId);
+                if (current == targetCount) return;
+
+                if (current > targetCount)
+                {
+                    TrimCrowdPixels(colorId, current - targetCount);
+                }
+                else
+                {
+                    ExpandCrowdPixels(colorId, targetCount - current);
+                }
+            }
+            else
+            {
+                int current = selectedLevel.GetUnifiedPassengersByColor(colorId);
+                if (current == targetCount) return;
+
+                int diff = targetCount - current;
+                if (selectedLevel.unifiedCells != null)
+                {
+                    for (int i = 0; i < selectedLevel.unifiedCells.Count; i++)
+                    {
+                        if (selectedLevel.unifiedCells[i].cellType == UnifiedCellType.Passenger && selectedLevel.unifiedCells[i].colorId == colorId)
+                        {
+                            var cell = selectedLevel.unifiedCells[i];
+                            cell.passengerCount = Mathf.Max(1, cell.passengerCount + diff);
+                            selectedLevel.unifiedCells[i] = cell;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            cachedBalanceReports = null;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        // =========================================================================
+        // BUS FLEET AUTO-SOLVER & PLACEMENT ENGINE
+        // =========================================================================
+
+        public void AutoSolveBusesForColor(ColorBalanceReport rep)
+        {
+            if (selectedLevel == null) return;
+            bool isUnified = (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid);
+            var busList = isUnified ? selectedLevel.unifiedBuses : selectedLevel.buses;
+            if (busList == null) return;
+
+            Undo.RecordObject(selectedLevel, $"Auto-Solve Buses for {rep.colorName}");
+
+            int target = rep.crowdCount;
+            if (!rep.isCrowdReachable)
+            {
+                AdjustCrowdColorCount(rep.colorId, rep.nearestReachableCount);
+                target = rep.nearestReachableCount;
+            }
+
+            var exactCombos = FindExactBusCombinations(target, 4, allowLShapesInAutoBalance);
+            if (exactCombos.Count == 0) return;
+
+            var combo = exactCombos[0];
+
+            int busIdxInCombo = 0;
+            for (int i = 0; i < rep.busIndices.Count; i++)
+            {
+                int bIndex = rep.busIndices[i];
+                if (busIdxInCombo < combo.buses.Count)
+                {
+                    var spec = combo.buses[busIdxInCombo];
+                    var b = busList[bIndex];
+                    b.shape = spec.shape;
+                    b.length = spec.length;
+                    b.arm1Length = spec.arm1Length;
+                    b.arm2Length = spec.arm2Length;
+                    b.capacity = spec.capacity;
+                    busList[bIndex] = b;
+                    busIdxInCombo++;
+                }
+                else
+                {
+                    // Surplus bus of this color removed
+                    busList.RemoveAt(bIndex);
+                    for (int k = i + 1; k < rep.busIndices.Count; k++) rep.busIndices[k]--;
+                }
+            }
+
+            // Need more buses than existing
+            while (busIdxInCombo < combo.buses.Count)
+            {
+                var spec = combo.buses[busIdxInCombo];
+                var newBus = new BusSpawnData
+                {
+                    name = $"{rep.colorName} Bus {busList.Count + 1}",
+                    colorId = rep.colorId,
+                    shape = spec.shape,
+                    length = spec.length,
+                    arm1Length = spec.arm1Length,
+                    arm2Length = spec.arm2Length,
+                    capacity = spec.capacity,
+                    rotationDegrees = 0,
+                    turnDirection = LTurnDirection.TurnRight,
+                    gridPosition = FindFreeGridPositionForBus(spec, busList)
+                };
+                busList.Add(newBus);
+                busIdxInCombo++;
+            }
+
+            cachedBalanceReports = null;
+            EditorUtility.SetDirty(selectedLevel);
+        }
+
+        public void AutoSolveAllBusesToMatchCrowd()
+        {
+            if (selectedLevel == null) return;
+            var reports = AnalyzeLevelCapacityBalance();
+            for (int i = 0; i < reports.Count; i++)
+            {
+                if (!reports[i].IsBalanced && reports[i].crowdCount > 0)
+                {
+                    AutoSolveBusesForColor(reports[i]);
+                }
+            }
+            cachedBalanceReports = null;
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log("<color=green>[SandBlocks]</color> Successfully auto-solved all buses to match crowd capacities!");
+        }
+
+        public void AutoFitCrowdToCurrentBuses()
+        {
+            if (selectedLevel == null) return;
+            var reports = AnalyzeLevelCapacityBalance();
+            for (int i = 0; i < reports.Count; i++)
+            {
+                if (reports[i].busCapacity > 0 && reports[i].Delta != 0)
+                {
+                    AdjustCrowdColorCount(reports[i].colorId, reports[i].busCapacity);
+                }
+            }
+            cachedBalanceReports = null;
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log("<color=green>[SandBlocks]</color> Successfully adjusted crowd pixels to match all bus capacities!");
+        }
+
+        public void AutoGenerateFullBusFleet()
+        {
+            if (selectedLevel == null) return;
+            bool isUnified = (selectedLevel.gameplayMode == GameplayMode.UnifiedGrid);
+            if (isUnified)
+            {
+                AutoSolveAllBusesToMatchCrowd();
+                return;
+            }
+
+            Undo.RecordObject(selectedLevel, "Auto-Generate Full Bus Fleet");
+
+            var reports = AnalyzeLevelCapacityBalance();
+            var allNewBuses = new List<BusSpawnData>();
+
+            int cols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
+            int rows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
+
+            for (int i = 0; i < reports.Count; i++)
+            {
+                var rep = reports[i];
+                if (rep.crowdCount <= 0) continue;
+
+                int target = rep.crowdCount;
+                if (!rep.isCrowdReachable)
+                {
+                    AdjustCrowdColorCount(rep.colorId, rep.nearestReachableCount);
+                    target = rep.nearestReachableCount;
+                }
+
+                var exactCombos = FindExactBusCombinations(target, 4, allowLShapesInAutoBalance);
+                if (exactCombos.Count > 0)
+                {
+                    var combo = exactCombos[0];
+                    for (int b = 0; b < combo.buses.Count; b++)
+                    {
+                        var spec = combo.buses[b];
+                        var bus = new BusSpawnData
+                        {
+                            name = $"{rep.colorName} Bus {b + 1}",
+                            colorId = rep.colorId,
+                            shape = spec.shape,
+                            length = spec.length,
+                            arm1Length = spec.arm1Length,
+                            arm2Length = spec.arm2Length,
+                            capacity = spec.capacity,
+                            rotationDegrees = 0,
+                            turnDirection = LTurnDirection.TurnRight,
+                            gridPosition = Vector2Int.zero
+                        };
+                        allNewBuses.Add(bus);
+                    }
+                }
+            }
+
+            PackBusesOnGrid(allNewBuses, ref cols, ref rows);
+
+            selectedLevel.puzzleColumns = cols;
+            selectedLevel.puzzleRows = rows;
+            selectedLevel.buses = allNewBuses;
+
+            cachedBalanceReports = null;
+            EditorUtility.SetDirty(selectedLevel);
+            Debug.Log($"<color=green>[SandBlocks]</color> Auto-generated {allNewBuses.Count} buses on {cols}x{rows} puzzle grid matching all crowd colors!");
+        }
+
+        private Vector2Int FindFreeGridPositionForBus(BusPieceSpec spec, List<BusSpawnData> existingBuses)
+        {
+            int cols = selectedLevel.puzzleColumns > 0 ? selectedLevel.puzzleColumns : 6;
+            int rows = selectedLevel.puzzleRows > 0 ? selectedLevel.puzzleRows : 5;
+
+            var occupied = new HashSet<Vector2Int>();
+            for (int i = 0; i < existingBuses.Count; i++)
+            {
+                var cells = LevelData.GetOccupiedCells(existingBuses[i]);
+                for (int c = 0; c < cells.Count; c++) occupied.Add(cells[c]);
+            }
+
+            var testBus = new BusSpawnData
+            {
+                shape = spec.shape,
+                length = spec.length,
+                arm1Length = spec.arm1Length,
+                arm2Length = spec.arm2Length,
+                capacity = spec.capacity,
+                rotationDegrees = 0,
+                turnDirection = LTurnDirection.TurnRight
+            };
+
+            int[] rotations = { 0, 90, 180, 270 };
+            LTurnDirection[] turns = { LTurnDirection.TurnRight, LTurnDirection.TurnLeft };
+
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    testBus.gridPosition = new Vector2Int(c, r);
+
+                    for (int rotIdx = 0; rotIdx < rotations.Length; rotIdx++)
+                    {
+                        testBus.rotationDegrees = rotations[rotIdx];
+                        int turnLimit = (spec.shape == BusShape.L_Shape) ? 2 : 1;
+
+                        for (int tIdx = 0; tIdx < turnLimit; tIdx++)
+                        {
+                            testBus.turnDirection = turns[tIdx];
+
+                            var cells = LevelData.GetOccupiedCells(testBus);
+                            bool fits = true;
+                            for (int i = 0; i < cells.Count; i++)
+                            {
+                                var cell = cells[i];
+                                if (cell.x < 0 || cell.x >= cols || cell.y < 0 || cell.y >= rows || occupied.Contains(cell))
+                                {
+                                    fits = false;
+                                    break;
+                                }
+                            }
+
+                            if (fits)
+                            {
+                                return testBus.gridPosition;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return new Vector2Int(0, 0);
+        }
+
+        private void PackBusesOnGrid(List<BusSpawnData> busesToPlace, ref int cols, ref int rows)
+        {
+            busesToPlace.Sort((a, b) =>
+            {
+                int aIsL = a.shape == BusShape.L_Shape ? 1 : 0;
+                int bIsL = b.shape == BusShape.L_Shape ? 1 : 0;
+                if (aIsL != bIsL) return bIsL.CompareTo(aIsL);
+                return b.TotalCells.CompareTo(a.TotalCells);
+            });
+
+            int maxAttempts = 15;
+            while (maxAttempts-- > 0)
+            {
+                var occupied = new HashSet<Vector2Int>();
+                bool allPlaced = true;
+
+                for (int b = 0; b < busesToPlace.Count; b++)
+                {
+                    var bus = busesToPlace[b];
+                    bool placed = false;
+
+                    int[] rotations = { 0, 90, 180, 270 };
+                    LTurnDirection[] turns = { LTurnDirection.TurnRight, LTurnDirection.TurnLeft };
+
+                    for (int r = 0; r < rows && !placed; r++)
+                    {
+                        for (int c = 0; c < cols && !placed; c++)
+                        {
+                            bus.gridPosition = new Vector2Int(c, r);
+
+                            for (int rotIdx = 0; rotIdx < rotations.Length && !placed; rotIdx++)
+                            {
+                                bus.rotationDegrees = rotations[rotIdx];
+                                int turnLimit = (bus.shape == BusShape.L_Shape) ? 2 : 1;
+
+                                for (int tIdx = 0; tIdx < turnLimit && !placed; tIdx++)
+                                {
+                                    bus.turnDirection = turns[tIdx];
+
+                                    var cells = LevelData.GetOccupiedCells(bus);
+                                    bool fits = true;
+                                    for (int i = 0; i < cells.Count; i++)
+                                    {
+                                        var cell = cells[i];
+                                        if (cell.x < 0 || cell.x >= cols || cell.y < 0 || cell.y >= rows || occupied.Contains(cell))
+                                        {
+                                            fits = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if (fits)
+                                    {
+                                        for (int i = 0; i < cells.Count; i++) occupied.Add(cells[i]);
+                                        busesToPlace[b] = bus;
+                                        placed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (!placed)
+                    {
+                        allPlaced = false;
+                        break;
+                    }
+                }
+
+                if (allPlaced) return;
+
+                rows++;
+            }
+        }
+
+        private void ApplyImageCapacityBalancing()
+        {
+            if (selectedLevel == null) return;
+
+            if (imageBalanceMode == ImageBalanceMode.MatchExistingBuses)
+            {
+                var reports = AnalyzeLevelCapacityBalance();
+                for (int i = 0; i < reports.Count; i++)
+                {
+                    if (reports[i].busCapacity > 0 && reports[i].Delta != 0)
+                    {
+                        AdjustCrowdColorCount(reports[i].colorId, reports[i].busCapacity);
+                    }
+                }
+            }
+            else if (imageBalanceMode == ImageBalanceMode.QuantizeToValidBusCapacities)
+            {
+                var reports = AnalyzeLevelCapacityBalance();
+                for (int i = 0; i < reports.Count; i++)
+                {
+                    if (reports[i].crowdCount > 0 && !reports[i].isCrowdReachable)
+                    {
+                        AdjustCrowdColorCount(reports[i].colorId, reports[i].nearestReachableCount);
+                    }
+                }
+            }
+            else if (imageBalanceMode == ImageBalanceMode.AutoGenerateBusFleet)
+            {
+                AutoGenerateFullBusFleet();
             }
         }
 
         private void AutoBalanceBusCapacities()
         {
-            if (selectedLevel.buses == null || selectedLevel.buses.Count == 0) return;
-
-            Undo.RecordObject(selectedLevel, "Auto-Balance Bus Seats");
-
-            List<int> colorIds = new List<int>();
-            if (palette != null && palette.Entries != null)
-            {
-                for (int i = 0; i < palette.Entries.Length; i++) colorIds.Add(palette.Entries[i].id);
-            }
-            else
-            {
-                for (int i = 0; i < fallbackColors.Length; i++) colorIds.Add(i);
-            }
-
-            for (int i = 0; i < colorIds.Count; i++)
-            {
-                int cId = colorIds[i];
-                int crowdCount = selectedLevel.CountColorPixels(cId);
-                if (crowdCount == 0) continue;
-
-                // Find all buses of this color
-                var matchingBuses = new List<int>();
-                for (int b = 0; b < selectedLevel.buses.Count; b++)
-                {
-                    if (selectedLevel.buses[b].colorId == cId)
-                    {
-                        matchingBuses.Add(b);
-                    }
-                }
-
-                if (matchingBuses.Count > 0)
-                {
-                    int capPerBus = Mathf.Max(1, crowdCount / matchingBuses.Count);
-                    int remainder = crowdCount % matchingBuses.Count;
-
-                    for (int m = 0; m < matchingBuses.Count; m++)
-                    {
-                        var bus = selectedLevel.buses[matchingBuses[m]];
-                        bus.capacity = Mathf.Max(1, capPerBus + (m == 0 ? remainder : 0));
-                        selectedLevel.buses[matchingBuses[m]] = bus;
-                    }
-                }
-            }
-
-            EditorUtility.SetDirty(selectedLevel);
-            Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced bus capacities to match crowd counts!");
+            AutoSolveAllBusesToMatchCrowd();
         }
 
         // =========================================================================
@@ -3160,59 +4124,8 @@ namespace SandBlocks.Editor
         private void AutoBalanceUnifiedBuses()
         {
             Undo.RecordObject(selectedLevel, "Auto-Balance Unified Buses");
-
-            var colorIds = new List<int>();
-            if (palette != null && palette.Entries != null)
-            {
-                for (int i = 0; i < palette.Entries.Length; i++) colorIds.Add(palette.Entries[i].id);
-            }
-            else
-            {
-                for (int i = 0; i < fallbackColors.Length; i++) colorIds.Add(i);
-            }
-
-            for (int i = 0; i < colorIds.Count; i++)
-            {
-                int cId = colorIds[i];
-                int pCount = selectedLevel.GetUnifiedPassengersByColor(cId);
-                if (pCount <= 0) continue;
-
-                // Check if matching bus exists
-                var matchingBuses = new List<int>();
-                if (selectedLevel.unifiedBuses != null)
-                {
-                    for (int b = 0; b < selectedLevel.unifiedBuses.Count; b++)
-                    {
-                        if (selectedLevel.unifiedBuses[b].colorId == cId) matchingBuses.Add(b);
-                    }
-                }
-
-                if (matchingBuses.Count == 0)
-                {
-                    // Add a bus for this color
-                    if (selectedLevel.unifiedBuses == null) selectedLevel.unifiedBuses = new List<BusSpawnData>();
-                    selectedLevel.unifiedBuses.Add(new BusSpawnData
-                    {
-                        name = $"{GetColorName(cId)} Bus",
-                        colorId = cId,
-                        capacity = pCount,
-                        length = 2,
-                        rotationDegrees = 0,
-                        gridPosition = new Vector2Int(0, 0)
-                    });
-                }
-                else
-                {
-                    int capPerBus = Mathf.Max(1, pCount / matchingBuses.Count);
-                    for (int m = 0; m < matchingBuses.Count; m++)
-                    {
-                        var bus = selectedLevel.unifiedBuses[matchingBuses[m]];
-                        bus.capacity = Mathf.Max(1, capPerBus);
-                        selectedLevel.unifiedBuses[matchingBuses[m]] = bus;
-                    }
-                }
-            }
-
+            AutoSolveAllBusesToMatchCrowd();
+            cachedBalanceReports = null;
             EditorUtility.SetDirty(selectedLevel);
             Debug.Log("<color=green>[SandBlocks]</color> Auto-balanced unified buses!");
         }
