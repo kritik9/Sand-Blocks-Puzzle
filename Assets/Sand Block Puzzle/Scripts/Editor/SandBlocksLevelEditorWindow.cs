@@ -705,8 +705,8 @@ namespace SandBlocks.Editor
 
             // Grid Resolution Controls
             EditorGUILayout.BeginHorizontal();
-            int newCols = EditorGUILayout.IntSlider("Columns (Width):", selectedLevel.gridColumns, 4, 32);
-            int newRows = EditorGUILayout.IntSlider("Rows (Height):", selectedLevel.gridRows, 4, 32);
+            int newCols = EditorGUILayout.IntSlider("Columns (Width):", selectedLevel.gridColumns, 4, 60);
+            int newRows = EditorGUILayout.IntSlider("Rows (Height):", selectedLevel.gridRows, 4, 60);
             if (newCols != selectedLevel.gridColumns || newRows != selectedLevel.gridRows)
             {
                 Undo.RecordObject(selectedLevel, "Resize Crowd Grid");
@@ -810,8 +810,8 @@ namespace SandBlocks.Editor
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                importGridCols = EditorGUILayout.IntSlider("Image Grid Columns:", importGridCols, 4, 32);
-                importGridRows = EditorGUILayout.IntSlider("Image Grid Rows:", importGridRows, 4, 32);
+                importGridCols = EditorGUILayout.IntSlider("Image Grid Columns:", importGridCols, 4, 60);
+                importGridRows = EditorGUILayout.IntSlider("Image Grid Rows:", importGridRows, 4, 60);
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
@@ -1305,10 +1305,10 @@ namespace SandBlocks.Editor
 
             if (lockSquareCells)
             {
-                float availW = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 180f, 440f);
-                float maxCanvasH = 440f;
+                float availW = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 180f, 560f);
+                float maxCanvasH = 560f;
                 float cellSize = Mathf.Min(availW / Mathf.Max(1, cols), maxCanvasH / Mathf.Max(1, rows));
-                cellSize = Mathf.Clamp(cellSize, 8f, 26f);
+                cellSize = Mathf.Clamp(cellSize, 4f, 28f);
                 cellW = cellSize;
                 cellH = cellSize;
                 canvasWidth = cols * cellW;
@@ -1317,8 +1317,8 @@ namespace SandBlocks.Editor
             else
             {
                 float aspect = selectedLevel.containerWidth / Mathf.Max(1f, selectedLevel.containerHeight);
-                canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 200f, 440f);
-                canvasHeight = Mathf.Clamp(canvasWidth / aspect, 200f, 460f);
+                canvasWidth = Mathf.Clamp(EditorGUIUtility.currentViewWidth - rowHeaderW - 70f, 200f, 560f);
+                canvasHeight = Mathf.Clamp(canvasWidth / aspect, 200f, 560f);
                 cellW = canvasWidth / cols;
                 cellH = canvasHeight / rows;
             }
@@ -1369,7 +1369,20 @@ namespace SandBlocks.Editor
                     Color headerBg = isHoveredCol ? new Color(0.9f, 0.25f, 0.25f, 1f) : new Color(0.22f, 0.24f, 0.28f, 1f);
                     EditorGUI.DrawRect(colHeaderRect, headerBg);
 
-                    string colText = (cellW >= 18f && !isHoveredCol) ? $"{c}" : "✕";
+                    string colText = "";
+                    if (isHoveredCol)
+                    {
+                        colText = "✕";
+                    }
+                    else if (cellW >= 18f)
+                    {
+                        colText = $"{c}";
+                    }
+                    else if (cellW >= 8f && (c == 0 || c == cols - 1 || (c + 1) % 5 == 0))
+                    {
+                        colText = $"{c}";
+                    }
+
                     var headerStyle = new GUIStyle(EditorStyles.miniLabel)
                     {
                         alignment = TextAnchor.MiddleCenter,
@@ -1402,11 +1415,24 @@ namespace SandBlocks.Editor
                     Color headerBg = isHoveredRow ? new Color(0.9f, 0.25f, 0.25f, 1f) : new Color(0.22f, 0.24f, 0.28f, 1f);
                     EditorGUI.DrawRect(rowHeaderRect, headerBg);
 
-                    string rowText = isHoveredRow ? "✕" : $"{r}";
+                    string rowText = "";
+                    if (isHoveredRow)
+                    {
+                        rowText = "✕";
+                    }
+                    else if (cellH >= 16f)
+                    {
+                        rowText = $"{r}";
+                    }
+                    else if (cellH >= 8f && (r == 0 || r == rows - 1 || (r + 1) % 5 == 0))
+                    {
+                        rowText = $"{r}";
+                    }
+
                     var headerStyle = new GUIStyle(EditorStyles.miniLabel)
                     {
                         alignment = TextAnchor.MiddleCenter,
-                        fontSize = 9,
+                        fontSize = (cellH >= 14f) ? 9 : 8,
                         normal = { textColor = isHoveredRow ? Color.white : new Color(0.85f, 0.85f, 0.85f, 1f) }
                     };
                     GUI.Label(rowHeaderRect, rowText, headerStyle);
@@ -1435,7 +1461,8 @@ namespace SandBlocks.Editor
                 for (int c = 0; c < cols; c++)
                 {
                     float cellX = canvasRect.x + c * cellW;
-                    Rect cellRect = new Rect(cellX + 1f, cellY + 1f, cellW - 2f, cellH - 2f);
+                    float inset = (cellW >= 10f && cellH >= 10f) ? 1f : (cellW >= 5f && cellH >= 5f ? 0.5f : 0f);
+                    Rect cellRect = new Rect(cellX + inset, cellY + inset, Mathf.Max(1f, cellW - inset * 2f), Mathf.Max(1f, cellH - inset * 2f));
 
                     int colorId = selectedLevel.GetPixel(c, r);
                     Color cellColor = GetColor(colorId);

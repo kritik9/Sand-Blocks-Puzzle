@@ -739,9 +739,9 @@ namespace SandBlocks.Core.Data
 
             if (newCols == gridColumns && newRows == gridRows && customCrowdColors != null && customCrowdColors.Length == newCols * newRows) return;
 
-            newCols = Mathf.Clamp(newCols, 2, 64);
+            newCols = Mathf.Clamp(newCols, 2, 100);
 
-            newRows = Mathf.Clamp(newRows, 2, 64);
+            newRows = Mathf.Clamp(newRows, 2, 100);
 
             int[] oldColors = customCrowdColors;
 

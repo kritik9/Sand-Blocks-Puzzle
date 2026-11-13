@@ -1,0 +1,481 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9796567e904e3f409b019a5907c9403, type: 3}
+  m_Name: Level_29
+  m_EditorClassIdentifier: Assembly-CSharp::SandBlocks.Core.Data.LevelData
+  gameplayMode: 0
+  levelName: Level 29
+  particleRadius: 0.17
+  characterScale: 0
+  verticalSpacingMultiplier: 0
+  maxParticles: 567
+  containerShape: 0
+  containerWidth: 13
+  containerHeight: 7
+  containerCenter: {x: 0, y: 0.5}
+  leftBorderOffset: 0
+  rightBorderOffset: 0
+  topBorderOffset: 0
+  bottomBorderOffset: 0
+  customPolygonPoints: []
+  patternType: 3
+  gridColumns: 33
+  gridRows: 21
+  customCrowdColors: 010000000100000001000000010000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b00000001000000010000000100000001000000010000000100000001000000010000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b00000001000000010000000100000001000000010000000100000001000000010000000b0000000b0000000b0000000b0000000b0000000b0000000b00000006000000060000000600000006000000060000000600000006000000060000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b00000001000000010000000100000001000000010000000100000001000000010000000b0000000b0000000b0000000b0000000b0000000b0000000b00000006000000060000000600000006000000060000000600000006000000060000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b0000000b000000010000000100000001000000010000000100000001000000010000000100000001000000010000000b0000000b0000000b0000000b0000000b0000000600000006000000060000000600000006000000060000000600000006000000060000000600000006000000060000000b0000000b0000000b0000000b0000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000b0000000b0000000b0000000b0000000b00000006000000060000000600000002000000020000000200000002000000020000000600000006000000060000000700000007000000070000000b0000000b000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000007000000070000000700000006000000060000000600000002000000020000000200000002000000020000000600000006000000060000000700000007000000070000000b0000000b0000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000070000000700000007000000020000000200000002000000020000000200000002000000020000000200000002000000060000000600000007000000070000000700000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000d0000000d00000007000000070000000700000007000000070000000700000002000000020000000200000002000000020000000700000007000000070000000700000007000000070000000d0000000d00000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000d0000000d0000000d00000007000000070000000700000007000000070000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d00000001000000010000000100000001000000010000000100000001000000010000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000100000001000000010000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000e0000000e00000007000000070000000700000002000000020000000200000002000000020000000200000002000000020000000200000002000000070000000700000007000000070000000e0000000d0000000d0000000d0000000d0000000d0000000d0000000d0000000e0000000e0000000d0000000d0000000d0000000e0000000e0000000e00000007000000070000000700000007000000070000000200000002000000020000000200000002000000020000000700000007000000070000000700000007000000070000000e0000000e0000000d0000000d0000000d0000000d0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000700000007000000070000000700000002000000020000000200000002000000020000000200000007000000070000000700000007000000070000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000700000007000000070000000700000007000000070000000700000007000000070000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e0000000e000000
+  colorMapTexture: {fileID: 0}
+  puzzleColumns: 14
+  puzzleRows: 9
+  buses:
+  - name: Green Bus 1
+    colorId: 1
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Green Bus 2
+    colorId: 1
+    capacity: 42
+    length: 4
+    rotationDegrees: 0
+    gridPosition: {x: 4, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Green Bus 3
+    colorId: 1
+    capacity: 54
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 4, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Yellow Bus 4
+    colorId: 2
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 9, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Yellow Bus 5
+    colorId: 2
+    capacity: 42
+    length: 4
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Yellow Bus 6
+    colorId: 2
+    capacity: 54
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 3, y: 6}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Orange Bus 7
+    colorId: 6
+    capacity: 42
+    length: 4
+    rotationDegrees: 0
+    gridPosition: {x: 7, y: 5}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Red Bus 8
+    colorId: 7
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Red Bus 9
+    colorId: 7
+    capacity: 42
+    length: 4
+    rotationDegrees: 0
+    gridPosition: {x: 3, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Red Bus 10
+    colorId: 7
+    capacity: 54
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 9, y: 6}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Black Bus 11
+    colorId: 11
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 11, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Black Bus 12
+    colorId: 11
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Black Bus 13
+    colorId: 11
+    capacity: 54
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 1, y: 5}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Purple Bus 14
+    colorId: 13
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 8, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Purple Bus 15
+    colorId: 13
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 12, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Purple Bus 16
+    colorId: 13
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Purple Bus 17
+    colorId: 13
+    capacity: 54
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 5, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Sky Blue Bus 18
+    colorId: 14
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 4, y: 3}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Sky Blue Bus 19
+    colorId: 14
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 11, y: 1}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Sky Blue Bus 20
+    colorId: 14
+    capacity: 51
+    length: 5
+    rotationDegrees: 0
+    gridPosition: {x: 8, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  unifiedGridColumns: 7
+  unifiedGridRows: 11
+  unifiedGridRotation: 0
+  unifiedCellSize: 1.35
+  unifiedMode: 1
+  sharedDestinationPos: {x: 0, y: 0}
+  unifiedCells:
+  - gridPosition: {x: 0, y: 10}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 10}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 9}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 9}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 10}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 10}
+    cellType: 2
+    colorId: 12
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 9}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 2, y: 9}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 3, y: 9}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 4, y: 9}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 4, y: 10}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 3, y: 10}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 2, y: 10}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 9}
+    cellType: 2
+    colorId: 6
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 7}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 6}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 6}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 7}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 5}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 5}
+    cellType: 2
+    colorId: 7
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 0, y: 5}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 1, y: 5}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 6}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 5, y: 7}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 7}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  - gridPosition: {x: 6, y: 6}
+    cellType: 2
+    colorId: 14
+    passengerCount: 6
+    walkableAfterCollection: 1
+    hideVisual: 0
+  unifiedBuses:
+  - name: Orange Bus 1
+    colorId: 6
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Orange Bus 2
+    colorId: 6
+    capacity: 30
+    length: 3
+    rotationDegrees: 0
+    gridPosition: {x: 2, y: 6}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Red Bus 3
+    colorId: 7
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Red Bus 4
+    colorId: 7
+    capacity: 18
+    length: 2
+    rotationDegrees: 90
+    gridPosition: {x: 3, y: 4}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Gray Bus 5
+    colorId: 12
+    capacity: 18
+    length: 2
+    rotationDegrees: 90
+    gridPosition: {x: 2, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Gray Bus 6
+    colorId: 12
+    capacity: 18
+    length: 2
+    rotationDegrees: 270
+    gridPosition: {x: 4, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Sky Blue Bus 7
+    colorId: 14
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 4, y: 0}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
+  - name: Sky Blue Bus 8
+    colorId: 14
+    capacity: 18
+    length: 2
+    rotationDegrees: 0
+    gridPosition: {x: 0, y: 2}
+    shape: 0
+    turnDirection: 0
+    arm1Length: 0
+    arm2Length: 0
