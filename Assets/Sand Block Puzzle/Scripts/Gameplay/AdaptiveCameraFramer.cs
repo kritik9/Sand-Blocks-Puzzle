@@ -18,7 +18,7 @@ namespace SandBlocks.Gameplay
         [SerializeField] private ContainerBoundary boundary;
         [SerializeField] private PuzzleGrid puzzleGrid;
 
-        [Header("Framing Settings")]
+        [Header("Framing Settings (Portrait Default)")]
         [Tooltip("If true, automatically adjusts the camera at Start")]
         [SerializeField] private bool autoFrameOnStart = true;
 
@@ -39,6 +39,19 @@ namespace SandBlocks.Gameplay
 
         [Tooltip("Optional fine-tuning vertical offset")]
         [SerializeField] private float verticalCenterOffset = 0f;
+
+        [Header("Landscape Framing Overrides (aspect >= 1.15)")]
+        [Tooltip("Buffer above container when running in landscape")]
+        [SerializeField] private float landscapeTopMargin = 0.5f;
+
+        [Tooltip("Buffer below lowest bus line when running in landscape")]
+        [SerializeField] private float landscapeBottomMargin = 0.6f;
+
+        [Tooltip("Buffer on left and right sides in landscape")]
+        [SerializeField] private float landscapeSideMargin = 1.0f;
+
+        [Tooltip("Minimum orthographic size in landscape mode (allows camera to frame closely)")]
+        [SerializeField] private float landscapeMinOrthographicSize = 4.6f;
 
         [Header("Top-View Camera Settings (Horizontal XZ Mode)")]
         [Tooltip("Angle in degrees for the top-view camera tilting down at the ground plane (e.g. 50 to 65 deg). Matches hypercasual reference image.")]
@@ -181,11 +194,19 @@ namespace SandBlocks.Gameplay
                 maxContentWidth = Mathf.Max(maxContentWidth, gridWidth);
             }
 
-            // 2. Expand extents by margins
-            float effectiveTopZ = topZ + topMargin;
-            float effectiveBottomZ = bottomZ - bottomMargin;
+            // 2. Expand extents by margins (automatically selecting landscape or portrait margins)
+            float aspect = (targetCamera != null && targetCamera.orthographic) ? Mathf.Max(0.2f, targetCamera.aspect) : 1f;
+            bool isLandscape = aspect >= 1.15f;
+
+            float curTopMargin = isLandscape ? landscapeTopMargin : topMargin;
+            float curBottomMargin = isLandscape ? landscapeBottomMargin : bottomMargin;
+            float curSideMargin = isLandscape ? landscapeSideMargin : sideMargin;
+            float curMinOrthoSize = isLandscape ? landscapeMinOrthographicSize : minOrthographicSize;
+
+            float effectiveTopZ = topZ + curTopMargin;
+            float effectiveBottomZ = bottomZ - curBottomMargin;
             float totalSpanZ = effectiveTopZ - effectiveBottomZ;
-            float totalWidthX = maxContentWidth + (sideMargin * 2f);
+            float totalWidthX = maxContentWidth + (curSideMargin * 2f);
             float targetCenterZ = (effectiveTopZ + effectiveBottomZ) * 0.5f + verticalCenterOffset;
 
             // 3. Set camera rotation to top-view pitch tilt
@@ -205,12 +226,11 @@ namespace SandBlocks.Gameplay
             // 5. Orthographic size adjustment
             if (targetCamera.orthographic)
             {
-                float aspect = Mathf.Max(0.2f, targetCamera.aspect);
                 float projectedHeight = totalSpanZ * sinPitch;
                 float sizeFromHeight = projectedHeight * 0.5f;
                 float sizeFromWidth = (totalWidthX * 0.5f) / aspect;
 
-                float targetSize = Mathf.Clamp(Mathf.Max(sizeFromHeight, sizeFromWidth), minOrthographicSize, maxOrthographicSize);
+                float targetSize = Mathf.Clamp(Mathf.Max(sizeFromHeight, sizeFromWidth), curMinOrthoSize, maxOrthographicSize);
                 targetCamera.orthographicSize = targetSize;
             }
         }
@@ -245,10 +265,18 @@ namespace SandBlocks.Gameplay
             }
 
             // 2. Expand extents by margins
-            float effectiveTop = topY + topMargin;
-            float effectiveBottom = bottomY - bottomMargin;
+            float aspect = Mathf.Max(0.2f, targetCamera.aspect);
+            bool isLandscape = aspect >= 1.15f;
+
+            float curTopMargin = isLandscape ? landscapeTopMargin : topMargin;
+            float curBottomMargin = isLandscape ? landscapeBottomMargin : bottomMargin;
+            float curSideMargin = isLandscape ? landscapeSideMargin : sideMargin;
+            float curMinOrthoSize = isLandscape ? landscapeMinOrthographicSize : minOrthographicSize;
+
+            float effectiveTop = topY + curTopMargin;
+            float effectiveBottom = bottomY - curBottomMargin;
             float totalHeight = effectiveTop - effectiveBottom;
-            float totalWidth = maxContentWidth + (sideMargin * 2f);
+            float totalWidth = maxContentWidth + (curSideMargin * 2f);
 
             // 3. Compensation for camera tilt angle (X rotation)
             Vector3 forward = targetCamera.transform.forward;
@@ -258,11 +286,10 @@ namespace SandBlocks.Gameplay
                 cosAngle = Mathf.Clamp01(Mathf.Abs(forward.z));
             }
 
-            float aspect = Mathf.Max(0.2f, targetCamera.aspect);
             float sizeFromHeight = (totalHeight * cosAngle) * 0.5f;
             float sizeFromWidth = (totalWidth * 0.5f) / aspect;
 
-            float targetSize = Mathf.Clamp(Mathf.Max(sizeFromHeight, sizeFromWidth), minOrthographicSize, maxOrthographicSize);
+            float targetSize = Mathf.Clamp(Mathf.Max(sizeFromHeight, sizeFromWidth), curMinOrthoSize, maxOrthographicSize);
             targetCamera.orthographicSize = targetSize;
 
             float targetCenterY = (effectiveTop + effectiveBottom) * 0.5f + verticalCenterOffset;

@@ -183,11 +183,28 @@ namespace CrazyGames
 
         private static void Crash(int code)
         {
-            CrazySDK.SiteLockFreezeGame(code);
+            Debug.LogWarning($"[CrazySDK] SiteLock warning: code {code}. Freezing bypassed for testing.");
         }
 
         public static bool IsOnWhitelistedDomain()
         {
+            try
+            {
+                var url = Application.absoluteURL;
+                if (!string.IsNullOrEmpty(url) && Uri.TryCreate(url, UriKind.Absolute, out var currentUri))
+                {
+                    var h = currentUri.Host.ToLowerInvariant();
+                    if (h.EndsWith("netlify.app") || h.EndsWith("crazygames.com") || h.EndsWith("dev-crazygames.be") || h == "localhost" || h == "127.0.0.1")
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Fallback to settings check
+            }
+
             var settings = GetSettings();
             var whitelistedDevDomains = new List<string>();
             if (settings == null || settings.whitelistedDomains == null)

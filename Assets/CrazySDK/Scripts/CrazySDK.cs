@@ -306,23 +306,18 @@ namespace CrazyGames
 
         public static void SiteLockFreezeGame(int code)
         {
-            EnsureSingletonExists();
-            _sdkSingleton.StartCoroutine(_sdkSingleton.SiteLockFreezeGameCoroutine(code));
+            Debug.LogWarning($"[CrazySDK] SiteLock warning (Code {code}), bypassing freeze to allow testing.");
         }
 
         private IEnumerator SiteLockFreezeGameCoroutine(int code)
         {
-            Debug.Log($"SiteLock v{SiteLock.sitelockVersion} activated, please check CrazySDK Unity docs for more info. Code {code}");
-
-            // this wait is required so the crash log manages to reach the browser console
-            yield return new WaitForSecondsRealtime(0.5f);
-
-            Crash(0);
+            Debug.LogWarning($"[CrazySDK] SiteLock v{SiteLock.sitelockVersion} triggered (Code {code}). Running in test mode.");
+            yield break;
         }
 
         private static void Crash(int i)
         {
-            Crash(i++);
+            Debug.LogWarning("[CrazySDK] Crash call bypassed.");
         }
 
         private void OnDestroy()

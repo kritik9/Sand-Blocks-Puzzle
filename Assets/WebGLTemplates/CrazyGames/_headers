@@ -1,0 +1,44 @@
+/*
+  Access-Control-Allow-Origin: *
+  Content-Security-Policy: default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; connect-src 'self' blob: data: https: http: ws: wss:; frame-src *; worker-src 'self' blob:;
+
+/Build/*.js
+  Content-Type: application/javascript
+
+/Build/*.wasm
+  Content-Type: application/wasm
+
+/Build/*.data
+  Content-Type: application/octet-stream
+
+/Build/*.js.br
+  Content-Type: application/javascript
+  Content-Encoding: br
+
+/Build/*.wasm.br
+  Content-Type: application/wasm
+  Content-Encoding: br
+
+/Build/*.data.br
+  Content-Type: application/octet-stream
+  Content-Encoding: br
+
+/Build/*.symbols.json.br
+  Content-Type: application/octet-stream
+  Content-Encoding: br
+
+/Build/*.js.gz
+  Content-Type: application/javascript
+  Content-Encoding: gzip
+
+/Build/*.wasm.gz
+  Content-Type: application/wasm
+  Content-Encoding: gzip
+
+/Build/*.data.gz
+  Content-Type: application/octet-stream
+  Content-Encoding: gzip
+
+/Build/*.symbols.json.gz
+  Content-Type: application/octet-stream
+  Content-Encoding: gzip

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; connect-src 'self' blob: data: https: http: ws: wss:; frame-src *; worker-src 'self' blob:;" />
     <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes" />
     <title>Unity Web Player | {{{ PRODUCT_NAME }}}</title>
     #if SHOW_DIAGNOSTICS
@@ -10,6 +11,9 @@
     <script src="<<<TemplateData/diagnostics.js>>>"></script>
     #endif
     <style>
+      * {
+        box-sizing: border-box;
+      }
       html,
       body {
         width: 100%;
@@ -18,29 +22,46 @@
         padding: 0;
         border: 0;
         overflow: hidden;
+        background-color: #000000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      #unity-canvas {
-        position: fixed;
-        inset: 0;
+      #canvas-wrapper {
         width: 100%;
         height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        background-color: #000000;
+      }
+      #unity-canvas {
+        height: 100%;
+        max-height: 100%;
+        max-width: 100%;
+        aspect-ratio: {{{ WIDTH }}} / {{{ HEIGHT }}};
         display: block;
+        box-shadow: 0 0 35px rgba(0, 0, 0, 0.95);
+        outline: none;
+        background: {{{ BACKGROUND_FILENAME ? 'url(\'Build/' + BACKGROUND_FILENAME.replace(/'/g, '%27') + '\') center / cover' : BACKGROUND_COLOR }}};
       }
       #diagnostics-icon {
         position: fixed;
         bottom: 10px;
-        right: 0;
+        right: 10px;
       }
     </style>
   </head>
   <body>
-    <canvas
-      id="unity-canvas"
-      width="{{{ WIDTH }}}"
-      height="{{{ HEIGHT }}}"
-      tabindex="-1"
-      style="background: {{{ BACKGROUND_FILENAME ? 'url(\'Build/' + BACKGROUND_FILENAME.replace(/'/g, '%27') + '\') center / cover' : BACKGROUND_COLOR }}}"
-    ></canvas>
+    <div id="canvas-wrapper">
+      <canvas
+        id="unity-canvas"
+        width="{{{ WIDTH }}}"
+        height="{{{ HEIGHT }}}"
+        tabindex="-1"
+      ></canvas>
+    </div>
     #if SHOW_DIAGNOSTICS
     <div id="unity-footer">
       <img id="diagnostics-icon" src="TemplateData/webmemd-icon.png" />
@@ -48,7 +69,27 @@
     #endif
     <script src="Build/{{{ LOADER_FILENAME }}}"></script>
     <script>
-            createUnityInstance(document.querySelector("#unity-canvas"), {
+            const unityCanvas = document.querySelector("#unity-canvas");
+
+            function updateCanvasSize() {
+              const targetRatio = {{{ WIDTH }}} / {{{ HEIGHT }}};
+              const windowRatio = window.innerWidth / window.innerHeight;
+              if (windowRatio > targetRatio) {
+                unityCanvas.style.height = "100%";
+                unityCanvas.style.width = (window.innerHeight * targetRatio) + "px";
+              } else {
+                unityCanvas.style.width = "100%";
+                unityCanvas.style.height = (window.innerWidth / targetRatio) + "px";
+              }
+            }
+
+            window.addEventListener("resize", updateCanvasSize);
+            updateCanvasSize();
+
+            unityCanvas.addEventListener("pointerdown", () => { unityCanvas.focus(); });
+            unityCanvas.addEventListener("touchstart", () => { unityCanvas.focus(); }, { passive: true });
+
+            createUnityInstance(unityCanvas, {
               arguments: [],
       #if PROGRESSIVE_ASSET_LOADING
               primaryDataUrls: {{{ JSON.stringify(PRIMARY_DATA_FILES) }}},
@@ -67,8 +108,8 @@
               companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
               productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
               productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
-              // matchWebGLToCanvasSize: false, // Uncomment this to separately control WebGL canvas render size and DOM element size.
-              // devicePixelRatio: 1, // Uncomment this to override low DPI rendering on high DPI displays.
+              // matchWebGLToCanvasSize: false,
+              // devicePixelRatio: 1,
             }).then((unityInstance) => {
       #if SHOW_DIAGNOSTICS
               document.getElementById("diagnostics-icon").onclick = () => {
@@ -76,7 +117,7 @@
               };
       #endif
             }).catch((message) => {
-              alert(message);
+              console.error("Unity loading error:", message);
             });
     </script>
   </body>
