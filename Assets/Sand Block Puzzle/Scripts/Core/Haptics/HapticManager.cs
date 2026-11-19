@@ -794,7 +794,7 @@ namespace SandBlocks.Core.Haptics
             }
 #elif UNITY_IOS
             // Handled via native HapticBridge
-#else
+#elif !UNITY_WEBGL
             if (fallbackToHandheldVibrate)
             {
                 Handheld.Vibrate();

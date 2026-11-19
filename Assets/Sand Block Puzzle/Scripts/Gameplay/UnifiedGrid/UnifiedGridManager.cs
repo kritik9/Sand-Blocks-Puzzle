@@ -381,6 +381,7 @@ namespace SandBlocks.Gameplay.UnifiedGrid
             else
             {
                 isLevelStartAnimating = false;
+                CrazyGamesManager.Instance?.GameplayStart();
             }
 
             Debug.Log($"<color=cyan>[UnifiedGridManager]</color> Initialized {level.name}: {cols}x{rows}, {passengerCells.Count} passenger cells, {spawnedBuses.Count} buses, {destinationCells.Count} dest cells.");
@@ -1261,6 +1262,8 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
+            CrazyGamesManager.Instance?.HappyTime();
+            CrazyGamesManager.Instance?.GameplayStop();
 
             if (activeVictoryRoutine != null) StopCoroutine(activeVictoryRoutine);
             activeVictoryRoutine = StartCoroutine(VictorySequenceRoutine());
@@ -1269,6 +1272,25 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
         private IEnumerator VictorySequenceRoutine()
         {
             yield return new WaitForSeconds(1.2f);
+            if (levelManager == null) levelManager = LevelManager.Instance ?? FindAnyObjectByType<LevelManager>();
+
+            int currentLvlNum = (levelManager != null) ? levelManager.CurrentLevelIndex + 1 : 1;
+            bool adCompleted = false;
+
+            if (CrazyGamesManager.Instance != null)
+            {
+                CrazyGamesManager.Instance.ShowMidgameAd(currentLvlNum, () => adCompleted = true);
+            }
+            else
+            {
+                adCompleted = true;
+            }
+
+            while (!adCompleted)
+            {
+                yield return null;
+            }
+
             if (levelManager != null && levelManager.HasNextLevel)
             {
                 levelManager.NextLevel();
@@ -1423,6 +1445,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
 
             isLevelStartAnimating = false;
             activeStartSequence = null;
+            CrazyGamesManager.Instance?.GameplayStart();
         }
 
         private IEnumerator PopInTransform(Transform target, Vector3 targetScale, float delay, float duration = 0.32f, float overshoot = 1.70158f)
@@ -1574,6 +1597,7 @@ private GameObject CreatePassengerFigure(int colorId, int cellIndex = 0, Vector2
             }
             isLevelStartAnimating = false;
             isLevelCompleted = false;
+            CrazyGamesManager.Instance?.GameplayStop();
             currentLevel = null;
 
             if (dragHandler != null)

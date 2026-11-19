@@ -521,6 +521,7 @@ namespace SandBlocks.Gameplay
 
             isLevelStartAnimating = false;
             activeStartSequence = null;
+            CrazyGamesManager.Instance?.GameplayStart();
         }
 
         private List<ParticleSpawnInfo> CollectAllCrowdParticles()
@@ -967,6 +968,7 @@ namespace SandBlocks.Gameplay
             isGameStarted = false;
             StopAllCoroutines();
             isLevelStartAnimating = false;
+            CrazyGamesManager.Instance?.GameplayStop();
 
             if (homeScreen != null)
             {
@@ -1078,6 +1080,7 @@ namespace SandBlocks.Gameplay
             activeStartSequence = null;
             isLevelStartAnimating = false;
             isLevelCompleted = false;
+            CrazyGamesManager.Instance?.GameplayStop();
 
             // Stop any active passenger flight routines
             var transfer = FindAnyObjectByType<CrowdTransferController>();
@@ -1148,6 +1151,7 @@ namespace SandBlocks.Gameplay
             {
                 SpawnLayeredCrowdInstant(particles);
                 SpawnPrototypeVehicles(animate: false);
+                CrazyGamesManager.Instance?.GameplayStart();
             }
 
             // 4. Ensure camera view is framed
@@ -1201,6 +1205,8 @@ namespace SandBlocks.Gameplay
 
             SandBlocks.Core.Audio.AudioManager.Instance?.PlayLevelWin();
             SandBlocks.Core.Haptics.HapticManager.Instance?.TriggerLevelWin();
+            CrazyGamesManager.Instance?.HappyTime();
+            CrazyGamesManager.Instance?.GameplayStop();
 
             if (activeVictoryRoutine != null) StopCoroutine(activeVictoryRoutine);
             activeVictoryRoutine = StartCoroutine(VictorySequenceRoutine());
@@ -1210,6 +1216,24 @@ namespace SandBlocks.Gameplay
         {
             yield return new WaitForSeconds(1.5f);
             if (levelManager == null) levelManager = LevelManager.Instance ?? FindAnyObjectByType<LevelManager>();
+
+            int currentLvlNum = (levelManager != null) ? levelManager.CurrentLevelIndex + 1 : 1;
+            bool adCompleted = false;
+
+            if (CrazyGamesManager.Instance != null)
+            {
+                CrazyGamesManager.Instance.ShowMidgameAd(currentLvlNum, () => adCompleted = true);
+            }
+            else
+            {
+                adCompleted = true;
+            }
+
+            while (!adCompleted)
+            {
+                yield return null;
+            }
+
             if (levelManager != null && levelManager.HasNextLevel)
             {
                 levelManager.NextLevel();

@@ -15,6 +15,7 @@
   <Project Path="UnityEngine.UI.csproj" />
   <Project Path="Unity.Pipeline.IlInterpreter.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.2D.Runtime.csproj" />
+  <Project Path="Unity.ProjectAuditor.Editor.csproj" />
   <Project Path="Unity.InferenceEngine.Microsoft.Msagl.csproj" />
   <Project Path="Unity.VisualScripting.Core.Editor.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Editor.csproj" />
@@ -32,6 +33,7 @@
   <Project Path="Unity.InputSystem.csproj" />
   <Project Path="PPv2URPConverters.csproj" />
   <Project Path="Unity.InferenceEngine.csproj" />
+  <Project Path="Unity.ProjectAuditor.Editor.UI.Framework.csproj" />
   <Project Path="Unity.Searcher.Editor.csproj" />
   <Project Path="Unity.InferenceEngine.Tokenization.csproj" />
   <Project Path="UnityEditor.TestRunner.csproj" />
@@ -57,9 +59,11 @@
   <Project Path="Unity.Toonshader.Editor.csproj" />
   <Project Path="Unity.Formats.Fbx.Editor.csproj" />
   <Project Path="UnityEditor.UI.csproj" />
+  <Project Path="ProjectAuditorRules.ModuleAnalyzers.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.2D.Editor.Overrides.csproj" />
   <Project Path="Unity.2D.Sprite.Editor.csproj" />
   <Project Path="Unity.AI.Navigation.Editor.csproj" />
+  <Project Path="CrazyGamesDefineManager.csproj" />
   <Project Path="Unity.AppUI.MVVM.csproj" />
   <Project Path="Unity.Recorder.csproj" />
   <Project Path="Unity.Multiplayer.Center.Common.csproj" />
@@ -69,7 +73,9 @@
   <Project Path="Unity.Collections.CodeGen.csproj" />
   <Project Path="Unity.Mathematics.Editor.csproj" />
   <Project Path="Unity.VisualScripting.SettingsProvider.Editor.csproj" />
+  <Project Path="Unity.ProjectAuditor.Editor.Utils.csproj" />
   <Project Path="UnityEditor.UI.Analytics.csproj" />
+  <Project Path="Unity.ProjectAuditor.Editor.UI.csproj" />
   <Project Path="Unity.AppUI.Editor.csproj" />
   <Project Path="Unity.InputSystem.TestFramework.csproj" />
   <Project Path="Unity.ShaderGraph.Utilities.csproj" />

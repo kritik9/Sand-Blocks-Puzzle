@@ -1,0 +1,16 @@
+{
+#if PROGRESSIVE_ASSET_LOADING
+  "primaryDataFiles": {{{ JSON.stringify(PRIMARY_DATA_FILES) }}},
+  "secondaryDataFiles": {{{ JSON.stringify(SECONDARY_DATA_FILES) }}},
+#else
+  "dataFile": {{{ JSON.stringify("Build/" + DATA_FILENAME) }}},
+#endif
+#if USE_WASM
+  "codeFile": {{{ JSON.stringify("Build/" + CODE_FILENAME) }}},
+#endif
+#if SYMBOLS_FILENAME
+  "symbolsFile": {{{ JSON.stringify("Build/" + SYMBOLS_FILENAME) }}},
+#endif
+  "loaderFile": {{{ JSON.stringify("Build/" + LOADER_FILENAME) }}},
+  "frameworkFile": {{{ JSON.stringify("Build/" + FRAMEWORK_FILENAME) }}}
+}
