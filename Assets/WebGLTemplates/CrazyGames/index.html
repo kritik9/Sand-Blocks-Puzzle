@@ -108,8 +108,8 @@
               companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
               productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
               productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
-              // matchWebGLToCanvasSize: false,
-              // devicePixelRatio: 1,
+              matchWebGLToCanvasSize: true,
+              devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
             }).then((unityInstance) => {
       #if SHOW_DIAGNOSTICS
               document.getElementById("diagnostics-icon").onclick = () => {

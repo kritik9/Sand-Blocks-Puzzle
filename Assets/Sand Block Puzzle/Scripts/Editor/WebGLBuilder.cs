@@ -34,9 +34,12 @@ namespace SandBlocks.Editor
             PlayerSettings.defaultWebScreenHeight = 956;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
 
-            // Compression: Brotli with JS decompression fallback
-            PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Brotli;
-            PlayerSettings.WebGL.decompressionFallback = true;
+            // Compression: Disabled for maximum compatibility across Netlify, itch.io, and CrazyGames (prevents SyntaxError tokens)
+            PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
+            PlayerSettings.WebGL.decompressionFallback = false;
+
+            // Ensure Forward rendering (Quality Level 0 / Mobile) so UnityToon shaders render with full color instead of black silhouettes
+            QualitySettings.SetQualityLevel(0, true);
 
             // Input handling: 2 = Both (New Input System + Legacy browser pointer events)
             // Stored in PlayerSettings activeInputHandler
